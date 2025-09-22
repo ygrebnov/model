@@ -320,4 +320,29 @@ func TestModel_validateStruct(t *testing.T) {
 			t.Errorf("did not expect any error at Root.Ghost due to validateElem tag (non-container)")
 		}
 	})
+
+	// Covers: pointer-to-struct recursion branch (fv.Kind()==Ptr && fv.Elem().Kind()==Struct)
+	// We set PIn (a *vInner) to a non-nil value so validateStruct recurses into it.
+	// Expect errors for inner fields according to their tags.
+	// This specifically targets the `else if fv.Elem().Kind() == reflect.Struct` path.
+
+	t.Run("pointer-to-struct field recurses", func(t *testing.T) {
+		obj := vOuter{
+			PIn: &vInner{S: "", D: 0}, // both violate rules in vInner
+		}
+		ve := &ValidationError{}
+		rv := reflect.ValueOf(&obj).Elem()
+		m.validateStruct(rv, "Root", ve)
+
+		if ve.Empty() {
+			t.Fatalf("expected validation errors; got none")
+		}
+		by := ve.ByField()
+		if _, ok := by["Root.PIn.S"]; !ok {
+			t.Errorf("expected nonempty error at Root.PIn.S")
+		}
+		if _, ok := by["Root.PIn.D"]; !ok {
+			t.Errorf("expected nonzeroDuration error at Root.PIn.D")
+		}
+	})
 }

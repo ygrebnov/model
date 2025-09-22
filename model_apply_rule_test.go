@@ -36,6 +36,9 @@ func ruleInt(v int, _ ...string) error {
 	return fmt.Errorf("int:%d", v)
 }
 
+// a no-op rule that succeeds (used to verify skipping of nil adapters)
+func rulePassString(v string, _ ...string) error { return nil }
+
 type dummy struct{}
 
 func TestModel_applyRule(t *testing.T) {
@@ -118,6 +121,56 @@ func TestModel_applyRule(t *testing.T) {
 		// Should include available types list
 		if !strings.Contains(err.Error(), "string") || !strings.Contains(err.Error(), "int") {
 			t.Fatalf("expected available types in message, got: %v", err)
+		}
+	})
+
+	t.Run("skips nil adapters; validation passes", func(t *testing.T) {
+		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+
+		// Intentionally place a nil/zero adapter first; applyRule must skip it.
+		nilAdapter := typedAdapter{} // fieldType == nil, fn == nil
+		goodAdapter := wrapRule[string](rulePassString)
+
+		m.validators["ok"] = []typedAdapter{nilAdapter, goodAdapter}
+
+		if err := m.applyRule("ok", reflect.ValueOf("pass")); err != nil {
+			t.Fatalf("expected nil error (successful validation), got: %v", err)
+		}
+	})
+
+	t.Run("wrapRule panics on invalid or non-assignable value", func(t *testing.T) {
+		t.Parallel()
+
+		// Build a typed adapter for string and then deliberately call it
+		// with (1) an invalid reflect.Value and (2) a non-assignable type.
+		ad := wrapRule[string](rulePassString)
+
+		cases := []struct {
+			name string
+			val  reflect.Value
+		}{
+			{name: "non-assignable type", val: reflect.ValueOf(123)}, // int not assignable to string
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				defer func() {
+					if r := recover(); r == nil {
+						t.Fatalf("expected panic for %q, got none", tc.name)
+					} else {
+						msg := fmt.Sprint(r)
+						if !strings.Contains(msg, "rule type mismatch") {
+							t.Fatalf("unexpected panic message for %q: %s", tc.name, msg)
+						}
+					}
+				}()
+
+				// This should panic inside wrapRule's adapter fn when v is invalid
+				// or not assignable to the expected type.
+				_ = ad.fn(tc.val)
+			})
 		}
 	})
 }
