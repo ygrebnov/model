@@ -8,11 +8,11 @@ import (
 func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], error) {
 	// Validate: obj must be a non-nil pointer to a struct
 	if obj == nil {
-		panic("model: obj is nil; want pointer to struct")
+		return nil, ErrNilObject
 	}
 	elem := reflect.TypeOf(obj).Elem()
 	if elem.Kind() != reflect.Struct {
-		panic(fmt.Errorf("model: obj must be a pointer to struct; got pointer to %s", elem.Kind()))
+		return nil, fmt.Errorf("%w; got pointer to %s", ErrNotStructPtr, elem.Kind())
 	}
 
 	m := &Model[TObject]{obj: obj}

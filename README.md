@@ -115,8 +115,27 @@ if err != nil {
 **Notes**
 
 - `New` returns `(*Model[T], error)`.
-- Misuse (nil object or pointer to a non-struct) **panics** to enforce invariants.
+- Misuse (nil object or pointer to a non-struct) returns an error. Use `errors.Is(err, model.ErrNilObject)` or `errors.Is(err, model.ErrNotStructPtr)` to detect these cases.
 - Errors from `WithDefaults` / `WithValidation` are **returned**.
+
+```go
+m, err := model.New(&user)
+if err != nil {
+    switch {
+    case errors.Is(err, model.ErrNilObject):
+        // handle nil object
+    case errors.Is(err, model.ErrNotStructPtr):
+        // handle pointer to non-struct
+    default:
+        var ve *model.ValidationError
+        if errors.As(err, &ve) {
+            // handle validation failures
+        } else {
+            // other errors (e.g., defaults parsing)
+        }
+    }
+}
+```
 
 ---
 

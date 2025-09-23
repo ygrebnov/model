@@ -55,27 +55,25 @@ type newValidateBad struct {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	t.Run("panic: nil object", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatalf("expected panic for nil obj")
-			}
-		}()
-		_, _ = New[*int](nil) // type parameter doesn't matter here
+	t.Run("error: nil object", func(t *testing.T) {
+		m, err := New[*int](nil)
+		if m != nil {
+			t.Fatalf("expected nil model")
+		}
+		if !errors.Is(err, ErrNilObject) {
+			t.Fatalf("expected ErrNilObject, got %v", err)
+		}
 	})
 
-	t.Run("panic: pointer to non-struct", func(t *testing.T) {
+	t.Run("error: pointer to non-struct", func(t *testing.T) {
 		x := 42
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatalf("expected panic for pointer to non-struct")
-			} else {
-				if !strings.Contains(fmt.Sprint(r), "pointer to struct") {
-					t.Fatalf("unexpected panic message: %v", r)
-				}
-			}
-		}()
-		_, _ = New(&x) // TObject = int -> *int (Elem != struct)
+		m, err := New(&x) // TObject = int -> *int (Elem != struct)
+		if m != nil {
+			t.Fatalf("expected nil model")
+		}
+		if !errors.Is(err, ErrNotStructPtr) {
+			t.Fatalf("expected ErrNotStructPtr, got %v", err)
+		}
 	})
 
 	t.Run("WithDefaults: success applies defaults", func(t *testing.T) {
