@@ -72,9 +72,10 @@ func WithRules[TObject any, TField any](rules []Rule[TField]) Option[TObject] {
 }
 
 // ensureRule adds a rule if an exact overload for the same rule name and field type is not already present.
-func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) {
+// It returns an error for invalid rule definitions (empty name or nil function).
+func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) error {
 	if r.Name == "" || r.Fn == nil {
-		return
+		return fmt.Errorf("model: ensureRule: rule must have non-empty Name and non-nil Fn")
 	}
 	if m.validators == nil {
 		m.validators = make(map[string][]typedAdapter)
@@ -82,11 +83,12 @@ func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) {
 	typ := reflect.TypeOf((*TField)(nil)).Elem()
 	for _, ad := range m.validators[r.Name] {
 		if ad.fieldType != nil && ad.fieldType == typ {
-			return // exact overload already exists; keep user's version
+			return nil // exact overload already exists; keep user's version
 		}
 	}
 	ad := wrapRule(r.Fn)
 	m.validators[r.Name] = append(m.validators[r.Name], ad)
+	return nil
 }
 
 // WithDefaults enables applying defaults during New(). If not specified, defaults are NOT applied automatically.
@@ -101,16 +103,24 @@ func WithValidation[TObject any]() Option[TObject] {
 		m.validateOnNew = true
 		// Implicitly register builtin rules, but do not override existing exact overloads.
 		for _, r := range BuiltinStringRules() {
-			ensureRule[TObject, string](m, r)
+			if err := ensureRule[TObject, string](m, r); err != nil {
+				return err
+			}
 		}
 		for _, r := range BuiltinIntRules() {
-			ensureRule[TObject, int](m, r)
+			if err := ensureRule[TObject, int](m, r); err != nil {
+				return err
+			}
 		}
 		for _, r := range BuiltinInt64Rules() {
-			ensureRule[TObject, int64](m, r)
+			if err := ensureRule[TObject, int64](m, r); err != nil {
+				return err
+			}
 		}
 		for _, r := range BuiltinFloat64Rules() {
-			ensureRule[TObject, float64](m, r)
+			if err := ensureRule[TObject, float64](m, r); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
