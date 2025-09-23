@@ -386,6 +386,8 @@ func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error
 	return nil
 }
 
+var durationType = reflect.TypeOf(time.Duration(0))
+
 // setLiteralDefault sets a literal default value into fv if it is zero.
 // For pointer-to-scalar fields, it allocates and sets the pointed value.
 func setLiteralDefault(fv reflect.Value, lit string) error {
@@ -413,8 +415,7 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 	}
 
 	// Handle special case: time.Duration typed fields
-	durType := reflect.TypeOf(time.Duration(0))
-	if target.Type() == durType {
+	if target.Type() == durationType {
 		d, err := time.ParseDuration(lit)
 		if err != nil {
 			return fmt.Errorf("parse duration: %w", err)
