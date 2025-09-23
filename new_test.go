@@ -255,4 +255,35 @@ func TestNew(t *testing.T) {
 			t.Fatalf("expected ambiguity error from applyRule, got: %v", err)
 		}
 	})
+
+	t.Run("options: short-circuit on first error; subsequent opts not applied", func(t *testing.T) {
+		type T struct{}
+		obj := T{}
+		called1 := false
+		called2 := false
+
+		failOpt := Option[T](func(m *Model[T]) error {
+			called1 = true
+			return fmt.Errorf("fail-first")
+		})
+		sideOpt := Option[T](func(m *Model[T]) error {
+			called2 = true
+			m.applyDefaultsOnNew = true // visible side-effect if applied
+			return nil
+		})
+
+		m, err := New(&obj, failOpt, sideOpt)
+		if m != nil {
+			t.Fatalf("expected nil model on first option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "fail-first") {
+			t.Fatalf("expected first option error, got %v", err)
+		}
+		if !called1 {
+			t.Fatalf("expected first option to be called")
+		}
+		if called2 {
+			t.Fatalf("expected second option NOT to be called after first error")
+		}
+	})
 }
