@@ -42,6 +42,15 @@ type vOuter struct {
 	// Assignable: rule registered for fmt.Stringer, field is concrete strWrap
 	Wrapped strWrap `validate:"stringerBad"`
 
+	// Tokenizer coverage: nested parentheses and leading/trailing commas
+	TokNested string `validate:"tokA((x,y)),tokB"`
+	TokEdges  string `validate:",nonempty,"`
+
+	// validateElem tokenizer coverage: nested parentheses and leading/trailing commas
+	ElemTokNested []string `validateElem:"tokEA((x,y)),tokEB"`
+	ElemTokEdges  []string `validateElem:",nonempty,"`
+	ElemParams    []string `validateElem:"withParams(a, b, c),nonempty"`
+
 	// Element validation: slices/arrays
 	Tags    []string   `validateElem:"nonempty"`
 	People  []vInner   `validateElem:"dive"`
@@ -126,11 +135,19 @@ func TestModel_validateStruct(t *testing.T) {
 			},
 			PIn: nil,
 			// Simple rules
-			Name:    "",               // nonempty → error
-			Note:    "",               // withParams(...) → error with params; then nonempty → error
-			Alias:   "",               // unknown rule → error from applyRule
-			Amb:     "",               // dup rule → ambiguity error
-			Wrapped: strWrap{v: "ok"}, // ruleStringerBad → error (we're asserting AssignableTo used)
+			Name:      "",               // nonempty → error
+			Note:      "",               // withParams(...) → error with params; then nonempty → error
+			Alias:     "",               // unknown rule → error from applyRule
+			Amb:       "",               // dup rule → ambiguity error
+			Wrapped:   strWrap{v: "ok"}, // ruleStringerBad → error (we're asserting AssignableTo used)
+			TokNested: "",               // triggers unknown rule errors (tokA, tokB) but exercises nested paren tokenization
+			TokEdges:  "",               // leading/trailing commas around nonempty -> one nonempty error
+
+			// validateElem tokenizer coverage
+			ElemTokNested: []string{"val"}, // triggers two unknown rule applications on the same element
+			ElemTokEdges:  []string{""},    // leading/trailing commas -> only nonempty applies
+			ElemParams:    []string{""},    // withParams(a,b,c) and nonempty apply to element[0]
+
 			// validateElem on slices/arrays
 			Tags:    []string{"", "ok", ""},                   // nonempty applied per element
 			People:  []vInner{{S: "", D: 0}, {S: "ok", D: 0}}, // dive into elements: apply inner rules
@@ -233,6 +250,71 @@ func TestModel_validateStruct(t *testing.T) {
 		// Assignable interface rule
 		if es := by["Root.Wrapped"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "bad stringer") {
 			t.Errorf("expected stringerBad error at Root.Wrapped, got: %+v", es)
+		}
+
+		// Tokenizer: nested parentheses should not split inside, producing two top-level tokens (tokA(...), tokB)
+		if es := by["Root.TokNested"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for Root.TokNested (tokA and tokB), got %d: %+v", len(es), es)
+		} else {
+			// Ensure rules are tokA and tokB (unknown rule errors)
+			have := map[string]bool{"tokA": false, "tokB": false}
+			for _, fe := range es {
+				have[fe.Rule] = true
+				if !strings.Contains(fe.Err.Error(), "is not registered") {
+					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
+				}
+			}
+			if !have["tokA"] || !have["tokB"] {
+				t.Errorf("expected rules tokA and tokB, got presence=%v", have)
+			}
+		}
+
+		// Tokenizer: leading/trailing commas create empty tokens which must be skipped; only nonempty should apply
+		if es := by["Root.TokEdges"]; len(es) != 1 || es[0].Rule != "nonempty" {
+			t.Errorf("expected exactly one nonempty error for Root.TokEdges, got %+v", es)
+		}
+
+		// --- validateElem tokenizer coverage ---
+		// ElemTokNested: nested parentheses should not split inside; two top-level tokens (tokEA(...), tokEB)
+		if es := by["Root.ElemTokNested[0]"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for Root.ElemTokNested[0] (tokEA and tokEB), got %d: %+v", len(es), es)
+		} else {
+			have := map[string]bool{"tokEA": false, "tokEB": false}
+			for _, fe := range es {
+				have[fe.Rule] = true
+				if !strings.Contains(fe.Err.Error(), "is not registered") {
+					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
+				}
+			}
+			if !have["tokEA"] || !have["tokEB"] {
+				t.Errorf("expected rules tokEA and tokEB, got presence=%v", have)
+			}
+		}
+
+		// ElemTokEdges: leading/trailing commas create empty tokens which must be skipped; only nonempty should apply to the element
+		if es := by["Root.ElemTokEdges[0]"]; len(es) != 1 || es[0].Rule != "nonempty" {
+			t.Errorf("expected exactly one nonempty error for Root.ElemTokEdges[0], got %+v", es)
+		}
+
+		// ElemParams: commas inside parentheses must not split; expect withParams(a,b,c) and nonempty applied to element[0]
+		if es := by["Root.ElemParams[0]"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for Root.ElemParams[0] (withParams and nonempty), got %d: %+v", len(es), es)
+		} else {
+			var sawParams, sawNonEmpty bool
+			for _, fe := range es {
+				if fe.Rule == "withParams" && strings.Contains(fe.Err.Error(), "params=a|b|c") {
+					sawParams = true
+				}
+				if fe.Rule == "nonempty" && strings.Contains(fe.Err.Error(), "must not be empty") {
+					sawNonEmpty = true
+				}
+			}
+			if !sawParams {
+				t.Errorf("expected withParams error with params=a|b|c for Root.ElemParams[0]")
+			}
+			if !sawNonEmpty {
+				t.Errorf("expected nonempty error for Root.ElemParams[0]")
+			}
 		}
 
 		// validateElem on slice of strings

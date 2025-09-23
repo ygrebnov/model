@@ -3,43 +3,118 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
-// RuleFn is the user-facing signature for a validation rule on fields of type TField.
-// Params come from the `validate` tag, e.g. validate:"min(3)" -> params ["3"].
-// Return nil if valid, or an error describing the validation failure.
-type RuleFn[TField any] func(value TField, params ...string) error
+// RuleFunc is the signature for a validation function for a specific type.
+type RuleFunc[T any] func(value T, params ...string) error
 
-// Rule associates a name with a RuleFn for registration in the model's validator registry.
-// The Name is referenced by the `validate:"..."` tag on struct fields.
-type Rule[TField any] struct {
+// Rule defines a named validation rule for a specific type.
+type Rule[T any] struct {
 	Name string
-	Fn   RuleFn[TField]
+	Fn   RuleFunc[T]
 }
 
-// ruleFn is the internal signature for field-level validation rule.
-// value: the reflect.Value of the field being validated
-type ruleFn func(value reflect.Value, params ...string) error
-
-// Internal carrier holding both the adapter and the accepted type (for overload resolution).
+// typedAdapter is an internal struct to hold a type-erased validation function
+// along with the type it applies to.
 type typedAdapter struct {
-	fieldType reflect.Type // the TField type
-	fn        ruleFn       // calls user's Rule[TField]
+	fieldType reflect.Type
+	fn        func(v reflect.Value, params ...string) error
 }
 
-func wrapRule[TField any](r RuleFn[TField]) typedAdapter {
-	expectedType := reflect.TypeOf((*TField)(nil)).Elem() // works for interfaces too
+// wrapRule takes a typed RuleFunc and returns a type-erased adapter.
+// The adapter's func panics if the reflect.Value is not assignable to the rule's type.
+func wrapRule[T any](fn RuleFunc[T]) typedAdapter {
+	// Capture the static type of T even when T is an interface.
+	typ := reflect.TypeOf((*T)(nil)).Elem()
+
 	return typedAdapter{
-		fieldType: expectedType,
+		fieldType: typ,
 		fn: func(v reflect.Value, params ...string) error {
-			if !v.IsValid() || !v.Type().AssignableTo(expectedType) {
-				panic(fmt.Sprintf(
-					"model: rule type mismatch: field type %s not assignable to rule type %s",
-					v.Type(), expectedType,
-				))
+			// Ensure the reflect.Value `v` is compatible with T.
+			if v.Type() != typ {
+				// Accept assignable values (including types implementing an interface T)
+				if !v.Type().AssignableTo(typ) {
+					// As a fallback for interface T, use Implements for clarity.
+					if !(typ.Kind() == reflect.Interface && v.Type().Implements(typ)) {
+						panic(fmt.Sprintf(
+							"model: rule type mismatch: cannot use %s value with rule for type %s",
+							v.Type(),
+							typ,
+						))
+					}
+				}
 			}
-			val := v.Interface().(TField)
-			return r(val, params...)
+			val := v.Interface().(T)
+			return fn(val, params...)
 		},
 	}
+}
+
+// parsedRule holds the name and parameters of a single validation rule.
+type parsedRule struct {
+	name   string
+	params []string
+}
+
+// parseRules tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
+// Behavior:
+//   - Splits on top-level commas only (commas inside parentheses do not split tokens).
+//   - Trims whitespace around tokens and parameters.
+//   - Empty tokens (from leading/trailing commas) are skipped.
+//   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
+//   - Does not support quotes or escaping inside parameters.
+func parseRules(tag string) []parsedRule {
+	var rules []parsedRule
+	if tag == "" || tag == "-" {
+		return rules
+	}
+
+	var tokens []string
+	depth := 0
+	start := 0
+	for i, r := range tag {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				tokens = append(tokens, strings.TrimSpace(tag[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	// Append the last token
+	if start <= len(tag) {
+		tokens = append(tokens, strings.TrimSpace(tag[start:]))
+	}
+
+	for _, tok := range tokens {
+		if tok == "" {
+			continue
+		}
+		name := tok
+		var params []string
+		if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
+			name = strings.TrimSpace(tok[:idx])
+			inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
+			if inner != "" {
+				parts := strings.Split(inner, ",")
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						params = append(params, p)
+					}
+				}
+			}
+		}
+		if name != "" {
+			rules = append(rules, parsedRule{name: name, params: params})
+		}
+	}
+	return rules
 }

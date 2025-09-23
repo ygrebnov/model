@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,6 +92,7 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 				names = append(names, ad.fieldType.String())
 			}
 		}
+		sort.Strings(names)
 		return fmt.Errorf(
 			"model: rule %q has no overload for type %s (available: %s)",
 			name,
@@ -98,6 +100,23 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 			strings.Join(names, ", "),
 		)
 	}
+}
+
+// rootStructValue validates that m.obj is a non-nil pointer to a struct and returns the struct value.
+// The phase string is used in error messages (e.g., "Validate", "SetDefaults").
+func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
+	if m.obj == nil {
+		return reflect.Value{}, fmt.Errorf("model: %s: nil object", phase)
+	}
+	rv := reflect.ValueOf(m.obj)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return reflect.Value{}, fmt.Errorf("model: %s: object must be a non-nil pointer to struct; got %s", phase, rv.Kind())
+	}
+	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return reflect.Value{}, fmt.Errorf("model: %s: object must point to a struct; got %s", phase, rv.Kind())
+	}
+	return rv, nil
 }
 
 // Validate runs the registered validation rules against the model's bound object.
@@ -108,16 +127,9 @@ func (m *Model[TObject]) Validate() error { return m.validate() }
 // declared in `validate:"..."` tags. It supports rule parameters via the syntax
 // "rule" or "rule(p1,p2)" and multiple rules separated by commas.
 func (m *Model[TObject]) validate() error {
-	if m.obj == nil {
-		return fmt.Errorf("model: Validate: nil object")
-	}
-	rv := reflect.ValueOf(m.obj)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("model: Validate: object must be a non-nil pointer to struct; got %s", rv.Kind())
-	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
-		return fmt.Errorf("model: Validate: object must point to a struct; got %s", rv.Kind())
+	rv, err := m.rootStructValue("Validate")
+	if err != nil {
+		return err
 	}
 	ve := &ValidationError{}
 	m.validateStruct(rv, "", ve)
@@ -134,25 +146,19 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		field := typ.Field(i)
-		// Skip unexported fields
-		if field.PkgPath != "" {
+		if field.PkgPath != "" { // Skip unexported fields
 			continue
 		}
 		fv := rv.Field(i)
 
-		// Build field path for messages
 		fpath := field.Name
 		if path != "" {
 			fpath = path + "." + field.Name
 		}
 
 		// Recurse into pointers to structs
-		if fv.Kind() == reflect.Ptr {
-			if fv.IsNil() {
-				// nothing to validate
-			} else if fv.Elem().Kind() == reflect.Struct {
-				m.validateStruct(fv.Elem(), fpath, ve)
-			}
+		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
+			m.validateStruct(fv.Elem(), fpath, ve)
 		}
 
 		// Recurse into embedded/inline structs
@@ -160,200 +166,72 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 			m.validateStruct(fv, fpath, ve)
 		}
 
-		// Read validate tag (process if present, but do not skip validateElem when absent)
-		raw := field.Tag.Get("validate")
-		if raw != "" && raw != "-" {
-			// Parse rules with optional params: "rule" or "rule(p1,p2)".
-			// Multiple rules are comma-separated at the top level (commas inside parens are ignored).
-			var tokens []string
-			{
-				depth := 0
-				start := 0
-				for i, r := range raw {
-					switch r {
-					case '(':
-						depth++
-					case ')':
-						if depth > 0 {
-							depth--
-						}
-					case ',':
-						if depth == 0 {
-							tokens = append(tokens, strings.TrimSpace(raw[start:i]))
-							start = i + 1
-						}
-					}
-				}
-				// last token
-				if start <= len(raw) {
-					tokens = append(tokens, strings.TrimSpace(raw[start:]))
-				}
-			}
-
-			for _, tok := range tokens {
-				if tok == "" || tok == "-" {
-					continue
-				}
-				name := tok
-				var params []string
-				if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
-					name = strings.TrimSpace(tok[:idx])
-					inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
-					if inner != "" {
-						// split params by comma and trim spaces
-						parts := strings.Split(inner, ",")
-						params = make([]string, 0, len(parts))
-						for _, p := range parts {
-							p = strings.TrimSpace(p)
-							if p != "" {
-								params = append(params, p)
-							}
-						}
-					}
-				}
-				if name == "" {
-					continue
-				}
-				if err := m.applyRule(name, fv, params...); err != nil {
-					ve.Add(FieldError{Path: fpath, Rule: name, Params: append([]string(nil), params...), Err: err})
+		// Process `validate` tag
+		if rawTag := field.Tag.Get("validate"); rawTag != "" && rawTag != "-" {
+			rules := parseRules(rawTag)
+			for _, rule := range rules {
+				if err := m.applyRule(rule.name, fv, rule.params...); err != nil {
+					ve.Add(FieldError{Path: fpath, Rule: rule.name, Params: rule.params, Err: err})
 				}
 			}
 		}
 
-		// --- Element validation for slices/arrays/maps via `validateElem` ---
-		// This tag applies the listed rules to each element of a slice/array, or to each value of a map.
+		// Process `validateElem` tag for slices, arrays, and maps
 		if elemRaw := field.Tag.Get("validateElem"); elemRaw != "" && elemRaw != "-" {
-			// Resolve the container value: deref pointer if needed
-			cont := fv
-			if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-				cont = cont.Elem()
-			}
+			m.validateElements(fv, fpath, elemRaw, ve)
+		}
+	}
+}
 
-			// Tokenize elemRaw the same way as for `validate`
-			parseRules := func(spec string) []struct {
-				name   string
-				params []string
-			} {
-				var toks []string
-				{
-					depth := 0
-					start := 0
-					for i, r := range spec {
-						switch r {
-						case '(':
-							depth++
-						case ')':
-							if depth > 0 {
-								depth--
-							}
-						case ',':
-							if depth == 0 {
-								toks = append(toks, strings.TrimSpace(spec[start:i]))
-								start = i + 1
-							}
-						}
-					}
-					if start <= len(spec) {
-						toks = append(toks, strings.TrimSpace(spec[start:]))
-					}
-				}
-				out := make([]struct {
-					name   string
-					params []string
-				}, 0, len(toks))
-				for _, tok := range toks {
-					if tok == "" || tok == "-" {
-						continue
-					}
-					nm := tok
-					var ps []string
-					if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
-						nm = strings.TrimSpace(tok[:idx])
-						inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
-						if inner != "" {
-							parts := strings.Split(inner, ",")
-							for _, p := range parts {
-								p = strings.TrimSpace(p)
-								if p != "" {
-									ps = append(ps, p)
-								}
-							}
-						}
-					}
-					if nm != "" {
-						out = append(out, struct {
-							name   string
-							params []string
-						}{nm, ps})
-					}
-				}
-				return out
-			}
+// validateElements applies validation rules to elements of a slice, array, or map.
+func (m *Model[TObject]) validateElements(fv reflect.Value, fpath, elemRaw string, ve *ValidationError) {
+	cont := fv
+	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
+		cont = cont.Elem()
+	}
 
-			rules := parseRules(elemRaw)
+	rules := parseRules(elemRaw)
+	if len(rules) == 0 {
+		return
+	}
 
-			// Special case: validateElem:"dive" means recurse into element structs
-			onlyDive := len(rules) == 1 && rules[0].name == "dive" && len(rules[0].params) == 0
+	// Special case: validateElem:"dive" means recurse into element structs
+	isDiveOnly := len(rules) == 1 && rules[0].name == "dive" && len(rules[0].params) == 0
 
-			switch cont.Kind() {
-			case reflect.Slice, reflect.Array:
-				l := cont.Len()
-				for i := 0; i < l; i++ {
-					ev := cont.Index(i)
-					pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
+	switch cont.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < cont.Len(); i++ {
+			elem := cont.Index(i)
+			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
+			m.validateSingleElement(elem, pathIdx, rules, isDiveOnly, ve)
+		}
+	case reflect.Map:
+		for _, key := range cont.MapKeys() {
+			elem := cont.MapIndex(key)
+			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
+			m.validateSingleElement(elem, pathKey, rules, isDiveOnly, ve)
+		}
+	}
+}
 
-					if onlyDive {
-						// Deref pointer elements
-						dv := ev
-						if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-							dv = dv.Elem()
-						}
-						if dv.Kind() == reflect.Struct {
-							m.validateStruct(dv, pathIdx, ve)
-							continue
-						}
-						// Not a struct: record an error for misuse of dive
-						ve.Add(FieldError{Path: pathIdx, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
-						continue
-					}
+// validateSingleElement handles validation for a single item from a collection.
+func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, rules []parsedRule, isDiveOnly bool, ve *ValidationError) {
+	if isDiveOnly {
+		dv := elem
+		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
+			dv = dv.Elem()
+		}
+		if dv.Kind() == reflect.Struct {
+			m.validateStruct(dv, path, ve)
+		} else {
+			ve.Add(FieldError{Path: path, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
+		}
+		return
+	}
 
-					// Apply each listed rule to the element value
-					for _, r := range rules {
-						if err := m.applyRule(r.name, ev, r.params...); err != nil {
-							ve.Add(FieldError{Path: pathIdx, Rule: r.name, Params: append([]string(nil), r.params...), Err: err})
-						}
-					}
-				}
-
-			case reflect.Map:
-				// Validate map VALUES (not keys) with validateElem
-				for _, key := range cont.MapKeys() {
-					val := cont.MapIndex(key)
-					pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-
-					if onlyDive {
-						dv := val
-						if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-							dv = dv.Elem()
-						}
-						if dv.Kind() == reflect.Struct {
-							m.validateStruct(dv, pathKey, ve)
-							continue
-						}
-						ve.Add(FieldError{Path: pathKey, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
-						continue
-					}
-
-					for _, r := range rules {
-						if err := m.applyRule(r.name, val, r.params...); err != nil {
-							ve.Add(FieldError{Path: pathKey, Rule: r.name, Params: append([]string(nil), r.params...), Err: err})
-						}
-					}
-				}
-
-			default:
-				// Non-container kinds: ignore validateElem silently
-			}
+	for _, r := range rules {
+		if err := m.applyRule(r.name, elem, r.params...); err != nil {
+			ve.Add(FieldError{Path: path, Rule: r.name, Params: r.params, Err: err})
 		}
 	}
 }
@@ -377,16 +255,9 @@ func (m *Model[TObject]) SetDefaults() error {
 //   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
 //   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
 func (m *Model[TObject]) applyDefaults() error {
-	if m.obj == nil {
-		return fmt.Errorf("model: SetDefaults: nil object")
-	}
-	rv := reflect.ValueOf(m.obj)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("model: SetDefaults: object must be a non-nil pointer to struct; got %s", rv.Kind())
-	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
-		return fmt.Errorf("model: SetDefaults: object must point to a struct; got %s", rv.Kind())
+	rv, err := m.rootStructValue("SetDefaults")
+	if err != nil {
+		return err
 	}
 	return m.setDefaultsStruct(rv)
 }
@@ -403,96 +274,119 @@ func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
 
 		// Handle default tag
 		if dtag := field.Tag.Get("default"); dtag != "" && dtag != "-" {
-			switch dtag {
-			case "dive":
-				// Recurse into structs / *struct
-				if fv.Kind() == reflect.Ptr {
-					if fv.IsNil() {
-						// allocate if pointer to struct
-						if fv.Type().Elem().Kind() == reflect.Struct {
-							fv.Set(reflect.New(fv.Type().Elem()))
-						} else {
-							// not a struct pointer: ignore dive
-							goto after_default
-						}
-					}
-					if fv.Elem().Kind() == reflect.Struct {
-						if err := m.setDefaultsStruct(fv.Elem()); err != nil {
-							return err
-						}
-					}
-				} else if fv.Kind() == reflect.Struct {
-					if err := m.setDefaultsStruct(fv); err != nil {
-						return err
-					}
-				} // else: ignore dive for non-structs
-			case "alloc":
-				// Allocate empty slice/map if nil
-				if fv.Kind() == reflect.Slice && fv.IsNil() {
-					fv.Set(reflect.MakeSlice(fv.Type(), 0, 0))
-				} else if fv.Kind() == reflect.Map && fv.IsNil() {
-					fv.Set(reflect.MakeMap(fv.Type()))
-				}
-			default:
-				// Literal default: set only if zero
-				if err := setLiteralDefault(fv, dtag); err != nil {
-					return fmt.Errorf("default for %s: %w", field.Name, err)
-				}
+			if err := m.applyDefaultTag(fv, dtag, field.Name); err != nil {
+				return err
 			}
 		}
-	after_default:
-		// Element defaults for collections: recurse into struct elements when asked
+		// Element defaults for collections
 		if etag := field.Tag.Get("defaultElem"); etag != "" && etag != "-" {
-			if etag == "dive" {
-				cont := fv
-				if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-					cont = cont.Elem()
-				}
-				switch cont.Kind() {
-				case reflect.Slice, reflect.Array:
-					l := cont.Len()
-					for j := 0; j < l; j++ {
-						ev := cont.Index(j)
-						dv := ev
-						if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-							dv = dv.Elem()
-						}
-						if dv.Kind() == reflect.Struct {
-							if err := m.setDefaultsStruct(dv); err != nil {
-								return err
-							}
-						}
-					}
-				case reflect.Map:
-					for _, key := range cont.MapKeys() {
-						val := cont.MapIndex(key)
-						// Pointer-to-struct map values: we can mutate the pointed struct in-place.
-						if val.Kind() == reflect.Ptr {
-							if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-								if err := m.setDefaultsStruct(val.Elem()); err != nil {
-									return err
-								}
-							}
-							continue
-						}
-						// Value-typed struct map values are not addressable; copy, mutate, and write back.
-						if val.Kind() == reflect.Struct {
-							copyVal := reflect.New(val.Type()).Elem()
-							copyVal.Set(val)
-							if err := m.setDefaultsStruct(copyVal); err != nil {
-								return err
-							}
-							cont.SetMapIndex(key, copyVal)
-						}
-					}
-				default:
-					// ignore for non-collections
-				}
+			if err := m.applyDefaultElemTag(fv, etag); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
+
+// applyDefaultTag applies the `default` tag semantics to a single field value.
+// Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
+func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
+	switch tag {
+	case "dive":
+		return m.diveDefaultsIntoValue(fv)
+	case "alloc":
+		// Allocate empty slice/map if nil
+		if fv.Kind() == reflect.Slice && fv.IsNil() {
+			fv.Set(reflect.MakeSlice(fv.Type(), 0, 0))
+		} else if fv.Kind() == reflect.Map && fv.IsNil() {
+			fv.Set(reflect.MakeMap(fv.Type()))
+		}
+		return nil
+	default:
+		if err := setLiteralDefault(fv, tag); err != nil {
+			return fmt.Errorf("default for %s: %w", fieldName, err)
+		}
+		return nil
+	}
+}
+
+// diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
+// For nil *struct, it allocates the struct before diving. Non-structs are ignored.
+func (m *Model[TObject]) diveDefaultsIntoValue(fv reflect.Value) error {
+	switch fv.Kind() {
+	case reflect.Ptr:
+		if fv.IsNil() {
+			if fv.Type().Elem().Kind() == reflect.Struct {
+				fv.Set(reflect.New(fv.Type().Elem()))
+			} else {
+				return nil // ignore dive for non-struct pointers
+			}
+		}
+		if fv.Elem().Kind() == reflect.Struct {
+			return m.setDefaultsStruct(fv.Elem())
+		}
+		return nil
+	case reflect.Struct:
+		return m.setDefaultsStruct(fv)
+	default:
+		return nil
+	}
+}
+
+// applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
+// Currently supports: defaultElem:"dive".
+func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error {
+	if tag != "dive" {
+		return nil
+	}
+	cont := fv
+	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
+		cont = cont.Elem()
+	}
+	switch cont.Kind() {
+	case reflect.Slice, reflect.Array:
+		l := cont.Len()
+		for j := 0; j < l; j++ {
+			ev := cont.Index(j)
+			dv := ev
+			if dv.Kind() == reflect.Ptr && !dv.IsNil() {
+				dv = dv.Elem()
+			}
+			if dv.Kind() == reflect.Struct {
+				if err := m.setDefaultsStruct(dv); err != nil {
+					return err
+				}
+			}
+		}
+	case reflect.Map:
+		for _, key := range cont.MapKeys() {
+			val := cont.MapIndex(key)
+			// Pointer-to-struct map values: mutate in place
+			if val.Kind() == reflect.Ptr {
+				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
+					if err := m.setDefaultsStruct(val.Elem()); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			// Value-typed struct map values: copy-modify-write-back
+			if val.Kind() == reflect.Struct {
+				copyVal := reflect.New(val.Type()).Elem()
+				copyVal.Set(val)
+				if err := m.setDefaultsStruct(copyVal); err != nil {
+					return err
+				}
+				cont.SetMapIndex(key, copyVal)
+			}
+		}
+	default:
+		// ignore for non-collections
+	}
+	return nil
+}
+
+var durationType = reflect.TypeOf(time.Duration(0))
 
 // setLiteralDefault sets a literal default value into fv if it is zero.
 // For pointer-to-scalar fields, it allocates and sets the pointed value.
@@ -521,8 +415,7 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 	}
 
 	// Handle special case: time.Duration typed fields
-	durType := reflect.TypeOf(time.Duration(0))
-	if target.Type() == durType {
+	if target.Type() == durationType {
 		d, err := time.ParseDuration(lit)
 		if err != nil {
 			return fmt.Errorf("parse duration: %w", err)

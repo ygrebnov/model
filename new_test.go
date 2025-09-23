@@ -55,27 +55,25 @@ type newValidateBad struct {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	t.Run("panic: nil object", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatalf("expected panic for nil obj")
-			}
-		}()
-		_, _ = New[*int](nil) // type parameter doesn't matter here
+	t.Run("error: nil object", func(t *testing.T) {
+		m, err := New[*int](nil)
+		if m != nil {
+			t.Fatalf("expected nil model")
+		}
+		if !errors.Is(err, ErrNilObject) {
+			t.Fatalf("expected ErrNilObject, got %v", err)
+		}
 	})
 
-	t.Run("panic: pointer to non-struct", func(t *testing.T) {
+	t.Run("error: pointer to non-struct", func(t *testing.T) {
 		x := 42
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatalf("expected panic for pointer to non-struct")
-			} else {
-				if !strings.Contains(fmt.Sprint(r), "pointer to struct") {
-					t.Fatalf("unexpected panic message: %v", r)
-				}
-			}
-		}()
-		_, _ = New(&x) // TObject = int -> *int (Elem != struct)
+		m, err := New(&x) // TObject = int -> *int (Elem != struct)
+		if m != nil {
+			t.Fatalf("expected nil model")
+		}
+		if !errors.Is(err, ErrNotStructPtr) {
+			t.Fatalf("expected ErrNotStructPtr, got %v", err)
+		}
 	})
 
 	t.Run("WithDefaults: success applies defaults", func(t *testing.T) {
@@ -198,29 +196,31 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("WithRule panic: empty name", func(t *testing.T) {
+	t.Run("WithRule error: empty name", func(t *testing.T) {
 		obj := struct{}{}
-		msg := mustPanic(t, func() {
-			_, _ = New(
-				&obj,
-				WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}), // should panic during option apply
-			)
-		})
-		if !strings.Contains(msg, "rule must have non-empty Name") {
-			t.Fatalf("unexpected panic message: %q", msg)
+		m, err := New(
+			&obj,
+			WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}),
+		)
+		if m != nil {
+			t.Fatalf("expected nil model on option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "non-empty Name") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
-	t.Run("WithRule panic: nil function", func(t *testing.T) {
+	t.Run("WithRule error: nil function", func(t *testing.T) {
 		obj := struct{}{}
-		msg := mustPanic(t, func() {
-			_, _ = New(
-				&obj,
-				WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}), // should panic during option apply
-			)
-		})
-		if !strings.Contains(msg, "non-nil Fn") {
-			t.Fatalf("unexpected panic message: %q", msg)
+		m, err := New(
+			&obj,
+			WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}),
+		)
+		if m != nil {
+			t.Fatalf("expected nil model on option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "non-nil Fn") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
@@ -253,6 +253,37 @@ func TestNew(t *testing.T) {
 		// And confirm dispatch reports ambiguity for multiple exact overloads.
 		if err := m.applyRule("r", reflect.ValueOf("x")); err == nil || !strings.Contains(err.Error(), "ambiguous") {
 			t.Fatalf("expected ambiguity error from applyRule, got: %v", err)
+		}
+	})
+
+	t.Run("options: short-circuit on first error; subsequent opts not applied", func(t *testing.T) {
+		type T struct{}
+		obj := T{}
+		called1 := false
+		called2 := false
+
+		failOpt := Option[T](func(m *Model[T]) error {
+			called1 = true
+			return fmt.Errorf("fail-first")
+		})
+		sideOpt := Option[T](func(m *Model[T]) error {
+			called2 = true
+			m.applyDefaultsOnNew = true // visible side-effect if applied
+			return nil
+		})
+
+		m, err := New(&obj, failOpt, sideOpt)
+		if m != nil {
+			t.Fatalf("expected nil model on first option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "fail-first") {
+			t.Fatalf("expected first option error, got %v", err)
+		}
+		if !called1 {
+			t.Fatalf("expected first option to be called")
+		}
+		if called2 {
+			t.Fatalf("expected second option NOT to be called after first error")
 		}
 	})
 }

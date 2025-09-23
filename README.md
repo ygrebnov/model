@@ -115,12 +115,33 @@ if err != nil {
 **Notes**
 
 - `New` returns `(*Model[T], error)`.
-- Misuse (nil object or pointer to a non-struct) **panics** to enforce invariants.
+- Misuse (nil object or pointer to a non-struct) returns an error. Use `errors.Is(err, model.ErrNilObject)` or `errors.Is(err, model.ErrNotStructPtr)` to detect these cases.
 - Errors from `WithDefaults` / `WithValidation` are **returned**.
+
+```go
+m, err := model.New(&user)
+if err != nil {
+    switch {
+    case errors.Is(err, model.ErrNilObject):
+        // handle nil object
+    case errors.Is(err, model.ErrNotStructPtr):
+        // handle pointer to non-struct
+    default:
+        var ve *model.ValidationError
+        if errors.As(err, &ve) {
+            // handle validation failures
+        } else {
+            // other errors (e.g., defaults parsing)
+        }
+    }
+}
+```
 
 ---
 
 ## Functional options
+
+All options run in the order provided; if an option returns an error, `New` stops applying further options and returns that error.
 
 ### `WithDefaults[T]()` — apply defaults during construction
 
@@ -142,6 +163,10 @@ m, err := model.New(&u,
 
 - Make sure the needed rules are registered before validation.
 - Returns a `*ValidationError` on failure.
+- Built-in rules are registered implicitly: for `string` (nonempty, oneof), `int` (positive, nonzero, oneof), `int64` (positive, nonzero, oneof), and `float64` (positive, nonzero, oneof). You no longer need to call `WithRules` for these built-ins.
+- Option order matters for overrides:
+  - To override a built-in rule (e.g., a custom `nonempty` for `string`), register your rule with `WithRule` BEFORE `WithValidation`.
+  - If you register AFTER `WithValidation`, there will be two exact overloads and validation will produce an "ambiguous" error for that rule/type.
 
 ### `WithRule[TObject, TField](Rule[TField])` — register a single rule
 
@@ -166,7 +191,7 @@ model.WithRule[User, stringer](model.Rule[stringer]{
 })(m)
 ```
 
-> **Dispatch rules**: exact type match wins; otherwise uses `AssignableTo` (e.g., implements an interface). Multiple exact matches cause an **ambiguous** error.
+> **Note**: WithValidation now registers built-in rules implicitly. `WithRule` and `WithRules` are still useful to add your own rules, to register rules for additional types or interfaces, or to intentionally override built-ins (place them BEFORE `WithValidation`).
 
 ### `WithRules[TObject, TField]([]Rule[TField])` — register many at once
 
@@ -260,6 +285,27 @@ type Input struct {
 
 ---
 
+## Tag syntax and parsing
+
+Tag values are simple, human-friendly strings parsed with a lightweight tokenizer:
+
+- Multiple rules are separated by commas at the top level, e.g. `validate:"nonempty,min(3),max(10)"`.
+- Parentheses group parameters: `rule(p1,p2,...)`. Commas inside parentheses do not split top-level tokens.
+- Whitespace around rule names and parameters is trimmed.
+- Empty tokens from leading/trailing commas are ignored: `",nonempty,"` -> only `nonempty`.
+- Parameters are split by commas without special handling for quotes or escaping. This means quoted strings and commas inside quotes are not supported.
+- Nested parentheses inside parameters are not parsed specially; they will be included in parameter tokens as-is.
+
+Examples:
+
+- `validate:"foo( a , b ),bar"` -> rules: `foo` with params `["a","b"]`, and `bar`.
+- `validate:"tokA((x,y)),tokB"` -> rules: `tokA` with params `["(x","y)"]`, and `tokB`.
+- `validate:",nonempty,"` -> rules: only `nonempty`.
+
+If you need richer parameter parsing (quotes, escaping, nested structures), consider encoding parameters (e.g., JSON) and decoding them inside your rule.
+
+---
+
 ## Built-in rules
 
 Quick starts for common checks:
@@ -347,6 +393,12 @@ if errors.As(err, &ve) {
 }
 ```
 
+### Deterministic ordering of available types in error messages
+
+When a field has a `validate:"ruleName"` but no matching overload is registered for its type, the error includes a list of available overload types, sorted alphabetically for deterministic output. This makes messages stable across runs and easier to test.
+
+Example fragment: `(available: int, string)`
+
 ---
 
 ## Behavior notes
@@ -355,6 +407,65 @@ if errors.As(err, &ve) {
 - Creating a new `Model` for the same object pointer can apply defaults again — safe because only zero values are filled.
 - `default:"dive"` auto-allocates `*struct` pointers when nil. For collections, use `default:"alloc"` to allocate.
 - `validateElem:"dive"` recurses into struct elements and records a **misuse** error for non-struct or nil pointer elements/values.
+
+---
+
+## Integration example: validation failure with sorted available types
+
+The following example triggers a validation error because we register `"r"` for `string` and `int`, but the field is `float64`. Note how the `(available: ...)` list is sorted.
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+
+    "github.com/ygrebnov/model"
+)
+
+type Ex struct {
+    // float64 has validate:"r" but we only register string and int overloads
+    X float64 `validate:"r"`
+}
+
+func main() {
+    ex := Ex{X: 3.14}
+
+    // Dummy rules that would pass if types matched; they won't be used here
+    rStr := model.Rule[string]{Name: "r", Fn: func(_ string, _ ...string) error { return nil }}
+    rInt := model.Rule[int]{Name: "r", Fn: func(_ int, _ ...string) error { return nil }}
+
+    m, err := model.New(&ex,
+        model.WithRule[Ex, string](rStr),
+        model.WithRule[Ex, int](rInt),
+        model.WithValidation[Ex](), // will fail: no overload for float64
+    )
+    if err != nil {
+        var ve *model.ValidationError
+        if errors.As(err, &ve) {
+            // Print the human-friendly aggregated error
+            fmt.Println(ve.Error())
+            // Or iterate fields:
+            for field, fes := range ve.ByField() {
+                for _, fe := range fes {
+                    fmt.Printf("%s: %s\n", field, fe.Error())
+                }
+            }
+        } else {
+            fmt.Println("error:", err)
+        }
+        _ = m
+        return
+    }
+}
+```
+
+Possible output (formatted for readability):
+
+```
+Ex.X: model: rule "r" has no overload for type float64 (available: int, string) (rule r)
+```
 
 ---
 
@@ -399,6 +510,18 @@ func main() {
     fmt.Printf("OK: %+v\n", cfg)
 }
 ```
+
+---
+
+## Examples
+
+A minimal examples program lives under `examples/`. You can run it to see each option in action (WithDefaults, WithValidation+WithRule producing a validation error, WithRule, WithRules):
+
+```bash
+go run ./examples
+```
+
+This prints short outputs demonstrating defaults being applied, validation errors raised during `New()` when `WithValidation` is enabled, and how single/batch rule registration behaves.
 
 ---
 

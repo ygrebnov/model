@@ -173,4 +173,22 @@ func TestModel_applyRule(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("available types list is sorted deterministically", func(t *testing.T) {
+		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		// Register in non-sorted order on purpose
+		WithRule[dummy, string](Rule[string]{Name: "sorted", Fn: ruleExactString})(m)
+		WithRule[dummy, int](Rule[int]{Name: "sorted", Fn: ruleInt})(m)
+		// Trigger no-overload with a float
+		err := m.applyRule("sorted", reflect.ValueOf(1.23))
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		msg := err.Error()
+		// Expect available list to be sorted as "int, string"
+		want := "(available: int, string)"
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected sorted available list %q in %q", want, msg)
+		}
+	})
 }
