@@ -167,6 +167,7 @@ m, err := model.New(&u,
 - Option order matters for overrides:
   - To override a built-in rule (e.g., a custom `nonempty` for `string`), register your rule with `WithRule` BEFORE `WithValidation`.
   - If you register AFTER `WithValidation`, there will be two exact overloads and validation will produce an "ambiguous" error for that rule/type.
+- Rule validation is consistent: invalid rules (empty name or nil function) return an error, whether registered explicitly via `WithRule/WithRules` or implicitly during `WithValidation`.
 
 ### `WithRule[TObject, TField](Rule[TField])` — register a single rule
 
