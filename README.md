@@ -260,6 +260,27 @@ type Input struct {
 
 ---
 
+## Tag syntax and parsing
+
+Tag values are simple, human-friendly strings parsed with a lightweight tokenizer:
+
+- Multiple rules are separated by commas at the top level, e.g. `validate:"nonempty,min(3),max(10)"`.
+- Parentheses group parameters: `rule(p1,p2,...)`. Commas inside parentheses do not split top-level tokens.
+- Whitespace around rule names and parameters is trimmed.
+- Empty tokens from leading/trailing commas are ignored: `",nonempty,"` -> only `nonempty`.
+- Parameters are split by commas without special handling for quotes or escaping. This means quoted strings and commas inside quotes are not supported.
+- Nested parentheses inside parameters are not parsed specially; they will be included in parameter tokens as-is.
+
+Examples:
+
+- `validate:"foo( a , b ),bar"` -> rules: `foo` with params `["a","b"]`, and `bar`.
+- `validate:"tokA((x,y)),tokB"` -> rules: `tokA` with params `["(x","y)"]`, and `tokB`.
+- `validate:",nonempty,"` -> rules: only `nonempty`.
+
+If you need richer parameter parsing (quotes, escaping, nested structures), consider encoding parameters (e.g., JSON) and decoding them inside your rule.
+
+---
+
 ## Built-in rules
 
 Quick starts for common checks:
