@@ -17,7 +17,9 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 
 	m := &Model[TObject]{obj: obj}
 	for _, opt := range opts {
-		opt(m)
+		if err := opt(m); err != nil {
+			return nil, err
+		}
 	}
 	// Optionally apply defaults once per model instance
 	if m.applyDefaultsOnNew {
@@ -40,28 +42,32 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 }
 
 // Option configures a Model at construction time.
-type Option[TObject any] func(*Model[TObject])
+type Option[TObject any] func(*Model[TObject]) error
 
 // WithRule registers a named validation rule into the model's validator registry.
 func WithRule[TObject any, TField any](rule Rule[TField]) Option[TObject] {
-	return func(m *Model[TObject]) {
+	return func(m *Model[TObject]) error {
 		if rule.Name == "" || rule.Fn == nil {
-			panic("model: WithRule: rule must have non-empty Name and non-nil Fn")
+			return fmt.Errorf("model: WithRule: rule must have non-empty Name and non-nil Fn")
 		}
 		if m.validators == nil {
 			m.validators = make(map[string][]typedAdapter)
 		}
 		ad := wrapRule(rule.Fn)
 		m.validators[rule.Name] = append(m.validators[rule.Name], ad)
+		return nil
 	}
 }
 
 // WithRules registers multiple named rules of the same field type at once.
 func WithRules[TObject any, TField any](rules []Rule[TField]) Option[TObject] {
-	return func(m *Model[TObject]) {
+	return func(m *Model[TObject]) error {
 		for _, r := range rules {
-			WithRule[TObject, TField](r)(m)
+			if err := WithRule[TObject, TField](r)(m); err != nil {
+				return err
+			}
 		}
+		return nil
 	}
 }
 
@@ -85,13 +91,13 @@ func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) {
 
 // WithDefaults enables applying defaults during New(). If not specified, defaults are NOT applied automatically.
 func WithDefaults[TObject any]() Option[TObject] {
-	return func(m *Model[TObject]) { m.applyDefaultsOnNew = true }
+	return func(m *Model[TObject]) error { m.applyDefaultsOnNew = true; return nil }
 }
 
 // WithValidation enables running Validate() during New(). If validation fails, New() returns an error.
 // Additionally, builtin rules are implicitly registered (if not already provided) to improve UX.
 func WithValidation[TObject any]() Option[TObject] {
-	return func(m *Model[TObject]) {
+	return func(m *Model[TObject]) error {
 		m.validateOnNew = true
 		// Implicitly register builtin rules, but do not override existing exact overloads.
 		for _, r := range BuiltinStringRules() {
@@ -106,5 +112,6 @@ func WithValidation[TObject any]() Option[TObject] {
 		for _, r := range BuiltinFloat64Rules() {
 			ensureRule[TObject, float64](m, r)
 		}
+		return nil
 	}
 }

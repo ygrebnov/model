@@ -196,29 +196,31 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("WithRule panic: empty name", func(t *testing.T) {
+	t.Run("WithRule error: empty name", func(t *testing.T) {
 		obj := struct{}{}
-		msg := mustPanic(t, func() {
-			_, _ = New(
-				&obj,
-				WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}), // should panic during option apply
-			)
-		})
-		if !strings.Contains(msg, "rule must have non-empty Name") {
-			t.Fatalf("unexpected panic message: %q", msg)
+		m, err := New(
+			&obj,
+			WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}),
+		)
+		if m != nil {
+			t.Fatalf("expected nil model on option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "non-empty Name") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
-	t.Run("WithRule panic: nil function", func(t *testing.T) {
+	t.Run("WithRule error: nil function", func(t *testing.T) {
 		obj := struct{}{}
-		msg := mustPanic(t, func() {
-			_, _ = New(
-				&obj,
-				WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}), // should panic during option apply
-			)
-		})
-		if !strings.Contains(msg, "non-nil Fn") {
-			t.Fatalf("unexpected panic message: %q", msg)
+		m, err := New(
+			&obj,
+			WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}),
+		)
+		if m != nil {
+			t.Fatalf("expected nil model on option error")
+		}
+		if err == nil || !strings.Contains(err.Error(), "non-nil Fn") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
