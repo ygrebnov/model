@@ -10,11 +10,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 	if obj == nil {
 		panic("model: obj is nil; want pointer to struct")
 	}
-	rt := reflect.TypeOf(obj)
-	if rt.Kind() != reflect.Ptr {
-		panic(fmt.Errorf("model: obj must be a pointer; got %s", rt.Kind()))
-	}
-	elem := rt.Elem()
+	elem := reflect.TypeOf(obj).Elem()
 	if elem.Kind() != reflect.Struct {
 		panic(fmt.Errorf("model: obj must be a pointer to struct; got pointer to %s", elem.Kind()))
 	}
