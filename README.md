@@ -142,6 +142,10 @@ m, err := model.New(&u,
 
 - Make sure the needed rules are registered before validation.
 - Returns a `*ValidationError` on failure.
+- Built-in rules are registered implicitly: for `string` (nonempty, oneof), `int` (positive, nonzero, oneof), `int64` (positive, nonzero, oneof), and `float64` (positive, nonzero, oneof). You no longer need to call `WithRules` for these built-ins.
+- Option order matters for overrides:
+  - To override a built-in rule (e.g., a custom `nonempty` for `string`), register your rule with `WithRule` BEFORE `WithValidation`.
+  - If you register AFTER `WithValidation`, there will be two exact overloads and validation will produce an "ambiguous" error for that rule/type.
 
 ### `WithRule[TObject, TField](Rule[TField])` — register a single rule
 
@@ -166,7 +170,7 @@ model.WithRule[User, stringer](model.Rule[stringer]{
 })(m)
 ```
 
-> **Dispatch rules**: exact type match wins; otherwise uses `AssignableTo` (e.g., implements an interface). Multiple exact matches cause an **ambiguous** error.
+> **Note**: WithValidation now registers built-in rules implicitly. `WithRule` and `WithRules` are still useful to add your own rules, to register rules for additional types or interfaces, or to intentionally override built-ins (place them BEFORE `WithValidation`).
 
 ### `WithRules[TObject, TField]([]Rule[TField])` — register many at once
 

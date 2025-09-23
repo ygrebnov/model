@@ -65,12 +65,46 @@ func WithRules[TObject any, TField any](rules []Rule[TField]) Option[TObject] {
 	}
 }
 
+// ensureRule adds a rule if an exact overload for the same rule name and field type is not already present.
+func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) {
+	if r.Name == "" || r.Fn == nil {
+		return
+	}
+	if m.validators == nil {
+		m.validators = make(map[string][]typedAdapter)
+	}
+	typ := reflect.TypeOf((*TField)(nil)).Elem()
+	for _, ad := range m.validators[r.Name] {
+		if ad.fieldType != nil && ad.fieldType == typ {
+			return // exact overload already exists; keep user's version
+		}
+	}
+	ad := wrapRule(r.Fn)
+	m.validators[r.Name] = append(m.validators[r.Name], ad)
+}
+
 // WithDefaults enables applying defaults during New(). If not specified, defaults are NOT applied automatically.
 func WithDefaults[TObject any]() Option[TObject] {
 	return func(m *Model[TObject]) { m.applyDefaultsOnNew = true }
 }
 
 // WithValidation enables running Validate() during New(). If validation fails, New() returns an error.
+// Additionally, builtin rules are implicitly registered (if not already provided) to improve UX.
 func WithValidation[TObject any]() Option[TObject] {
-	return func(m *Model[TObject]) { m.validateOnNew = true }
+	return func(m *Model[TObject]) {
+		m.validateOnNew = true
+		// Implicitly register builtin rules, but do not override existing exact overloads.
+		for _, r := range BuiltinStringRules() {
+			ensureRule[TObject, string](m, r)
+		}
+		for _, r := range BuiltinIntRules() {
+			ensureRule[TObject, int](m, r)
+		}
+		for _, r := range BuiltinInt64Rules() {
+			ensureRule[TObject, int64](m, r)
+		}
+		for _, r := range BuiltinFloat64Rules() {
+			ensureRule[TObject, float64](m, r)
+		}
+	}
 }
