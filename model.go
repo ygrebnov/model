@@ -100,6 +100,23 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 	}
 }
 
+// rootStructValue validates that m.obj is a non-nil pointer to a struct and returns the struct value.
+// The phase string is used in error messages (e.g., "Validate", "SetDefaults").
+func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
+	if m.obj == nil {
+		return reflect.Value{}, fmt.Errorf("model: %s: nil object", phase)
+	}
+	rv := reflect.ValueOf(m.obj)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return reflect.Value{}, fmt.Errorf("model: %s: object must be a non-nil pointer to struct; got %s", phase, rv.Kind())
+	}
+	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return reflect.Value{}, fmt.Errorf("model: %s: object must point to a struct; got %s", phase, rv.Kind())
+	}
+	return rv, nil
+}
+
 // Validate runs the registered validation rules against the model's bound object.
 // It delegates to the internal validate method which performs the actual work.
 func (m *Model[TObject]) Validate() error { return m.validate() }
@@ -108,16 +125,9 @@ func (m *Model[TObject]) Validate() error { return m.validate() }
 // declared in `validate:"..."` tags. It supports rule parameters via the syntax
 // "rule" or "rule(p1,p2)" and multiple rules separated by commas.
 func (m *Model[TObject]) validate() error {
-	if m.obj == nil {
-		return fmt.Errorf("model: Validate: nil object")
-	}
-	rv := reflect.ValueOf(m.obj)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("model: Validate: object must be a non-nil pointer to struct; got %s", rv.Kind())
-	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
-		return fmt.Errorf("model: Validate: object must point to a struct; got %s", rv.Kind())
+	rv, err := m.rootStructValue("Validate")
+	if err != nil {
+		return err
 	}
 	ve := &ValidationError{}
 	m.validateStruct(rv, "", ve)
@@ -243,16 +253,9 @@ func (m *Model[TObject]) SetDefaults() error {
 //   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
 //   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
 func (m *Model[TObject]) applyDefaults() error {
-	if m.obj == nil {
-		return fmt.Errorf("model: SetDefaults: nil object")
-	}
-	rv := reflect.ValueOf(m.obj)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("model: SetDefaults: object must be a non-nil pointer to struct; got %s", rv.Kind())
-	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
-		return fmt.Errorf("model: SetDefaults: object must point to a struct; got %s", rv.Kind())
+	rv, err := m.rootStructValue("SetDefaults")
+	if err != nil {
+		return err
 	}
 	return m.setDefaultsStruct(rv)
 }
