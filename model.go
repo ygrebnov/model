@@ -134,25 +134,19 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		field := typ.Field(i)
-		// Skip unexported fields
-		if field.PkgPath != "" {
+		if field.PkgPath != "" { // Skip unexported fields
 			continue
 		}
 		fv := rv.Field(i)
 
-		// Build field path for messages
 		fpath := field.Name
 		if path != "" {
 			fpath = path + "." + field.Name
 		}
 
 		// Recurse into pointers to structs
-		if fv.Kind() == reflect.Ptr {
-			if fv.IsNil() {
-				// nothing to validate
-			} else if fv.Elem().Kind() == reflect.Struct {
-				m.validateStruct(fv.Elem(), fpath, ve)
-			}
+		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
+			m.validateStruct(fv.Elem(), fpath, ve)
 		}
 
 		// Recurse into embedded/inline structs
@@ -160,200 +154,72 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 			m.validateStruct(fv, fpath, ve)
 		}
 
-		// Read validate tag (process if present, but do not skip validateElem when absent)
-		raw := field.Tag.Get("validate")
-		if raw != "" && raw != "-" {
-			// Parse rules with optional params: "rule" or "rule(p1,p2)".
-			// Multiple rules are comma-separated at the top level (commas inside parens are ignored).
-			var tokens []string
-			{
-				depth := 0
-				start := 0
-				for i, r := range raw {
-					switch r {
-					case '(':
-						depth++
-					case ')':
-						if depth > 0 {
-							depth--
-						}
-					case ',':
-						if depth == 0 {
-							tokens = append(tokens, strings.TrimSpace(raw[start:i]))
-							start = i + 1
-						}
-					}
-				}
-				// last token
-				if start <= len(raw) {
-					tokens = append(tokens, strings.TrimSpace(raw[start:]))
-				}
-			}
-
-			for _, tok := range tokens {
-				if tok == "" || tok == "-" {
-					continue
-				}
-				name := tok
-				var params []string
-				if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
-					name = strings.TrimSpace(tok[:idx])
-					inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
-					if inner != "" {
-						// split params by comma and trim spaces
-						parts := strings.Split(inner, ",")
-						params = make([]string, 0, len(parts))
-						for _, p := range parts {
-							p = strings.TrimSpace(p)
-							if p != "" {
-								params = append(params, p)
-							}
-						}
-					}
-				}
-				if name == "" {
-					continue
-				}
-				if err := m.applyRule(name, fv, params...); err != nil {
-					ve.Add(FieldError{Path: fpath, Rule: name, Params: append([]string(nil), params...), Err: err})
+		// Process `validate` tag
+		if rawTag := field.Tag.Get("validate"); rawTag != "" && rawTag != "-" {
+			rules := parseRules(rawTag)
+			for _, rule := range rules {
+				if err := m.applyRule(rule.name, fv, rule.params...); err != nil {
+					ve.Add(FieldError{Path: fpath, Rule: rule.name, Params: rule.params, Err: err})
 				}
 			}
 		}
 
-		// --- Element validation for slices/arrays/maps via `validateElem` ---
-		// This tag applies the listed rules to each element of a slice/array, or to each value of a map.
+		// Process `validateElem` tag for slices, arrays, and maps
 		if elemRaw := field.Tag.Get("validateElem"); elemRaw != "" && elemRaw != "-" {
-			// Resolve the container value: deref pointer if needed
-			cont := fv
-			if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-				cont = cont.Elem()
-			}
+			m.validateElements(fv, fpath, elemRaw, ve)
+		}
+	}
+}
 
-			// Tokenize elemRaw the same way as for `validate`
-			parseRules := func(spec string) []struct {
-				name   string
-				params []string
-			} {
-				var toks []string
-				{
-					depth := 0
-					start := 0
-					for i, r := range spec {
-						switch r {
-						case '(':
-							depth++
-						case ')':
-							if depth > 0 {
-								depth--
-							}
-						case ',':
-							if depth == 0 {
-								toks = append(toks, strings.TrimSpace(spec[start:i]))
-								start = i + 1
-							}
-						}
-					}
-					if start <= len(spec) {
-						toks = append(toks, strings.TrimSpace(spec[start:]))
-					}
-				}
-				out := make([]struct {
-					name   string
-					params []string
-				}, 0, len(toks))
-				for _, tok := range toks {
-					if tok == "" || tok == "-" {
-						continue
-					}
-					nm := tok
-					var ps []string
-					if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
-						nm = strings.TrimSpace(tok[:idx])
-						inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
-						if inner != "" {
-							parts := strings.Split(inner, ",")
-							for _, p := range parts {
-								p = strings.TrimSpace(p)
-								if p != "" {
-									ps = append(ps, p)
-								}
-							}
-						}
-					}
-					if nm != "" {
-						out = append(out, struct {
-							name   string
-							params []string
-						}{nm, ps})
-					}
-				}
-				return out
-			}
+// validateElements applies validation rules to elements of a slice, array, or map.
+func (m *Model[TObject]) validateElements(fv reflect.Value, fpath, elemRaw string, ve *ValidationError) {
+	cont := fv
+	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
+		cont = cont.Elem()
+	}
 
-			rules := parseRules(elemRaw)
+	rules := parseRules(elemRaw)
+	if len(rules) == 0 {
+		return
+	}
 
-			// Special case: validateElem:"dive" means recurse into element structs
-			onlyDive := len(rules) == 1 && rules[0].name == "dive" && len(rules[0].params) == 0
+	// Special case: validateElem:"dive" means recurse into element structs
+	isDiveOnly := len(rules) == 1 && rules[0].name == "dive" && len(rules[0].params) == 0
 
-			switch cont.Kind() {
-			case reflect.Slice, reflect.Array:
-				l := cont.Len()
-				for i := 0; i < l; i++ {
-					ev := cont.Index(i)
-					pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
+	switch cont.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < cont.Len(); i++ {
+			elem := cont.Index(i)
+			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
+			m.validateSingleElement(elem, pathIdx, rules, isDiveOnly, ve)
+		}
+	case reflect.Map:
+		for _, key := range cont.MapKeys() {
+			elem := cont.MapIndex(key)
+			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
+			m.validateSingleElement(elem, pathKey, rules, isDiveOnly, ve)
+		}
+	}
+}
 
-					if onlyDive {
-						// Deref pointer elements
-						dv := ev
-						if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-							dv = dv.Elem()
-						}
-						if dv.Kind() == reflect.Struct {
-							m.validateStruct(dv, pathIdx, ve)
-							continue
-						}
-						// Not a struct: record an error for misuse of dive
-						ve.Add(FieldError{Path: pathIdx, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
-						continue
-					}
+// validateSingleElement handles validation for a single item from a collection.
+func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, rules []parsedRule, isDiveOnly bool, ve *ValidationError) {
+	if isDiveOnly {
+		dv := elem
+		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
+			dv = dv.Elem()
+		}
+		if dv.Kind() == reflect.Struct {
+			m.validateStruct(dv, path, ve)
+		} else {
+			ve.Add(FieldError{Path: path, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
+		}
+		return
+	}
 
-					// Apply each listed rule to the element value
-					for _, r := range rules {
-						if err := m.applyRule(r.name, ev, r.params...); err != nil {
-							ve.Add(FieldError{Path: pathIdx, Rule: r.name, Params: append([]string(nil), r.params...), Err: err})
-						}
-					}
-				}
-
-			case reflect.Map:
-				// Validate map VALUES (not keys) with validateElem
-				for _, key := range cont.MapKeys() {
-					val := cont.MapIndex(key)
-					pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-
-					if onlyDive {
-						dv := val
-						if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-							dv = dv.Elem()
-						}
-						if dv.Kind() == reflect.Struct {
-							m.validateStruct(dv, pathKey, ve)
-							continue
-						}
-						ve.Add(FieldError{Path: pathKey, Rule: "dive", Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
-						continue
-					}
-
-					for _, r := range rules {
-						if err := m.applyRule(r.name, val, r.params...); err != nil {
-							ve.Add(FieldError{Path: pathKey, Rule: r.name, Params: append([]string(nil), r.params...), Err: err})
-						}
-					}
-				}
-
-			default:
-				// Non-container kinds: ignore validateElem silently
-			}
+	for _, r := range rules {
+		if err := m.applyRule(r.name, elem, r.params...); err != nil {
+			ve.Add(FieldError{Path: path, Rule: r.name, Params: r.params, Err: err})
 		}
 	}
 }
