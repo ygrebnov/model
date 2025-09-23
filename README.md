@@ -141,6 +141,8 @@ if err != nil {
 
 ## Functional options
 
+All options run in the order provided; if an option returns an error, `New` stops applying further options and returns that error.
+
 ### `WithDefaults[T]()` — apply defaults during construction
 
 ```go
@@ -508,6 +510,18 @@ func main() {
     fmt.Printf("OK: %+v\n", cfg)
 }
 ```
+
+---
+
+## Examples
+
+A minimal examples program lives under `examples/`. You can run it to see each option in action (WithDefaults, WithValidation+WithRule producing a validation error, WithRule, WithRules):
+
+```bash
+go run ./examples
+```
+
+This prints short outputs demonstrating defaults being applied, validation errors raised during `New()` when `WithValidation` is enabled, and how single/batch rule registration behaves.
 
 ---
 
