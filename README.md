@@ -368,6 +368,12 @@ if errors.As(err, &ve) {
 }
 ```
 
+### Deterministic ordering of available types in error messages
+
+When a field has a `validate:"ruleName"` but no matching overload is registered for its type, the error includes a list of available overload types, sorted alphabetically for deterministic output. This makes messages stable across runs and easier to test.
+
+Example fragment: `(available: int, string)`
+
 ---
 
 ## Behavior notes
@@ -376,6 +382,65 @@ if errors.As(err, &ve) {
 - Creating a new `Model` for the same object pointer can apply defaults again — safe because only zero values are filled.
 - `default:"dive"` auto-allocates `*struct` pointers when nil. For collections, use `default:"alloc"` to allocate.
 - `validateElem:"dive"` recurses into struct elements and records a **misuse** error for non-struct or nil pointer elements/values.
+
+---
+
+## Integration example: validation failure with sorted available types
+
+The following example triggers a validation error because we register `"r"` for `string` and `int`, but the field is `float64`. Note how the `(available: ...)` list is sorted.
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+
+    "github.com/ygrebnov/model"
+)
+
+type Ex struct {
+    // float64 has validate:"r" but we only register string and int overloads
+    X float64 `validate:"r"`
+}
+
+func main() {
+    ex := Ex{X: 3.14}
+
+    // Dummy rules that would pass if types matched; they won't be used here
+    rStr := model.Rule[string]{Name: "r", Fn: func(_ string, _ ...string) error { return nil }}
+    rInt := model.Rule[int]{Name: "r", Fn: func(_ int, _ ...string) error { return nil }}
+
+    m, err := model.New(&ex,
+        model.WithRule[Ex, string](rStr),
+        model.WithRule[Ex, int](rInt),
+        model.WithValidation[Ex](), // will fail: no overload for float64
+    )
+    if err != nil {
+        var ve *model.ValidationError
+        if errors.As(err, &ve) {
+            // Print the human-friendly aggregated error
+            fmt.Println(ve.Error())
+            // Or iterate fields:
+            for field, fes := range ve.ByField() {
+                for _, fe := range fes {
+                    fmt.Printf("%s: %s\n", field, fe.Error())
+                }
+            }
+        } else {
+            fmt.Println("error:", err)
+        }
+        _ = m
+        return
+    }
+}
+```
+
+Possible output (formatted for readability):
+
+```
+Ex.X: model: rule "r" has no overload for type float64 (available: int, string) (rule r)
+```
 
 ---
 
