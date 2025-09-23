@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,6 +92,7 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 				names = append(names, ad.fieldType.String())
 			}
 		}
+		sort.Strings(names)
 		return fmt.Errorf(
 			"model: rule %q has no overload for type %s (available: %s)",
 			name,

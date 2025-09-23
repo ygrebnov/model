@@ -70,7 +70,7 @@ func WithDefaults[TObject any]() Option[TObject] {
 	return func(m *Model[TObject]) { m.applyDefaultsOnNew = true }
 }
 
-// WithValidation enables running Validate() during New(). If validation fails, New() panics.
+// WithValidation enables running Validate() during New(). If validation fails, New() returns an error.
 func WithValidation[TObject any]() Option[TObject] {
 	return func(m *Model[TObject]) { m.validateOnNew = true }
 }

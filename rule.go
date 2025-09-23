@@ -57,8 +57,13 @@ type parsedRule struct {
 	params []string
 }
 
-// parseRules takes a raw tag string (e.g., "required,min(5),max(10)") and splits it
-// into a slice of parsedRule structs. It correctly handles parentheses and quoted parameters.
+// parseRules tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
+// Behavior:
+//   - Splits on top-level commas only (commas inside parentheses do not split tokens).
+//   - Trims whitespace around tokens and parameters.
+//   - Empty tokens (from leading/trailing commas) are skipped.
+//   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
+//   - Does not support quotes or escaping inside parameters.
 func parseRules(tag string) []parsedRule {
 	var rules []parsedRule
 	if tag == "" || tag == "-" {
