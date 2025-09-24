@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/rule"
 )
 
 // Example 1: WithDefaults — apply defaults during construction
@@ -32,7 +33,7 @@ func exampleWithValidationAndWithRule_error() {
 		D time.Duration `validate:"nonzeroDur"`
 	}
 
-	rule := model.Rule[time.Duration]{
+	r := rule.Rule[time.Duration]{
 		Name: "nonzeroDur",
 		Fn: func(d time.Duration, _ ...string) error {
 			if d == 0 {
@@ -44,8 +45,8 @@ func exampleWithValidationAndWithRule_error() {
 
 	in := Input{} // D is zero -> should fail validation
 	m, err := model.New(&in,
-		model.WithRule[Input, time.Duration](rule), // register custom rule
-		model.WithValidation[Input](),              // run validation during New()
+		model.WithRule[Input, time.Duration](r), // register custom rule
+		model.WithValidation[Input](),           // run validation during New()
 	)
 	if err != nil {
 		var ve *model.ValidationError
@@ -68,7 +69,7 @@ func exampleWithRule() {
 	}
 	// You can rely on built-in string rules implicitly via WithValidation, but
 	// here we demonstrate a custom single-rule registration for clarity.
-	rule := model.Rule[string]{
+	r := rule.Rule[string]{
 		Name: "nonempty",
 		Fn: func(s string, _ ...string) error {
 			if s == "" {
@@ -78,7 +79,7 @@ func exampleWithRule() {
 		},
 	}
 	d := Doc{}
-	m, err := model.New(&d, model.WithRule[Doc, string](rule))
+	m, err := model.New(&d, model.WithRule[Doc, string](r))
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -95,7 +96,7 @@ func exampleWithRules() {
 	type Rec struct {
 		Age int `validate:"positive,nonzero"`
 	}
-	rules := []model.Rule[int]{
+	rules := []rule.Rule[int]{
 		{Name: "positive", Fn: func(n int, _ ...string) error {
 			if n <= 0 {
 				return fmt.Errorf("must be > 0")

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // Built-in rule sets
 
-func BuiltinStringRules() []Rule[string] {
-	return []Rule[string]{
+func BuiltinStringRules() []rule.Rule[string] {
+	return []rule.Rule[string]{
 		{Name: "nonempty", Fn: func(s string, _ ...string) error {
 			if s == "" {
 				return fmt.Errorf("must not be empty")
@@ -30,8 +32,8 @@ func BuiltinStringRules() []Rule[string] {
 	}
 }
 
-func BuiltinIntRules() []Rule[int] {
-	return []Rule[int]{
+func BuiltinIntRules() []rule.Rule[int] {
+	return []rule.Rule[int]{
 		{Name: "positive", Fn: func(n int, _ ...string) error {
 			if n <= 0 {
 				return fmt.Errorf("must be > 0")
@@ -62,8 +64,8 @@ func BuiltinIntRules() []Rule[int] {
 	}
 }
 
-func BuiltinInt64Rules() []Rule[int64] {
-	return []Rule[int64]{
+func BuiltinInt64Rules() []rule.Rule[int64] {
+	return []rule.Rule[int64]{
 		{Name: "positive", Fn: func(n int64, _ ...string) error {
 			if n <= 0 {
 				return fmt.Errorf("must be > 0")
@@ -94,8 +96,8 @@ func BuiltinInt64Rules() []Rule[int64] {
 	}
 }
 
-func BuiltinFloat64Rules() []Rule[float64] {
-	return []Rule[float64]{
+func BuiltinFloat64Rules() []rule.Rule[float64] {
+	return []rule.Rule[float64]{
 		{Name: "positive", Fn: func(n float64, _ ...string) error {
 			if !(n > 0) {
 				return fmt.Errorf("must be > 0")

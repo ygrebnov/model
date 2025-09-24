@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 type bv struct {
@@ -34,7 +36,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customNonEmpty := Rule[string]{
+	customNonEmpty := rule.Rule[string]{
 		Name: "nonempty",
 		Fn: func(s string, _ ...string) error {
 			if s == "" {
@@ -62,7 +64,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 
 func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
 	obj := bv{}
-	customNonEmpty := Rule[string]{
+	customNonEmpty := rule.Rule[string]{
 		Name: "nonempty",
 		Fn: func(s string, _ ...string) error {
 			if s == "" {

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // ----- Test types -----
@@ -30,7 +32,7 @@ type vOuter struct {
 
 	// Simple rules
 	Name string `validate:"nonempty"`
-	// Params test (commas inside parens; also followed by another rule)
+	// ParamNames test (commas inside parens; also followed by another rule)
 	Note string `validate:"withParams(a, b, c),nonempty"`
 
 	// Unknown rule
@@ -107,24 +109,24 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{validators: make(map[string][]typedAdapter)}
+	m := &Model[vOuter]{validators: make(map[string][]ruleAdapter), rulesCache: rule.NewCache()}
 
 	// Register string rules
-	WithRule[vOuter, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](Rule[string]{Name: "withParams", Fn: ruleWithParams})(m)
+	WithRule[vOuter, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
+	WithRule[vOuter, string](rule.Rule[string]{Name: "withParams", Fn: ruleWithParams})(m)
 
 	// Register time.Duration rule
-	WithRule[vOuter, time.Duration](Rule[time.Duration]{Name: "nonzeroDuration", Fn: ruleNonzeroDuration})(m)
+	WithRule[vOuter, time.Duration](rule.Rule[time.Duration]{Name: "nonzeroDuration", Fn: ruleNonzeroDuration})(m)
 
 	// Register interface-based rule (AssignableTo path)
-	WithRule[vOuter, fmt.Stringer](Rule[fmt.Stringer]{Name: "stringerBad", Fn: ruleStringerBad})(m)
+	WithRule[vOuter, fmt.Stringer](rule.Rule[fmt.Stringer]{Name: "stringerBad", Fn: ruleStringerBad})(m)
 
 	// Register ambiguous rule (same name & type twice) → exact duplicates trigger ambiguity
-	WithRule[vOuter, string](Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
+	WithRule[vOuter, string](rule.Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
+	WithRule[vOuter, string](rule.Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
 
 	// Also a rule for int to demonstrate element rules on int slices if needed
-	WithRule[vOuter, int](Rule[int]{Name: "intErr", Fn: ruleIntAlwaysErr})(m)
+	WithRule[vOuter, int](rule.Rule[int]{Name: "intErr", Fn: ruleIntAlwaysErr})(m)
 
 	t.Run("recursion, params parsing, unknown rule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
 		obj := vOuter{
@@ -213,7 +215,7 @@ func TestModel_validateStruct(t *testing.T) {
 		if _, ok := by["Root.Name"]; !ok {
 			t.Errorf("expected nonempty error at Root.Name")
 		}
-		// Params parsing (withParams and nonempty applied)
+		// ParamNames parsing (withParams and nonempty applied)
 		paramsMsgs := by["Root.Note"]
 		if len(paramsMsgs) == 0 {
 			t.Errorf("expected errors for Root.Note")

@@ -6,32 +6,40 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 type Model[TObject any] struct {
 	mu                 sync.RWMutex
 	once               sync.Once
 	obj                *TObject
-	validators         map[string][]typedAdapter // per-model registry: rule name -> overloads by type
+	rulesCache         rulesCache
+	validators         map[string][]ruleAdapter // per-model registry: rule name -> overloads by type
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 }
 
+type rulesCache interface {
+	Get(parent reflect.Type, fieldIndex int, tagName string) ([]rule.Metadata, bool)
+	Put(parent reflect.Type, fieldIndex int, tagName string, parsed []rule.Metadata)
+}
+
 // registerRuleAdapter registers/overwrites a rule overload at runtime (internal use).
-func (m *Model[TObject]) registerRuleAdapter(name string, ad typedAdapter) {
+func (m *Model[TObject]) registerRuleAdapter(name string, ad ruleAdapter) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if name == "" || ad.fn == nil || ad.fieldType == nil {
 		return
 	}
 	if m.validators == nil {
-		m.validators = make(map[string][]typedAdapter)
+		m.validators = make(map[string][]ruleAdapter)
 	}
 	m.validators[name] = append(m.validators[name], ad)
 }
 
 // getRuleAdapters retrieves all overloads for a rule name.
-func (m *Model[TObject]) getRuleAdapters(name string) []typedAdapter {
+func (m *Model[TObject]) getRuleAdapters(name string) []ruleAdapter {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.validators[name]
@@ -54,8 +62,8 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 
 	typ := v.Type()
 	var (
-		exacts  []typedAdapter
-		assigns []typedAdapter
+		exacts  []ruleAdapter
+		assigns []ruleAdapter
 	)
 	for _, ad := range adapters {
 		if ad.fieldType == nil || ad.fn == nil {

@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // Validate runs the registered validation rules against the model's bound object.
@@ -54,17 +56,28 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 
 		// Process `validate` tag
 		if rawTag := field.Tag.Get(tagValidate); rawTag != "" && rawTag != "-" {
-			rules := parseRules(rawTag)
-			for _, rule := range rules {
-				if err := m.applyRule(rule.name, fv, rule.params...); err != nil {
-					ve.Add(FieldError{Path: fpath, Rule: rule.name, Params: rule.params, Err: err})
+			rules, exists := m.rulesCache.Get(typ, i, tagValidate)
+			if !exists {
+				rules = rule.ParseTag(rawTag)
+				m.rulesCache.Put(typ, i, tagValidate, rules)
+			}
+
+			for _, r := range rules {
+				if err := m.applyRule(r.Name, fv, r.ParamNames...); err != nil {
+					ve.Add(FieldError{Path: fpath, Rule: r.Name, Params: r.ParamNames, Err: err})
 				}
 			}
 		}
 
 		// Process `validateElem` tag for slices, arrays, and maps
 		if elemRaw := field.Tag.Get(tagValidateElem); elemRaw != "" && elemRaw != "-" {
-			m.validateElements(fv, fpath, elemRaw, ve)
+			elemRules, exists := m.rulesCache.Get(typ, i, tagValidateElem)
+			if !exists {
+				elemRules = rule.ParseTag(elemRaw)
+				m.rulesCache.Put(typ, i, tagValidateElem, elemRules)
+			}
+
+			m.validateElementsWithRules(fv, fpath, elemRules, ve)
 		}
 	}
 }
@@ -76,13 +89,42 @@ func (m *Model[TObject]) validateElements(fv reflect.Value, fpath, elemRaw strin
 		cont = cont.Elem()
 	}
 
-	rules := parseRules(elemRaw)
+	rules := rule.ParseTag(elemRaw)
 	if len(rules) == 0 {
 		return
 	}
 
 	// Special case: validateElem:"dive" means recurse into element structs
-	isDiveOnly := len(rules) == 1 && rules[0].name == tagDive && len(rules[0].params) == 0
+	isDiveOnly := len(rules) == 1 && rules[0].Name == tagDive && len(rules[0].ParamNames) == 0
+
+	switch cont.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < cont.Len(); i++ {
+			elem := cont.Index(i)
+			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
+			m.validateSingleElement(elem, pathIdx, rules, isDiveOnly, ve)
+		}
+	case reflect.Map:
+		for _, key := range cont.MapKeys() {
+			elem := cont.MapIndex(key)
+			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
+			m.validateSingleElement(elem, pathKey, rules, isDiveOnly, ve)
+		}
+	}
+}
+
+// validateElementsWithRules applies validation rules to elements of a slice, array, or map
+// using pre-parsed rules (e.g., retrieved from the cache).
+func (m *Model[TObject]) validateElementsWithRules(fv reflect.Value, fpath string, rules []rule.Metadata, ve *ValidationError) {
+	cont := fv
+	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
+		cont = cont.Elem()
+	}
+	if len(rules) == 0 {
+		return
+	}
+	// Special case: validateElem:"dive" means recurse into element structs
+	isDiveOnly := len(rules) == 1 && rules[0].Name == tagDive && len(rules[0].ParamNames) == 0
 
 	switch cont.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -101,7 +143,7 @@ func (m *Model[TObject]) validateElements(fv reflect.Value, fpath, elemRaw strin
 }
 
 // validateSingleElement handles validation for a single item from a collection.
-func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, rules []parsedRule, isDiveOnly bool, ve *ValidationError) {
+func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, rules []rule.Metadata, isDiveOnly bool, ve *ValidationError) {
 	if isDiveOnly {
 		dv := elem
 		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
@@ -116,8 +158,8 @@ func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, 
 	}
 
 	for _, r := range rules {
-		if err := m.applyRule(r.name, elem, r.params...); err != nil {
-			ve.Add(FieldError{Path: path, Rule: r.name, Params: r.params, Err: err})
+		if err := m.applyRule(r.Name, elem, r.ParamNames...); err != nil {
+			ve.Add(FieldError{Path: path, Rule: r.Name, Params: r.ParamNames, Err: err})
 		}
 	}
 }

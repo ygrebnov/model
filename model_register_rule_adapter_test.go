@@ -14,7 +14,7 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 	t.Parallel()
 
 	strType := reflect.TypeOf("")
-	intType := reflect.TypeOf(int(0))
+	intType := reflect.TypeOf(0)
 
 	tests := []struct {
 		name          string
@@ -22,7 +22,7 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 		existingKey   string
 		existingCount int
 		regName       string
-		ad            typedAdapter
+		ad            ruleAdapter
 		wantChanged   bool
 		wantKey       string
 		wantLen       int
@@ -32,28 +32,28 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 			name:        "empty name -> no change",
 			startMapNil: true,
 			regName:     "",
-			ad:          typedAdapter{fieldType: strType, fn: noopRuleFn},
+			ad:          ruleAdapter{fieldType: strType, fn: noopRuleFn},
 			wantChanged: false,
 		},
 		{
 			name:        "nil fn -> no change",
 			startMapNil: true,
 			regName:     "rule",
-			ad:          typedAdapter{fieldType: strType, fn: nil},
+			ad:          ruleAdapter{fieldType: strType, fn: nil},
 			wantChanged: false,
 		},
 		{
 			name:        "nil fieldType -> no change",
 			startMapNil: true,
 			regName:     "rule",
-			ad:          typedAdapter{fieldType: nil, fn: noopRuleFn},
+			ad:          ruleAdapter{fieldType: nil, fn: noopRuleFn},
 			wantChanged: false,
 		},
 		{
 			name:        "valid input initializes map and inserts",
 			startMapNil: true,
 			regName:     "ruleA",
-			ad:          typedAdapter{fieldType: strType, fn: noopRuleFn},
+			ad:          ruleAdapter{fieldType: strType, fn: noopRuleFn},
 			wantChanged: true,
 			wantKey:     "ruleA",
 			wantLen:     1,
@@ -65,7 +65,7 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 			existingKey:   "ruleB",
 			existingCount: 1, // pre-seed with one adapter
 			regName:       "ruleB",
-			ad:            typedAdapter{fieldType: intType, fn: noopRuleFn},
+			ad:            ruleAdapter{fieldType: intType, fn: noopRuleFn},
 			wantChanged:   true,
 			wantKey:       "ruleB",
 			wantLen:       2,
@@ -77,7 +77,7 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 			existingKey:   "ruleC",
 			existingCount: 1,
 			regName:       "ruleD",
-			ad:            typedAdapter{fieldType: intType, fn: noopRuleFn},
+			ad:            ruleAdapter{fieldType: intType, fn: noopRuleFn},
 			wantChanged:   true,
 			wantKey:       "ruleD",
 			wantLen:       1,
@@ -86,17 +86,16 @@ func TestModel_registerRuleAdapter(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model[rrDummy]{}
 
 			// Optionally pre-seed the validators map
 			if !tc.startMapNil {
-				m.validators = make(map[string][]typedAdapter)
+				m.validators = make(map[string][]ruleAdapter)
 				if tc.existingKey != "" && tc.existingCount > 0 {
 					// seed with one adapter: fieldType string
-					seed := typedAdapter{fieldType: strType, fn: noopRuleFn}
-					m.validators[tc.existingKey] = []typedAdapter{seed}
+					seed := ruleAdapter{fieldType: strType, fn: noopRuleFn}
+					m.validators[tc.existingKey] = []ruleAdapter{seed}
 				}
 			}
 

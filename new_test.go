@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // ---- Helpers ----
@@ -123,8 +125,8 @@ func TestNew(t *testing.T) {
 		}
 		m, err := New(
 			&obj,
-			WithRule[newOK, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
-			WithRule[newOK, time.Duration](Rule[time.Duration]{Name: "nonzero", Fn: ruleNonZeroDur}),
+			WithRule[newOK, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
+			WithRule[newOK, time.Duration](rule.Rule[time.Duration]{Name: "nonzero", Fn: ruleNonZeroDur}),
 			WithValidation[newOK](),
 		)
 		if err != nil {
@@ -139,7 +141,7 @@ func TestNew(t *testing.T) {
 		obj := newValidateBad{} // Name empty
 		m, err := New(
 			&obj,
-			WithRule[newValidateBad, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
+			WithRule[newValidateBad, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
 			WithValidation[newValidateBad](),
 		)
 		if m != nil {
@@ -163,7 +165,7 @@ func TestNew(t *testing.T) {
 		obj := struct{ S string }{S: ""}
 		m, err := New(
 			&obj,
-			WithRules[struct{ S string }, string]([]Rule[string]{
+			WithRules[struct{ S string }, string]([]rule.Rule[string]{
 				{Name: "nonempty", Fn: ruleNonEmpty},
 			}),
 		)
@@ -176,11 +178,11 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("wrapRule: interface overload is usable (AssignableTo)", func(t *testing.T) {
+	t.Run("newRuleAdapter: interface overload is usable (AssignableTo)", func(t *testing.T) {
 		obj := struct{ W wrapS }{W: wrapS{v: "Z"}}
 		m, err := New(
 			&obj,
-			WithRule[struct{ W wrapS }, myStringer](Rule[myStringer]{
+			WithRule[struct{ W wrapS }, myStringer](rule.Rule[myStringer]{
 				Name: "iface",
 				Fn: func(s myStringer, _ ...string) error {
 					return fmt.Errorf("iface:%s", s.String())
@@ -200,7 +202,7 @@ func TestNew(t *testing.T) {
 		obj := struct{}{}
 		m, err := New(
 			&obj,
-			WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}),
+			WithRule[struct{}, string](rule.Rule[string]{Name: "", Fn: ruleNonEmpty}),
 		)
 		if m != nil {
 			t.Fatalf("expected nil model on option error")
@@ -214,7 +216,7 @@ func TestNew(t *testing.T) {
 		obj := struct{}{}
 		m, err := New(
 			&obj,
-			WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}),
+			WithRule[struct{}, string](rule.Rule[string]{Name: "x", Fn: nil}),
 		)
 		if m != nil {
 			t.Fatalf("expected nil model on option error")
@@ -228,8 +230,8 @@ func TestNew(t *testing.T) {
 		obj := struct{ S string }{}
 		m, err := New(
 			&obj,
-			WithRule[struct{ S string }, string](Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("one") }}),
-			WithRule[struct{ S string }, string](Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("two") }}),
+			WithRule[struct{ S string }, string](rule.Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("one") }}),
+			WithRule[struct{ S string }, string](rule.Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("two") }}),
 		)
 		if err != nil {
 			t.Fatalf("New error: %v", err)

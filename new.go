@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], error) {
@@ -15,7 +17,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 		return nil, fmt.Errorf("%w; got pointer to %s", ErrNotStructPtr, elem.Kind())
 	}
 
-	m := &Model[TObject]{obj: obj}
+	m := &Model[TObject]{obj: obj, rulesCache: rule.NewCache()} // TODO: do not initialize cache if no validation?
 	for _, opt := range opts {
 		if err := opt(m); err != nil {
 			return nil, err
@@ -45,22 +47,22 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 type Option[TObject any] func(*Model[TObject]) error
 
 // WithRule registers a named validation rule into the model's validator registry.
-func WithRule[TObject any, TField any](rule Rule[TField]) Option[TObject] {
+func WithRule[TObject any, TField any](rule rule.Rule[TField]) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		if rule.Name == "" || rule.Fn == nil {
 			return fmt.Errorf("model: WithRule: rule must have non-empty Name and non-nil Fn")
 		}
 		if m.validators == nil {
-			m.validators = make(map[string][]typedAdapter)
+			m.validators = make(map[string][]ruleAdapter)
 		}
-		ad := wrapRule(rule.Fn)
+		ad := newRuleAdapter(rule.Fn)
 		m.validators[rule.Name] = append(m.validators[rule.Name], ad)
 		return nil
 	}
 }
 
 // WithRules registers multiple named rules of the same field type at once.
-func WithRules[TObject any, TField any](rules []Rule[TField]) Option[TObject] {
+func WithRules[TObject any, TField any](rules []rule.Rule[TField]) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		for _, r := range rules {
 			if err := WithRule[TObject, TField](r)(m); err != nil {
@@ -73,12 +75,12 @@ func WithRules[TObject any, TField any](rules []Rule[TField]) Option[TObject] {
 
 // ensureRule adds a rule if an exact overload for the same rule name and field type is not already present.
 // It returns an error for invalid rule definitions (empty name or nil function).
-func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) error {
+func ensureRule[TObject any, TField any](m *Model[TObject], r rule.Rule[TField]) error {
 	if r.Name == "" || r.Fn == nil {
 		return fmt.Errorf("model: ensureRule: rule must have non-empty Name and non-nil Fn")
 	}
 	if m.validators == nil {
-		m.validators = make(map[string][]typedAdapter)
+		m.validators = make(map[string][]ruleAdapter)
 	}
 	typ := reflect.TypeOf((*TField)(nil)).Elem()
 	for _, ad := range m.validators[r.Name] {
@@ -86,7 +88,7 @@ func ensureRule[TObject any, TField any](m *Model[TObject], r Rule[TField]) erro
 			return nil // exact overload already exists; keep user's version
 		}
 	}
-	ad := wrapRule(r.Fn)
+	ad := newRuleAdapter(r.Fn)
 	m.validators[r.Name] = append(m.validators[r.Name], ad)
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // a concrete type implementing fmt.Stringer-like behavior (we won't import fmt here)
@@ -45,7 +47,7 @@ func TestModel_applyRule(t *testing.T) {
 	t.Parallel()
 
 	t.Run("unregistered rule -> error", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 		err := m.applyRule("nope", reflect.ValueOf("x"))
 		if err == nil || !strings.Contains(err.Error(), `rule "nope" is not registered`) {
 			t.Fatalf("expected unregistered-rule error, got: %v", err)
@@ -53,9 +55,9 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("invalid reflect.Value -> error", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 		// Register something so we don't hit the 'not registered' branch
-		WithRule[dummy, string](Rule[string]{Name: "r", Fn: ruleExactString})(m)
+		WithRule[dummy, string](rule.Rule[string]{Name: "r", Fn: ruleExactString})(m)
 
 		var invalid reflect.Value // zero Value is invalid
 		err := m.applyRule("r", invalid)
@@ -65,8 +67,8 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("exact match -> calls exact overload", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
-		WithRule[dummy, string](Rule[string]{Name: "pick", Fn: ruleExactString})(m)
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
+		WithRule[dummy, string](rule.Rule[string]{Name: "pick", Fn: ruleExactString})(m)
 		err := m.applyRule("pick", reflect.ValueOf("hi"))
 		if err == nil || !strings.Contains(err.Error(), "exact:string:hi") {
 			t.Fatalf("expected exact overload to run, got: %v", err)
@@ -74,11 +76,11 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("exact preferred over assignable (interface) -> picks exact", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 		// Register interface overload
-		WithRule[dummy, stringer](Rule[stringer]{Name: "pick", Fn: ruleIfaceStringer})(m)
+		WithRule[dummy, stringer](rule.Rule[stringer]{Name: "pick", Fn: ruleIfaceStringer})(m)
 		// Register exact overload for string
-		WithRule[dummy, string](Rule[string]{Name: "pick", Fn: ruleExactString})(m)
+		WithRule[dummy, string](rule.Rule[string]{Name: "pick", Fn: ruleExactString})(m)
 
 		err := m.applyRule("pick", reflect.ValueOf("yo"))
 		if err == nil || !strings.Contains(err.Error(), "exact:string:yo") {
@@ -87,8 +89,8 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("assignable (interface) match -> calls interface overload", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
-		WithRule[dummy, stringer](Rule[stringer]{Name: "iface", Fn: ruleIfaceStringer})(m)
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
+		WithRule[dummy, stringer](rule.Rule[stringer]{Name: "iface", Fn: ruleIfaceStringer})(m)
 
 		v := sw{s: "wrapped"}
 		err := m.applyRule("iface", reflect.ValueOf(v))
@@ -98,9 +100,9 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("multiple exact overloads -> ambiguous error", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
-		WithRule[dummy, string](Rule[string]{Name: "dup", Fn: ruleExactString})(m)
-		WithRule[dummy, string](Rule[string]{Name: "dup", Fn: ruleExactString2})(m)
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
+		WithRule[dummy, string](rule.Rule[string]{Name: "dup", Fn: ruleExactString})(m)
+		WithRule[dummy, string](rule.Rule[string]{Name: "dup", Fn: ruleExactString2})(m)
 
 		err := m.applyRule("dup", reflect.ValueOf("x"))
 		if err == nil || !strings.Contains(err.Error(), "ambiguous") {
@@ -109,10 +111,10 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("no matching overload -> error lists available types", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 		// Register overloads for string and int, but we'll pass a float
-		WithRule[dummy, string](Rule[string]{Name: "r", Fn: ruleExactString})(m)
-		WithRule[dummy, int](Rule[int]{Name: "r", Fn: ruleInt})(m)
+		WithRule[dummy, string](rule.Rule[string]{Name: "r", Fn: ruleExactString})(m)
+		WithRule[dummy, int](rule.Rule[int]{Name: "r", Fn: ruleInt})(m)
 
 		err := m.applyRule("r", reflect.ValueOf(3.14))
 		if err == nil || !strings.Contains(err.Error(), "has no overload for type float64") {
@@ -125,25 +127,25 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("skips nil adapters; validation passes", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 
 		// Intentionally place a nil/zero adapter first; applyRule must skip it.
-		nilAdapter := typedAdapter{} // fieldType == nil, fn == nil
-		goodAdapter := wrapRule[string](rulePassString)
+		nilAdapter := ruleAdapter{} // fieldType == nil, fn == nil
+		goodAdapter := newRuleAdapter[string](rulePassString)
 
-		m.validators["ok"] = []typedAdapter{nilAdapter, goodAdapter}
+		m.validators["ok"] = []ruleAdapter{nilAdapter, goodAdapter}
 
 		if err := m.applyRule("ok", reflect.ValueOf("pass")); err != nil {
 			t.Fatalf("expected nil error (successful validation), got: %v", err)
 		}
 	})
 
-	t.Run("wrapRule panics on invalid or non-assignable value", func(t *testing.T) {
+	t.Run("newRuleAdapter panics on invalid or non-assignable value", func(t *testing.T) {
 		t.Parallel()
 
 		// Build a typed adapter for string and then deliberately call it
 		// with (1) an invalid reflect.Value and (2) a non-assignable type.
-		ad := wrapRule[string](rulePassString)
+		ad := newRuleAdapter[string](rulePassString)
 
 		cases := []struct {
 			name string
@@ -167,7 +169,7 @@ func TestModel_applyRule(t *testing.T) {
 					}
 				}()
 
-				// This should panic inside wrapRule's adapter fn when v is invalid
+				// This should panic inside newRuleAdapter's adapter fn when v is invalid
 				// or not assignable to the expected type.
 				_ = ad.fn(tc.val)
 			})
@@ -175,10 +177,10 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("available types list is sorted deterministically", func(t *testing.T) {
-		m := &Model[dummy]{validators: make(map[string][]typedAdapter)}
+		m := &Model[dummy]{validators: make(map[string][]ruleAdapter)}
 		// Register in non-sorted order on purpose
-		WithRule[dummy, string](Rule[string]{Name: "sorted", Fn: ruleExactString})(m)
-		WithRule[dummy, int](Rule[int]{Name: "sorted", Fn: ruleInt})(m)
+		WithRule[dummy, string](rule.Rule[string]{Name: "sorted", Fn: ruleExactString})(m)
+		WithRule[dummy, int](rule.Rule[int]{Name: "sorted", Fn: ruleInt})(m)
 		// Trigger no-overload with a float
 		err := m.applyRule("sorted", reflect.ValueOf(1.23))
 		if err == nil {

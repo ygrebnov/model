@@ -3,19 +3,21 @@ package model
 import (
 	"reflect"
 	"testing"
+
+	"github.com/ygrebnov/model/rule"
 )
 
 // Tests for ensureRule behavior and compatibility with WithValidation.
 
 func TestEnsureRule_InvalidRule_Errors(t *testing.T) {
-	m := &Model[struct{}]{validators: make(map[string][]typedAdapter)}
+	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 
 	// Empty name
-	if err := ensureRule[struct{}, string](m, Rule[string]{Name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
+	if err := ensureRule[struct{}, string](m, rule.Rule[string]{Name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
 		t.Fatalf("expected error for empty rule name")
 	}
 	// Nil function
-	if err := ensureRule[struct{}, string](m, Rule[string]{Name: "x", Fn: nil}); err == nil {
+	if err := ensureRule[struct{}, string](m, rule.Rule[string]{Name: "x", Fn: nil}); err == nil {
 		t.Fatalf("expected error for nil rule function")
 	}
 }
@@ -29,8 +31,8 @@ func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
 }
 
 func TestEnsureRule_ValidRule_AppendsAdapter(t *testing.T) {
-	m := &Model[struct{}]{validators: make(map[string][]typedAdapter)}
-	r := Rule[string]{
+	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
+	r := rule.Rule[string]{
 		Name: "customX",
 		Fn:   func(s string, _ ...string) error { return nil },
 	}
@@ -51,8 +53,8 @@ func TestEnsureRule_ValidRule_AppendsAdapter(t *testing.T) {
 }
 
 func TestEnsureRule_DuplicateExact_NoAppend(t *testing.T) {
-	m := &Model[struct{}]{validators: make(map[string][]typedAdapter)}
-	r := Rule[string]{
+	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
+	r := rule.Rule[string]{
 		Name: "dup",
 		Fn:   func(s string, _ ...string) error { return nil },
 	}
