@@ -9,11 +9,11 @@ package model
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 //
 //	// Empty name
-//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{Name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
+//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
 //		t.Fatalf("expected error for empty rule name")
 //	}
 //	// Nil function
-//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{Name: "x", Fn: nil}); err == nil {
+//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{name: "x", Fn: nil}); err == nil {
 //		t.Fatalf("expected error for nil rule function")
 //	}
 //}
@@ -29,7 +29,7 @@ package model
 //func TestEnsureRule_ValidRule_AppendsAdapter(t *testing.T) {
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 //	r := rule.Rule[string]{
-//		Name: "customX",
+//		name: "customX",
 //		Fn:   func(s string, _ ...string) error { return nil },
 //	}
 //	if err := ensureRule[struct{}, string](m, r); err != nil {
@@ -51,7 +51,7 @@ package model
 //func TestEnsureRule_DuplicateExact_NoAppend(t *testing.T) {
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 //	r := rule.Rule[string]{
-//		Name: "dup",
+//		name: "dup",
 //		Fn:   func(s string, _ ...string) error { return nil },
 //	}
 //	if err := ensureRule[struct{}, string](m, r); err != nil {

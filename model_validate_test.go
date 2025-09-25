@@ -78,7 +78,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vHasTags]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vHasTags{
 					Name: "ok",
 					Wait: time.Second,
@@ -99,9 +99,9 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vHasTags]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vHasTags{
-					// Name empty (violates nonempty)
+					// name empty (violates nonempty)
 					// Wait zero (violates nonZeroDur)
 				}
 				// nested struct field also empty (violates nonempty)
@@ -127,15 +127,15 @@ func TestModel_validate(t *testing.T) {
 				}
 				// ensure important paths exist
 				by := ve.ByField()
-				wantPaths := []string{"Name", "Wait", "Info.Note"}
+				wantPaths := []string{"name", "Wait", "Info.Note"}
 				for _, p := range wantPaths {
 					if _, ok := by[p]; !ok {
 						t.Errorf("missing error for field path %q", p)
 					}
 				}
 				// check representative messages
-				if es := by["Name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "must not be empty") {
-					t.Errorf("expected nonempty error for Name, got: %+v", es)
+				if es := by["name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "must not be empty") {
+					t.Errorf("expected nonempty error for name, got: %+v", es)
 				}
 				if es := by["Wait"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "non-zero") {
 					t.Errorf("expected nonZeroDur error for Wait, got: %+v", es)
@@ -148,7 +148,7 @@ func TestModel_validate(t *testing.T) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vUnknown]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vUnknown{}
 				m.obj = &obj
 				// no rules registered on purpose

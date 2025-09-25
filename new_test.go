@@ -89,7 +89,7 @@ func TestNew(t *testing.T) {
 		}
 		// top level
 		if obj.Name != "x" {
-			t.Fatalf("default not applied to Name: %q", obj.Name)
+			t.Fatalf("default not applied to name: %q", obj.Name)
 		}
 		// nested dive
 		if obj.In.Msg != "hi" || obj.In.D != 2*time.Second {
@@ -115,7 +115,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("WithValidation: success when rules satisfied", func(t *testing.T) {
 		obj := newOK{
-			// Name will be defaulted to "x" ONLY if WithDefaults is provided; here we set good values explicitly
+			// name will be defaulted to "x" ONLY if WithDefaults is provided; here we set good values explicitly
 			Name: "ok",
 			Wait: 1,
 			In: newInner{
@@ -138,7 +138,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("WithValidation: returns validation error", func(t *testing.T) {
-		obj := newValidateBad{} // Name empty
+		obj := newValidateBad{} // name empty
 		m, err := New(
 			&obj,
 			WithRule[newValidateBad, string]("nonempty", ruleNonEmpty),
@@ -156,8 +156,8 @@ func TestNew(t *testing.T) {
 		}
 		// Ensure it contains the expected field error
 		by := ve.ByField()
-		if es := by["Name"]; len(es) == 0 || es[0].Rule != "nonempty" {
-			t.Fatalf("expected nonempty error for Name, got: %+v", es)
+		if es := by["name"]; len(es) == 0 || es[0].Rule != "nonempty" {
+			t.Fatalf("expected nonempty error for name, got: %+v", es)
 		}
 	})
 
@@ -206,7 +206,7 @@ func TestNew(t *testing.T) {
 		if m != nil {
 			t.Fatalf("expected nil model on option error")
 		}
-		if err == nil || !strings.Contains(err.Error(), "non-empty Name") {
+		if err == nil || !strings.Contains(err.Error(), "non-empty name") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})

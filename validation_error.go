@@ -139,7 +139,7 @@ func (ve *ValidationError) Fields() []string {
 // Example:
 //
 //	{
-//	  "Name": ["must not be empty"],
+//	  "name": ["must not be empty"],
 //	  "Age":  ["must be > 0", "must not be zero"]
 //	}
 func (ve *ValidationError) MarshalJSON() ([]byte, error) {

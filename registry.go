@@ -1,4 +1,4 @@
-package rule
+package model
 
 import (
 	"fmt"
@@ -8,34 +8,46 @@ import (
 	"sync"
 )
 
-// Registry is a registry of validation rules.
-type Registry struct {
-	mu    sync.RWMutex
-	rules map[string][]Rule // rule name -> overloads by type
+type validationRule interface {
+	getName() string
+	getFieldTypeName() string
+	getValidationFn() func(v reflect.Value, params ...string) error
+	isOfType(t reflect.Type) bool
+	isAssignableTo(t reflect.Type) bool
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
-		rules: make(map[string][]Rule),
+func newValidationRule(name string, fn func(v reflect.Value, params ...string) error) (validationRule, error) {
+	return newRule(name, fn)
+}
+
+// registry is a registry of validation rules.
+type registry struct {
+	mu    sync.RWMutex
+	rules map[string][]validationRule // rule name -> overloads by type
+}
+
+func newRegistry() *registry {
+	return &registry{
+		rules: make(map[string][]validationRule),
 	}
 }
 
-func (r *Registry) Add(rule Rule) {
+func (r *registry) add(rule validationRule) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	name := rule.GetName()
+	name := rule.getName()
 	r.rules[name] = append(r.rules[name], rule)
 }
 
-// Get returns the best-matching overload of rule `name` for the given field value.
+// get returns the best-matching overload of rule `name` for the given field value.
 // Selection strategy:
 //  1. Prefer exact type match (v.Type() == fieldType).
 //  2. Otherwise accept AssignableTo matches (interfaces, named types), preferring the first declared.
 //  3. Otherwise, if no matches, fetch a built-in rule if available.
 //  4. If no matches, return a descriptive error listing available overload types.
 //  5. If multiple exact matches (shouldn't happen), return an ambiguity error.
-func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
+func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -53,19 +65,19 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 	}
 
 	var (
-		exacts  []Rule
-		assigns []Rule
+		exacts  []validationRule
+		assigns []validationRule
 	)
 	for _, rr := range rules {
 		//if ad.fieldType == nil || ad.fn == nil {
 		//	continue
 		//}
 		// TODO: consider valueType nil, skip?
-		if rr.IsOfType(valueType) {
+		if rr.isOfType(valueType) {
 			exacts = append(exacts, rr)
 			continue
 		}
-		if rr.IsAssignableTo(valueType) {
+		if rr.isAssignableTo(valueType) {
 			assigns = append(assigns, rr)
 		}
 	}
@@ -74,7 +86,7 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 	case len(exacts) == 1:
 		return exacts[0], nil
 	case len(exacts) > 1:
-		// TODO: check for duplicates in Add to prevent this
+		// TODO: check for duplicates in add to prevent this
 		return nil, fmt.Errorf(
 			"model: rule %q is ambiguous for type %s; %d exact overloads registered",
 			name,
@@ -96,10 +108,10 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 	}
 }
 
-func getFieldTypesNames(rules []Rule) []string {
+func getFieldTypesNames(rules []validationRule) []string {
 	var names []string
 	for _, rr := range rules {
-		filedTypeName := rr.GetFieldTypeName()
+		filedTypeName := rr.getFieldTypeName()
 		if filedTypeName != "" {
 			names = append(names, filedTypeName)
 		}

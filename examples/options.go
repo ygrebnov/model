@@ -23,7 +23,7 @@ func exampleWithDefaults() {
 		return
 	}
 	_ = m
-	fmt.Printf("WithDefaults -> Name=%q Timeout=%v\n", cfg.Name, cfg.Timeout)
+	fmt.Printf("WithDefaults -> name=%q Timeout=%v\n", cfg.Name, cfg.Timeout)
 }
 
 // Example 2: WithValidation + WithRule — register a custom rule and fail validation

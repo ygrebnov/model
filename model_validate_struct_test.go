@@ -32,7 +32,7 @@ type vOuter struct {
 
 	// Simple rules
 	Name string `validate:"nonempty"`
-	// ParamNames test (commas inside parens; also followed by another rule)
+	// params test (commas inside parens; also followed by another rule)
 	Note string `validate:"withParams(a, b, c),nonempty"`
 
 	// Unknown rule
@@ -109,7 +109,7 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+	m := &Model[vOuter]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 
 	// Register string rules
 	if err := WithRule[vOuter, string]("nonempty", ruleNonEmpty)(m); err != nil {
@@ -226,10 +226,10 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 
 		// Simple rules
-		if _, ok := by["Root.Name"]; !ok {
-			t.Errorf("expected nonempty error at Root.Name")
+		if _, ok := by["Root.name"]; !ok {
+			t.Errorf("expected nonempty error at Root.name")
 		}
-		// ParamNames parsing (withParams and nonempty applied)
+		// params parsing (withParams and nonempty applied)
 		paramsMsgs := by["Root.Note"]
 		if len(paramsMsgs) == 0 {
 			t.Errorf("expected errors for Root.Note")

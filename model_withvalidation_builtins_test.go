@@ -27,7 +27,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 	}
 	by := ve.ByField()
 	// Expect errors for all fields using builtin rules
-	for _, f := range []string{"Name", "Age", "Score", "ID"} {
+	for _, f := range []string{"name", "Age", "Score", "ID"} {
 		if _, ok := by[f]; !ok {
 			t.Fatalf("expected error for field %s; got map=%+v", f, by)
 		}
@@ -55,7 +55,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
-	msgs := ve.ByField()["Name"]
+	msgs := ve.ByField()["name"]
 	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "custom nonempty") {
 		t.Fatalf("expected custom nonempty error, got %+v", msgs)
 	}
@@ -82,8 +82,8 @@ func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
-	msgs := ve.ByField()["Name"]
+	msgs := ve.ByField()["name"]
 	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "ambiguous") {
-		t.Fatalf("expected ambiguity error for Name, got %+v", msgs)
+		t.Fatalf("expected ambiguity error for name, got %+v", msgs)
 	}
 }

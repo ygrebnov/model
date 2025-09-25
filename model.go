@@ -4,54 +4,34 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-
-	"github.com/ygrebnov/model/rule"
 )
 
 type Model[TObject any] struct {
-	mu                 sync.RWMutex
 	once               sync.Once
-	obj                *TObject
 	applyDefaultsOnNew bool
 	validateOnNew      bool
+	obj                *TObject
 	rulesRegistry      rulesRegistry
-
-	// the fields below will be removed
-
-	rulesCache rulesCache
-	// validators map[string][]rule.Adapter // per-model registry: rule name -> overloads by type
-
-}
-
-type rulesCache interface {
-	Get(parent reflect.Type, fieldIndex int, tagName string) ([]rule.Metadata, bool)
-	Put(parent reflect.Type, fieldIndex int, tagName string, parsed []rule.Metadata)
+	rulesMapping       rulesMapping
 }
 
 type rulesRegistry interface {
-	Add(rule.Rule)
-	Get(name string, v reflect.Value) (rule.Rule, error)
+	add(r validationRule)
+	get(name string, v reflect.Value) (validationRule, error)
 }
 
-// registerRuleAdapter registers/overwrites a rule overload at runtime (internal use).
-//func (m *Model[TObject]) registerRuleAdapter(name string, ad ruleAdapter) {
-//	m.mu.Lock()
-//	defer m.mu.Unlock()
-//	if name == "" || ad.fn == nil || ad.fieldType == nil {
-//		return
-//	}
-//	if m.validators == nil {
-//		m.validators = make(map[string][]ruleAdapter)
-//	}
-//	m.validators[name] = append(m.validators[name], ad)
-//}
+func newRulesRegistry() rulesRegistry {
+	return newRegistry()
+}
 
-// getRuleAdapters retrieves all overloads for a rule name.
-//func (m *Model[TObject]) getRuleAdapters(name string) []ruleAdapter {
-//	m.mu.RLock()
-//	defer m.mu.RUnlock()
-//	return m.validators[name]
-//}
+type rulesMapping interface {
+	add(parent reflect.Type, fieldIndex int, tagName string, rules []ruleNameParams)
+	get(parent reflect.Type, fieldIndex int, tagName string) ([]ruleNameParams, bool)
+}
+
+func newRulesMapping() rulesMapping {
+	return newMapping()
+}
 
 // applyRule dispatches to the best-matching overload of rule `name` for the given field value.
 // Selection strategy:
@@ -60,67 +40,12 @@ type rulesRegistry interface {
 //  3. If no matches, return a descriptive error listing available overload types.
 //  4. If multiple exact matches (shouldn't happen), return an ambiguity error.
 func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...string) error {
-	r, err := m.rulesRegistry.Get(name, v)
+	r, err := m.rulesRegistry.get(name, v)
 	if err != nil {
 		return err
 	}
 
-	return r.GetValidationFn()(v, params...)
-
-	//adapters := m.getRuleAdapters(name)
-	//if len(adapters) == 0 {
-	//	return fmt.Errorf("model: rule %q is not registered", name)
-	//}
-	//if !v.IsValid() {
-	//	return fmt.Errorf("model: invalid value for rule %q", name)
-	//}
-	//
-	//typ := v.Type()
-	//var (
-	//	exacts  []ruleAdapter
-	//	assigns []ruleAdapter
-	//)
-	//for _, ad := range adapters {
-	//	if ad.fieldType == nil || ad.fn == nil {
-	//		continue
-	//	}
-	//	if typ == ad.fieldType {
-	//		exacts = append(exacts, ad)
-	//		continue
-	//	}
-	//	if typ.AssignableTo(ad.fieldType) {
-	//		assigns = append(assigns, ad)
-	//	}
-	//}
-	//
-	//switch {
-	//case len(exacts) == 1:
-	//	return exacts[0].fn(v, params...)
-	//case len(exacts) > 1:
-	//	return fmt.Errorf(
-	//		"model: rule %q is ambiguous for type %s; %d exact overloads registered",
-	//		name,
-	//		typ,
-	//		len(exacts),
-	//	)
-	//case len(assigns) >= 1:
-	//	return assigns[0].fn(v, params...)
-	//default:
-	//	// Construct helpful message of available overload types.
-	//	var names []string
-	//	for _, ad := range adapters {
-	//		if ad.fieldType != nil {
-	//			names = append(names, ad.fieldType.String())
-	//		}
-	//	}
-	//	sort.Strings(names)
-	//	return fmt.Errorf(
-	//		"model: rule %q has no overload for type %s (available: %s)",
-	//		name,
-	//		typ,
-	//		strings.Join(names, ", "),
-	//	)
-	//}
+	return r.getValidationFn()(v, params...)
 }
 
 // rootStructValue validates that m.obj is a non-nil pointer to a struct and returns the struct value.
