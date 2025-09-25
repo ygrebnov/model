@@ -104,7 +104,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOK{S: "ok"}
 				_, err := New(
 					&obj,
-					WithRules[strOK, string](BuiltinStringRules()),
+					//WithRules[strOK, string](BuiltinStringRules()),
 					WithValidation[strOK](),
 				)
 				if err != nil {
@@ -120,7 +120,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOK{S: ""}
 				_, err := New(
 					&obj,
-					WithRules[strOK, string](BuiltinStringRules()),
+					//WithRules[strOK, string](BuiltinStringRules()),
 					WithValidation[strOK](),
 				)
 				if err == nil {
@@ -144,7 +144,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOK{P: 1, NZ: 1}
 				_, err := New(
 					&obj,
-					WithRules[intOK, int](BuiltinIntRules()),
+					//WithRules[intOK, int](BuiltinIntRules()),
 					WithValidation[intOK](),
 				)
 				if err != nil {
@@ -159,7 +159,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OK{P: 2, NZ: 3}
 				_, err := New(
 					&obj,
-					WithRules[int64OK, int64](BuiltinInt64Rules()),
+					//WithRules[int64OK, int64](BuiltinInt64Rules()),
 					WithValidation[int64OK](),
 				)
 				if err != nil {
@@ -174,7 +174,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OK{P: 0.1, NZ: 2.3}
 				_, err := New(
 					&obj,
-					WithRules[float64OK, float64](BuiltinFloat64Rules()),
+					//WithRules[float64OK, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OK](),
 				)
 				if err != nil {
@@ -191,7 +191,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOneOfOK{S: "green"}
 				_, err := New(
 					&obj,
-					WithRules[strOneOfOK, string](BuiltinStringRules()),
+					//WithRules[strOneOfOK, string](BuiltinStringRules()),
 					WithValidation[strOneOfOK](),
 				)
 				if err != nil {
@@ -207,7 +207,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOneOfBad{S: "yellow"}
 				_, err := New(
 					&obj,
-					WithRules[strOneOfBad, string](BuiltinStringRules()),
+					//WithRules[strOneOfBad, string](BuiltinStringRules()),
 					WithValidation[strOneOfBad](),
 				)
 				if err == nil {
@@ -232,7 +232,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOneOfNoParams{S: "anything"}
 				_, err := New(
 					&obj,
-					WithRules[strOneOfNoParams, string](BuiltinStringRules()),
+					//WithRules[strOneOfNoParams, string](BuiltinStringRules()),
 					WithValidation[strOneOfNoParams](),
 				)
 				if err == nil {
@@ -258,7 +258,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64PositiveOnly{P: 0} // triggers positive rule
 				_, err := New(
 					&obj,
-					WithRules[int64PositiveOnly, int64](BuiltinInt64Rules()),
+					//WithRules[int64PositiveOnly, int64](BuiltinInt64Rules()),
 					WithValidation[int64PositiveOnly](),
 				)
 				if err == nil {
@@ -283,7 +283,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64NonZeroOnly{NZ: 0} // triggers nonzero rule
 				_, err := New(
 					&obj,
-					WithRules[int64NonZeroOnly, int64](BuiltinInt64Rules()),
+					//WithRules[int64NonZeroOnly, int64](BuiltinInt64Rules()),
 					WithValidation[int64NonZeroOnly](),
 				)
 				if err == nil {
@@ -308,7 +308,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OneOfBadParam{N: 20} // value irrelevant; rule errors on parsing "a"
 				_, err := New(
 					&obj,
-					WithRules[int64OneOfBadParam, int64](BuiltinInt64Rules()),
+					//WithRules[int64OneOfBadParam, int64](BuiltinInt64Rules()),
 					WithValidation[int64OneOfBadParam](),
 				)
 				if err == nil {
@@ -333,7 +333,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intPositiveOnly{P: 0} // triggers positive rule
 				_, err := New(
 					&obj,
-					WithRules[intPositiveOnly, int](BuiltinIntRules()),
+					//WithRules[intPositiveOnly, int](BuiltinIntRules()),
 					WithValidation[intPositiveOnly](),
 				)
 				if err == nil {
@@ -358,7 +358,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intNonZeroOnly{NZ: 0} // triggers nonzero rule
 				_, err := New(
 					&obj,
-					WithRules[intNonZeroOnly, int](BuiltinIntRules()),
+					//WithRules[intNonZeroOnly, int](BuiltinIntRules()),
 					WithValidation[intNonZeroOnly](),
 				)
 				if err == nil {
@@ -383,7 +383,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOneOfBadParam{N: 2} // value doesn't matter; rule should error on parsing "a"
 				_, err := New(
 					&obj,
-					WithRules[intOneOfBadParam, int](BuiltinIntRules()),
+					//WithRules[intOneOfBadParam, int](BuiltinIntRules()),
 					WithValidation[intOneOfBadParam](),
 				)
 				if err == nil {
@@ -408,7 +408,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOneOfOK{N: 2}
 				_, err := New(
 					&obj,
-					WithRules[intOneOfOK, int](BuiltinIntRules()),
+					//WithRules[intOneOfOK, int](BuiltinIntRules()),
 					WithValidation[intOneOfOK](),
 				)
 				if err != nil {
@@ -424,7 +424,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOneOfBad{N: 4}
 				_, err := New(
 					&obj,
-					WithRules[intOneOfBad, int](BuiltinIntRules()),
+					//WithRules[intOneOfBad, int](BuiltinIntRules()),
 					WithValidation[intOneOfBad](),
 				)
 				if err == nil {
@@ -449,7 +449,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOneOfNoParams{N: 1}
 				_, err := New(
 					&obj,
-					WithRules[intOneOfNoParams, int](BuiltinIntRules()),
+					//WithRules[intOneOfNoParams, int](BuiltinIntRules()),
 					WithValidation[intOneOfNoParams](),
 				)
 				if err == nil {
@@ -475,7 +475,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OneOfOK{N: 20}
 				_, err := New(
 					&obj,
-					WithRules[int64OneOfOK, int64](BuiltinInt64Rules()),
+					//WithRules[int64OneOfOK, int64](BuiltinInt64Rules()),
 					WithValidation[int64OneOfOK](),
 				)
 				if err != nil {
@@ -491,7 +491,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OneOfBad{N: 99}
 				_, err := New(
 					&obj,
-					WithRules[int64OneOfBad, int64](BuiltinInt64Rules()),
+					//WithRules[int64OneOfBad, int64](BuiltinInt64Rules()),
 					WithValidation[int64OneOfBad](),
 				)
 				if err == nil {
@@ -516,7 +516,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OneOfNoParams{N: 10}
 				_, err := New(
 					&obj,
-					WithRules[int64OneOfNoParams, int64](BuiltinInt64Rules()),
+					//WithRules[int64OneOfNoParams, int64](BuiltinInt64Rules()),
 					WithValidation[int64OneOfNoParams](),
 				)
 				if err == nil {
@@ -542,7 +542,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64PositiveOnly{P: 0.0}
 				_, err := New(
 					&obj,
-					WithRules[float64PositiveOnly, float64](BuiltinFloat64Rules()),
+					//WithRules[float64PositiveOnly, float64](BuiltinFloat64Rules()),
 					WithValidation[float64PositiveOnly](),
 				)
 				if err == nil {
@@ -567,7 +567,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64NonZeroOnly{NZ: 0.0}
 				_, err := New(
 					&obj,
-					WithRules[float64NonZeroOnly, float64](BuiltinFloat64Rules()),
+					//WithRules[float64NonZeroOnly, float64](BuiltinFloat64Rules()),
 					WithValidation[float64NonZeroOnly](),
 				)
 				if err == nil {
@@ -592,7 +592,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OneOfBadParam{F: 1.0} // value irrelevant; rule errors parsing "a"
 				_, err := New(
 					&obj,
-					WithRules[float64OneOfBadParam, float64](BuiltinFloat64Rules()),
+					//WithRules[float64OneOfBadParam, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OneOfBadParam](),
 				)
 				if err == nil {
@@ -618,7 +618,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OneOfOK{F: 1.0}
 				_, err := New(
 					&obj,
-					WithRules[float64OneOfOK, float64](BuiltinFloat64Rules()),
+					//WithRules[float64OneOfOK, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OneOfOK](),
 				)
 				if err != nil {
@@ -634,7 +634,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OneOfBad{F: 0.3}
 				_, err := New(
 					&obj,
-					WithRules[float64OneOfBad, float64](BuiltinFloat64Rules()),
+					//WithRules[float64OneOfBad, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OneOfBad](),
 				)
 				if err == nil {
@@ -659,7 +659,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OneOfNoParams{F: 1.0}
 				_, err := New(
 					&obj,
-					WithRules[float64OneOfNoParams, float64](BuiltinFloat64Rules()),
+					//WithRules[float64OneOfNoParams, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OneOfNoParams](),
 				)
 				if err == nil {

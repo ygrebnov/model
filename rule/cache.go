@@ -15,21 +15,21 @@ type fieldRulesKey struct {
 	tagName string
 }
 
-var fieldRulesCache sync.Map // map[fieldRulesKey][]Metadata
+// var fieldRulesCache sync.Map // map[fieldRulesKey][]Metadata
 
 // parseRulesCached returns parsed rules for the given field tag using a cache.
 // rawTag is still required to parse on a cache miss, but is not part of the key
 // because struct tags are static for a given compiled type.
-func parseRulesCached(parent reflect.Type, fieldIndex int, tagName, rawTag string) []Metadata {
-	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
-	if v, ok := fieldRulesCache.Load(key); ok {
-		return v.([]Metadata)
-	}
-	parsed := ParseTag(rawTag)
-	// Store even empty result to avoid repeated parsing of empty/"-" tags.
-	fieldRulesCache.Store(key, parsed)
-	return parsed
-}
+//func parseRulesCached(parent reflect.Type, fieldIndex int, tagName, rawTag string) []Metadata {
+//	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
+//	if v, ok := fieldRulesCache.Load(key); ok {
+//		return v.([]Metadata)
+//	}
+//	parsed := ParseTag(rawTag)
+//	// Store even empty result to avoid repeated parsing of empty/"-" tags.
+//	fieldRulesCache.Store(key, parsed)
+//	return parsed
+//}
 
 // Cache holds a thread-safe cache for parsed validation rules.
 type Cache struct {

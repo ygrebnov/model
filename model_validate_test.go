@@ -78,7 +78,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{validators: make(map[string][]ruleAdapter), rulesCache: rule.NewCache()}
+				m := &Model[vHasTags]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vHasTags{
 					Name: "ok",
 					Wait: time.Second,
@@ -86,8 +86,12 @@ func TestModel_validate(t *testing.T) {
 				obj.Info.Note = "ok"
 				m.obj = &obj
 				// register rules
-				WithRule[vHasTags, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-				WithRule[vHasTags, time.Duration](rule.Rule[time.Duration]{Name: "nonZeroDur", Fn: ruleNonZeroDur})(m)
+				if err := WithRule[vHasTags, string]("nonempty", ruleNonEmpty)(m); err != nil {
+					t.Fatalf("WithRule error: %v", err)
+				}
+				if err := WithRule[vHasTags, time.Duration]("nonZeroDur", ruleNonZeroDur)(m); err != nil {
+					t.Fatalf("WithRule error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "",
@@ -95,7 +99,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{validators: make(map[string][]ruleAdapter), rulesCache: rule.NewCache()}
+				m := &Model[vHasTags]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vHasTags{
 					// Name empty (violates nonempty)
 					// Wait zero (violates nonZeroDur)
@@ -103,8 +107,12 @@ func TestModel_validate(t *testing.T) {
 				// nested struct field also empty (violates nonempty)
 				m.obj = &obj
 				// register rules
-				WithRule[vHasTags, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-				WithRule[vHasTags, time.Duration](rule.Rule[time.Duration]{Name: "nonZeroDur", Fn: ruleNonZeroDur})(m)
+				if err := WithRule[vHasTags, string]("nonempty", ruleNonEmpty)(m); err != nil {
+					t.Fatalf("WithRule error: %v", err)
+				}
+				if err := WithRule[vHasTags, time.Duration]("nonZeroDur", ruleNonZeroDur)(m); err != nil {
+					t.Fatalf("WithRule error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "validation", // we’ll assert concrete type & fields in verify
@@ -140,7 +148,7 @@ func TestModel_validate(t *testing.T) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{validators: make(map[string][]ruleAdapter), rulesCache: rule.NewCache()}
+				m := &Model[vUnknown]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 				obj := vUnknown{}
 				m.obj = &obj
 				// no rules registered on purpose

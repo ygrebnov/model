@@ -109,24 +109,38 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{validators: make(map[string][]ruleAdapter), rulesCache: rule.NewCache()}
+	m := &Model[vOuter]{rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
 
 	// Register string rules
-	WithRule[vOuter, string](rule.Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](rule.Rule[string]{Name: "withParams", Fn: ruleWithParams})(m)
+	if err := WithRule[vOuter, string]("nonempty", ruleNonEmpty)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
+	if err := WithRule[vOuter, string]("withParams", ruleWithParams)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
 
 	// Register time.Duration rule
-	WithRule[vOuter, time.Duration](rule.Rule[time.Duration]{Name: "nonzeroDuration", Fn: ruleNonzeroDuration})(m)
+	if err := WithRule[vOuter, time.Duration]("nonzeroDuration", ruleNonzeroDuration)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
 
 	// Register interface-based rule (AssignableTo path)
-	WithRule[vOuter, fmt.Stringer](rule.Rule[fmt.Stringer]{Name: "stringerBad", Fn: ruleStringerBad})(m)
+	if err := WithRule[vOuter, fmt.Stringer]("stringerBad", ruleStringerBad)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
 
 	// Register ambiguous rule (same name & type twice) → exact duplicates trigger ambiguity
-	WithRule[vOuter, string](rule.Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](rule.Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
+	if err := WithRule[vOuter, string]("dup", ruleNonEmpty)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
+	if err := WithRule[vOuter, string]("dup", ruleNonEmpty)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
 
 	// Also a rule for int to demonstrate element rules on int slices if needed
-	WithRule[vOuter, int](rule.Rule[int]{Name: "intErr", Fn: ruleIntAlwaysErr})(m)
+	if err := WithRule[vOuter, int]("intErr", ruleIntAlwaysErr)(m); err != nil {
+		t.Fatalf("WithRule error: %v", err)
+	}
 
 	t.Run("recursion, params parsing, unknown rule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
 		obj := vOuter{

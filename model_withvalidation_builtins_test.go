@@ -4,9 +4,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/ygrebnov/model/rule"
 )
+
+// TODO: check if we still need these tests as the order of rule fetching is now deterministic.
 
 type bv struct {
 	Name  string  `validate:"nonempty"`
@@ -36,17 +36,16 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customNonEmpty := rule.Rule[string]{
-		Name: "nonempty",
-		Fn: func(s string, _ ...string) error {
-			if s == "" {
-				return errors.New("custom nonempty")
-			}
-			return nil
-		},
-	}
 	_, err := New(&obj,
-		WithRule[bv, string](customNonEmpty), // register BEFORE WithValidation
+		WithRule[bv, string](
+			"nonempty",
+			func(s string, _ ...string) error {
+				if s == "" {
+					return errors.New("custom nonempty")
+				}
+				return nil
+			},
+		), // register BEFORE WithValidation
 		WithValidation[bv](),
 	)
 	if err == nil {
@@ -64,18 +63,17 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 
 func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
 	obj := bv{}
-	customNonEmpty := rule.Rule[string]{
-		Name: "nonempty",
-		Fn: func(s string, _ ...string) error {
-			if s == "" {
-				return errors.New("custom nonempty")
-			}
-			return nil
-		},
-	}
 	_, err := New(&obj,
-		WithValidation[bv](),                 // builtin nonempty for string is registered implicitly
-		WithRule[bv, string](customNonEmpty), // registering AFTER creates two exact overloads
+		WithValidation[bv](), // builtin nonempty for string is registered implicitly
+		WithRule[bv, string](
+			"nonempty",
+			func(s string, _ ...string) error {
+				if s == "" {
+					return errors.New("custom nonempty")
+				}
+				return nil
+			},
+		), // registering AFTER creates two exact overloads
 	)
 	if err == nil {
 		t.Fatalf("expected validation error")

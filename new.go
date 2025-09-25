@@ -17,7 +17,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 		return nil, fmt.Errorf("%w; got pointer to %s", ErrNotStructPtr, elem.Kind())
 	}
 
-	m := &Model[TObject]{obj: obj, rulesCache: rule.NewCache()} // TODO: do not initialize cache if no validation?
+	m := &Model[TObject]{obj: obj, rulesCache: rule.NewCache(), rulesRegistry: rule.NewRegistry()} // TODO: do not initialize cache if no validation?
 	for _, opt := range opts {
 		if err := opt(m); err != nil {
 			return nil, err
@@ -47,51 +47,57 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 type Option[TObject any] func(*Model[TObject]) error
 
 // WithRule registers a named validation rule into the model's validator registry.
-func WithRule[TObject any, TField any](rule rule.Rule[TField]) Option[TObject] {
+func WithRule[TObject any, TField any](name string, fn func(value TField, params ...string) error) Option[TObject] {
 	return func(m *Model[TObject]) error {
-		if rule.Name == "" || rule.Fn == nil {
-			return fmt.Errorf("model: WithRule: rule must have non-empty Name and non-nil Fn")
+		r, err := rule.NewRule(name, fn)
+		if err != nil {
+			return fmt.Errorf("model: WithRule: cannot add rule: %w", err)
 		}
-		if m.validators == nil {
-			m.validators = make(map[string][]ruleAdapter)
-		}
-		ad := newRuleAdapter(rule.Fn)
-		m.validators[rule.Name] = append(m.validators[rule.Name], ad)
+
+		m.rulesRegistry.Add(r)
+
+		//if rule.Name == "" || rule.Fn == nil {
+		//	return fmt.Errorf("model: WithRule: rule must have non-empty Name and non-nil Fn")
+		//}
+		//if m.validators == nil {
+		//	m.validators = make(map[string][]ruleAdapter)
+		//}
+		//ad := newRuleAdapter(rule.Fn)
+		//m.validators[rule.Name] = append(m.validators[rule.Name], ad)
 		return nil
 	}
 }
 
 // WithRules registers multiple named rules of the same field type at once.
-func WithRules[TObject any, TField any](rules []rule.Rule[TField]) Option[TObject] {
+func WithRules[TObject any, TField any](rules []rule.Rule) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		for _, r := range rules {
-			if err := WithRule[TObject, TField](r)(m); err != nil {
-				return err
-			}
+			m.rulesRegistry.Add(r)
 		}
 		return nil
 	}
 }
 
+// the function is redundant, the functionality is now in the registry.
 // ensureRule adds a rule if an exact overload for the same rule name and field type is not already present.
 // It returns an error for invalid rule definitions (empty name or nil function).
-func ensureRule[TObject any, TField any](m *Model[TObject], r rule.Rule[TField]) error {
-	if r.Name == "" || r.Fn == nil {
-		return fmt.Errorf("model: ensureRule: rule must have non-empty Name and non-nil Fn")
-	}
-	if m.validators == nil {
-		m.validators = make(map[string][]ruleAdapter)
-	}
-	typ := reflect.TypeOf((*TField)(nil)).Elem()
-	for _, ad := range m.validators[r.Name] {
-		if ad.fieldType != nil && ad.fieldType == typ {
-			return nil // exact overload already exists; keep user's version
-		}
-	}
-	ad := newRuleAdapter(r.Fn)
-	m.validators[r.Name] = append(m.validators[r.Name], ad)
-	return nil
-}
+//func ensureRule[TObject any, TField any](m *Model[TObject], r rule.Rule[TField]) error {
+//	if r.Name == "" || r.Fn == nil {
+//		return fmt.Errorf("model: ensureRule: rule must have non-empty Name and non-nil Fn")
+//	}
+//	if m.validators == nil {
+//		m.validators = make(map[string][]ruleAdapter)
+//	}
+//	typ := reflect.TypeOf((*TField)(nil)).Elem()
+//	for _, ad := range m.validators[r.Name] {
+//		if ad.fieldType != nil && ad.fieldType == typ {
+//			return nil // exact overload already exists; keep user's version
+//		}
+//	}
+//	ad := newRuleAdapter(r.Fn)
+//	m.validators[r.Name] = append(m.validators[r.Name], ad)
+//	return nil
+//}
 
 // WithDefaults enables applying defaults during New(). If not specified, defaults are NOT applied automatically.
 func WithDefaults[TObject any]() Option[TObject] {
@@ -103,27 +109,28 @@ func WithDefaults[TObject any]() Option[TObject] {
 func WithValidation[TObject any]() Option[TObject] {
 	return func(m *Model[TObject]) error {
 		m.validateOnNew = true
+		// No need to implicitly register builtin rules, registry will return them if no exact overload is found.
 		// Implicitly register builtin rules, but do not override existing exact overloads.
-		for _, r := range BuiltinStringRules() {
-			if err := ensureRule[TObject, string](m, r); err != nil {
-				return err
-			}
-		}
-		for _, r := range BuiltinIntRules() {
-			if err := ensureRule[TObject, int](m, r); err != nil {
-				return err
-			}
-		}
-		for _, r := range BuiltinInt64Rules() {
-			if err := ensureRule[TObject, int64](m, r); err != nil {
-				return err
-			}
-		}
-		for _, r := range BuiltinFloat64Rules() {
-			if err := ensureRule[TObject, float64](m, r); err != nil {
-				return err
-			}
-		}
+		//for _, r := range BuiltinStringRules() {
+		//	if err := ensureRule[TObject, string](m, r); err != nil {
+		//		return err
+		//	}
+		//}
+		//for _, r := range BuiltinIntRules() {
+		//	if err := ensureRule[TObject, int](m, r); err != nil {
+		//		return err
+		//	}
+		//}
+		//for _, r := range BuiltinInt64Rules() {
+		//	if err := ensureRule[TObject, int64](m, r); err != nil {
+		//		return err
+		//	}
+		//}
+		//for _, r := range BuiltinFloat64Rules() {
+		//	if err := ensureRule[TObject, float64](m, r); err != nil {
+		//		return err
+		//	}
+		//}
 		return nil
 	}
 }

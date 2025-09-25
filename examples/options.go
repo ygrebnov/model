@@ -33,20 +33,18 @@ func exampleWithValidationAndWithRule_error() {
 		D time.Duration `validate:"nonzeroDur"`
 	}
 
-	r := rule.Rule[time.Duration]{
-		Name: "nonzeroDur",
-		Fn: func(d time.Duration, _ ...string) error {
-			if d == 0 {
-				return fmt.Errorf("duration must be non-zero")
-			}
-			return nil
-		},
-	}
-
 	in := Input{} // D is zero -> should fail validation
 	m, err := model.New(&in,
-		model.WithRule[Input, time.Duration](r), // register custom rule
-		model.WithValidation[Input](),           // run validation during New()
+		model.WithRule[Input, time.Duration](
+			"nonzeroDur",
+			func(d time.Duration, _ ...string) error {
+				if d == 0 {
+					return fmt.Errorf("duration must be non-zero")
+				}
+				return nil
+			},
+		),                             // register custom rule
+		model.WithValidation[Input](), // run validation during New()
 	)
 	if err != nil {
 		var ve *model.ValidationError
@@ -69,17 +67,16 @@ func exampleWithRule() {
 	}
 	// You can rely on built-in string rules implicitly via WithValidation, but
 	// here we demonstrate a custom single-rule registration for clarity.
-	r := rule.Rule[string]{
-		Name: "nonempty",
-		Fn: func(s string, _ ...string) error {
+	d := Doc{}
+	m, err := model.New(&d, model.WithRule[Doc, string](
+		"nonempty",
+		func(s string, _ ...string) error {
 			if s == "" {
 				return fmt.Errorf("must not be empty")
 			}
 			return nil
 		},
-	}
-	d := Doc{}
-	m, err := model.New(&d, model.WithRule[Doc, string](r))
+	))
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -96,20 +93,29 @@ func exampleWithRules() {
 	type Rec struct {
 		Age int `validate:"positive,nonzero"`
 	}
-	rules := []rule.Rule[int]{
-		{Name: "positive", Fn: func(n int, _ ...string) error {
-			if n <= 0 {
-				return fmt.Errorf("must be > 0")
-			}
-			return nil
-		}},
-		{Name: "nonzero", Fn: func(n int, _ ...string) error {
-			if n == 0 {
-				return fmt.Errorf("must not be zero")
-			}
-			return nil
-		}},
+
+	positive, err := rule.NewRule[int]("positive", func(n int, _ ...string) error {
+		if n <= 0 {
+			return fmt.Errorf("must be > 0")
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Println("error creating positive rule:", err)
+		return
 	}
+	nonzero, err := rule.NewRule[int]("nonzero", func(n int, _ ...string) error {
+		if n == 0 {
+			return fmt.Errorf("must not be zero")
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Println("error creating nonzero rule:", err)
+		return
+	}
+
+	rules := []rule.Rule{positive, nonzero}
 	r := Rec{Age: 0}
 	m, err := model.New(&r,
 		model.WithRules[Rec, int](rules), // batch register
