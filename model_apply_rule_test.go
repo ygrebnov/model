@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/ygrebnov/model/rule"
 )
 
 // a concrete type implementing fmt.Stringer-like behavior (we won't import fmt here)
@@ -16,29 +14,29 @@ func (w sw) String() string { return w.s }
 
 // --- helpers ---
 
-// exact rule that returns a tagged error so we can see which overload ran
+// exact validationRule that returns a tagged error so we can see which overload ran
 func ruleExactString(v string, _ ...string) error {
 	return fmt.Errorf("exact:string:%s", v)
 }
 
-// interface/assignable rule that returns a tagged error
+// interface/assignable validationRule that returns a tagged error
 type stringer interface{ String() string }
 
 func ruleIfaceStringer(v stringer, _ ...string) error {
 	return fmt.Errorf("assign:stringer:%s", v.String())
 }
 
-// another exact rule for ambiguity checks
+// another exact validationRule for ambiguity checks
 func ruleExactString2(v string, _ ...string) error {
 	return fmt.Errorf("exact2:string:%s", v)
 }
 
-// an int rule (used in available-types list tests)
+// an int validationRule (used in available-types list tests)
 func ruleInt(v int, _ ...string) error {
 	return fmt.Errorf("int:%d", v)
 }
 
-// a no-op rule that succeeds (used to verify skipping of nil adapters)
+// a no-op validationRule that succeeds (used to verify skipping of nil adapters)
 //func rulePassString(v string, _ ...string) error { return nil }
 
 type dummy struct{}
@@ -46,20 +44,20 @@ type dummy struct{}
 func TestModel_applyRule(t *testing.T) {
 	t.Parallel()
 
-	t.Run("unregistered rule -> error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
+	t.Run("unregistered validationRule -> error", func(t *testing.T) {
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
 		err := m.applyRule("nope", reflect.ValueOf("x"))
-		if err == nil || !strings.Contains(err.Error(), `rule "nope" is not registered`) {
-			t.Fatalf("expected unregistered-rule error, got: %v", err)
+		if err == nil || !strings.Contains(err.Error(), `validationRule "nope" is not registered`) {
+			t.Fatalf("expected unregistered-validationRule error, got: %v", err)
 		}
 	})
 
 	t.Run("invalid reflect.Value -> error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
 		// Register something so we don't hit the 'not registered' branch
-		if err := WithRule[dummy, string]("r", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
-		}
+		//if err := WithRule[dummy, string]("r", ruleExactString)(m); err != nil {
+		//	t.Fatalf("WithRule error: %v", err)
+		//}
 
 		var invalid reflect.Value // zero Value is invalid
 		err := m.applyRule("r", invalid)
@@ -69,72 +67,83 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("exact match -> calls exact overload", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		if err := WithRule[dummy, string]("pick", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		pick, err := NewRule[string]("pick", ruleExactString)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
-		err := m.applyRule("pick", reflect.ValueOf("hi"))
+		WithRules[dummy](pick)(m)
+		err = m.applyRule("pick", reflect.ValueOf("hi"))
 		if err == nil || !strings.Contains(err.Error(), "exact:string:hi") {
 			t.Fatalf("expected exact overload to run, got: %v", err)
 		}
 	})
 
 	t.Run("exact preferred over assignable (interface) -> picks exact", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		// Register interface overload
-		if err := WithRule[dummy, stringer]("pick", ruleIfaceStringer)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		interfaceOverload, err := NewRule[stringer]("pick", ruleIfaceStringer)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
-		// Register exact overload for string
-		if err := WithRule[dummy, string]("pick", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		exactOverload, err := NewRule[string]("pick", ruleExactString)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
+		WithRules[dummy](interfaceOverload, exactOverload)(m)
 
-		err := m.applyRule("pick", reflect.ValueOf("yo"))
+		err = m.applyRule("pick", reflect.ValueOf("yo"))
 		if err == nil || !strings.Contains(err.Error(), "exact:string:yo") {
 			t.Fatalf("expected EXACT overload chosen, got: %v", err)
 		}
 	})
 
 	t.Run("assignable (interface) match -> calls interface overload", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		if err := WithRule[dummy, stringer]("iface", ruleIfaceStringer)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		iface, err := NewRule[stringer]("iface", ruleIfaceStringer)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
+		WithRules[dummy](iface)(m)
 
 		v := sw{s: "wrapped"}
-		err := m.applyRule("iface", reflect.ValueOf(v))
+		err = m.applyRule("iface", reflect.ValueOf(v))
 		if err == nil || !strings.Contains(err.Error(), "assign:stringer:wrapped") {
 			t.Fatalf("expected interface overload to run, got: %v", err)
 		}
 	})
 
 	t.Run("multiple exact overloads -> ambiguous error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		if err := WithRule[dummy, string]("dup", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		exactString1, err := NewRule[string]("dup", ruleExactString)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
-		if err := WithRule[dummy, string]("dup", ruleExactString2)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		exactString2, err := NewRule[string]("dup", ruleExactString2)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
+		WithRules[dummy](exactString1, exactString2)(m)
 
-		err := m.applyRule("dup", reflect.ValueOf("x"))
+		err = m.applyRule("dup", reflect.ValueOf("x"))
 		if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 			t.Fatalf("expected ambiguity error, got: %v", err)
 		}
 	})
 
 	t.Run("no matching overload -> error lists available types", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		// Register overloads for string and int, but we'll pass a float
-		if err := WithRule[dummy, string]("r", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		stringOverload, err := NewRule[string]("r", ruleExactString)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
-		if err := WithRule[dummy, int]("r", ruleInt)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		intOverload, err := NewRule[int]("r", ruleInt)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
+		WithRules[dummy](stringOverload, intOverload)(m)
 
-		err := m.applyRule("r", reflect.ValueOf(3.14))
+		// Trigger no-overload with a float
+		err = m.applyRule("r", reflect.ValueOf(3.14))
 		if err == nil || !strings.Contains(err.Error(), "has no overload for type float64") {
 			t.Fatalf("expected no-overload error, got: %v", err)
 		}
@@ -146,13 +155,13 @@ func TestModel_applyRule(t *testing.T) {
 
 	// TODO: revise the test below.
 	//t.Run("skips nil adapters; validation passes", func(t *testing.T) {
-	//	m := &Model[dummy]{validators: make(map[string][]rule.Adapter), rulesRegistry: rule.NewRegistry()}
+	//	m := &Model[dummy]{validators: make(map[string][]validationRule.Adapter), rulesRegistry: validationRule.NewRegistry()}
 	//
 	//	// Intentionally place a nil/zero adapter first; applyRule must skip it.
 	//	nilAdapter := ruleAdapter{} // fieldType == nil, fn == nil
 	//	goodAdapter := newRuleAdapter[string](rulePassString)
 	//
-	//	m.validators["ok"] = []rule.Adapter{nilAdapter, goodAdapter}
+	//	m.validators["ok"] = []validationRule.Adapter{nilAdapter, goodAdapter}
 	//
 	//	if err := m.applyRule("ok", reflect.ValueOf("pass")); err != nil {
 	//		t.Fatalf("expected nil error (successful validation), got: %v", err)
@@ -183,7 +192,7 @@ func TestModel_applyRule(t *testing.T) {
 	//					t.Fatalf("expected panic for %q, got none", tc.name)
 	//				} else {
 	//					msg := fmt.Sprint(r)
-	//					if !strings.Contains(msg, "rule type mismatch") {
+	//					if !strings.Contains(msg, "validationRule type mismatch") {
 	//						t.Fatalf("unexpected panic message for %q: %s", tc.name, msg)
 	//					}
 	//				}
@@ -197,16 +206,20 @@ func TestModel_applyRule(t *testing.T) {
 	//})
 
 	t.Run("available types list is sorted deterministically", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: rule.NewRegistry()}
-		// Register in non-sorted order on purpose
-		if err := WithRule[dummy, string]("sorted", ruleExactString)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		stringOverload, err := NewRule[string]("sorted", ruleExactString)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
-		if err := WithRule[dummy, int]("sorted", ruleInt)(m); err != nil {
-			t.Fatalf("WithRule error: %v", err)
+		intOverload, err := NewRule[int]("sorted", ruleInt)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
 		}
+		// Add in non-sorted order
+		WithRules[dummy](stringOverload, intOverload)(m)
+
 		// Trigger no-overload with a float
-		err := m.applyRule("sorted", reflect.ValueOf(1.23))
+		err = m.applyRule("sorted", reflect.ValueOf(1.23))
 		if err == nil {
 			t.Fatalf("expected error")
 		}

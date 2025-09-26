@@ -10,8 +10,8 @@ import (
 func (m *Model[TObject]) Validate() error { return m.validate() }
 
 // validate is the internal implementation that walks struct fields and applies rules
-// declared in `validate:"..."` tags. It supports rule parameters via the syntax
-// "rule" or "rule(p1,p2)" and multiple rules separated by commas.
+// declared in `validate:"..."` tags. It supports validationRule parameters via the syntax
+// "validationRule" or "validationRule(p1,p2)" and multiple rules separated by commas.
 func (m *Model[TObject]) validate() error {
 	rv, err := m.rootStructValue("Validate")
 	if err != nil {
@@ -23,6 +23,18 @@ func (m *Model[TObject]) validate() error {
 		return nil
 	}
 	return ve
+}
+
+// applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
+// passing any additional string parameters.
+// If the rule is not found or fails, an error is returned.
+func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...string) error {
+	r, err := m.rulesRegistry.get(name, v)
+	if err != nil {
+		return err
+	}
+
+	return r.getValidationFn()(v, params...)
 }
 
 // validateStruct walks a struct value and applies rules on each field according to its `validate` tag.

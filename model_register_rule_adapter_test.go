@@ -35,14 +35,14 @@ package model
 //		{
 //			name:        "nil fn -> no change",
 //			startMapNil: true,
-//			regName:     "rule",
+//			regName:     "validationRule",
 //			ad:          ruleAdapter{fieldType: strType, fn: nil},
 //			wantChanged: false,
 //		},
 //		{
 //			name:        "nil fieldType -> no change",
 //			startMapNil: true,
-//			regName:     "rule",
+//			regName:     "validationRule",
 //			ad:          ruleAdapter{fieldType: nil, fn: noopRuleFn},
 //			wantChanged: false,
 //		},

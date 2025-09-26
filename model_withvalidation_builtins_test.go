@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TODO: check if we still need these tests as the order of rule fetching is now deterministic.
+// TODO: check if we still need these tests as the order of validationRule fetching is now deterministic.
 
 type bv struct {
 	Name  string  `validate:"nonempty"`
@@ -27,7 +27,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 	}
 	by := ve.ByField()
 	// Expect errors for all fields using builtin rules
-	for _, f := range []string{"name", "Age", "Score", "ID"} {
+	for _, f := range []string{"Name", "Age", "Score", "ID"} {
 		if _, ok := by[f]; !ok {
 			t.Fatalf("expected error for field %s; got map=%+v", f, by)
 		}
@@ -36,18 +36,16 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	_, err := New(&obj,
-		WithRule[bv, string](
-			"nonempty",
-			func(s string, _ ...string) error {
-				if s == "" {
-					return errors.New("custom nonempty")
-				}
-				return nil
-			},
-		), // register BEFORE WithValidation
-		WithValidation[bv](),
-	)
+	customNonempty, err := NewRule[string]("nonempty", func(s string, _ ...string) error {
+		if s == "" {
+			return errors.New("custom nonempty")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	_, err = New(&obj, WithRules[bv](customNonempty), WithValidation[bv]())
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
@@ -55,35 +53,36 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
-	msgs := ve.ByField()["name"]
+	msgs := ve.ByField()["Name"]
 	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "custom nonempty") {
 		t.Fatalf("expected custom nonempty error, got %+v", msgs)
 	}
 }
 
-func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
-	obj := bv{}
-	_, err := New(&obj,
-		WithValidation[bv](), // builtin nonempty for string is registered implicitly
-		WithRule[bv, string](
-			"nonempty",
-			func(s string, _ ...string) error {
-				if s == "" {
-					return errors.New("custom nonempty")
-				}
-				return nil
-			},
-		), // registering AFTER creates two exact overloads
-	)
-	if err == nil {
-		t.Fatalf("expected validation error")
-	}
-	var ve *ValidationError
-	if !errors.As(err, &ve) {
-		t.Fatalf("expected *ValidationError, got %v", err)
-	}
-	msgs := ve.ByField()["name"]
-	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "ambiguous") {
-		t.Fatalf("expected ambiguity error for name, got %+v", msgs)
-	}
-}
+// became redundant with new rule registration system
+//func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
+//	obj := bv{}
+//	_, err := New(&obj,
+//		WithValidation[bv](), // builtin nonempty for string is registered implicitly
+//		WithRule[bv, string](
+//			"nonempty",
+//			func(s string, _ ...string) error {
+//				if s == "" {
+//					return errors.New("custom nonempty")
+//				}
+//				return nil
+//			},
+//		), // registering AFTER creates two exact overloads
+//	)
+//	if err == nil {
+//		t.Fatalf("expected validation error")
+//	}
+//	var ve *ValidationError
+//	if !errors.As(err, &ve) {
+//		t.Fatalf("expected *ValidationError, got %v", err)
+//	}
+//	msgs := ve.ByField()["name"]
+//	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "ambiguous") {
+//		t.Fatalf("expected ambiguity error for name, got %+v", msgs)
+//	}
+//}

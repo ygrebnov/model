@@ -46,7 +46,7 @@ func (c *mapping) add(parent reflect.Type, fieldIndex int, tagName string, parse
 	c.c.Store(key, parsed)
 }
 
-// ruleNameParams holds the name and params of a single validation rule.
+// ruleNameParams holds the name and params of a single validation validationRule.
 type ruleNameParams struct {
 	name   string
 	params []string

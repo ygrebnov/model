@@ -8,7 +8,8 @@ import (
 	"sync"
 )
 
-type validationRule interface {
+// Rule defines a named validation function for a specific field type.
+type Rule interface {
 	getName() string
 	getFieldTypeName() string
 	getValidationFn() func(v reflect.Value, params ...string) error
@@ -16,23 +17,27 @@ type validationRule interface {
 	isAssignableTo(t reflect.Type) bool
 }
 
-func newValidationRule(name string, fn func(v reflect.Value, params ...string) error) (validationRule, error) {
+// NewRule creates a new Rule with the given name and validation function.
+// The validation function must accept a value of type TField and optional string parameters,
+// returning an error if validation fails or nil if it passes.
+// An error is returned if the name is empty or the function is nil.
+func NewRule[TField any](name string, fn func(v TField, params ...string) error) (Rule, error) {
 	return newRule(name, fn)
 }
 
 // registry is a registry of validation rules.
 type registry struct {
 	mu    sync.RWMutex
-	rules map[string][]validationRule // rule name -> overloads by type
+	rules map[string][]Rule // validationRule name -> overloads by type
 }
 
 func newRegistry() *registry {
 	return &registry{
-		rules: make(map[string][]validationRule),
+		rules: make(map[string][]Rule),
 	}
 }
 
-func (r *registry) add(rule validationRule) {
+func (r *registry) add(rule Rule) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -40,19 +45,19 @@ func (r *registry) add(rule validationRule) {
 	r.rules[name] = append(r.rules[name], rule)
 }
 
-// get returns the best-matching overload of rule `name` for the given field value.
+// get returns the best-matching overload of validationRule `name` for the given field value.
 // Selection strategy:
 //  1. Prefer exact type match (v.Type() == fieldType).
 //  2. Otherwise accept AssignableTo matches (interfaces, named types), preferring the first declared.
-//  3. Otherwise, if no matches, fetch a built-in rule if available.
+//  3. Otherwise, if no matches, fetch a built-in validationRule if available.
 //  4. If no matches, return a descriptive error listing available overload types.
 //  5. If multiple exact matches (shouldn't happen), return an ambiguity error.
-func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
+func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if !v.IsValid() {
-		return nil, fmt.Errorf("model: invalid value for rule %q", name)
+		return nil, fmt.Errorf("model: invalid value for validationRule %q", name)
 	}
 
 	valueType := v.Type()
@@ -61,12 +66,12 @@ func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
 	builtinRule, hasBuiltin := builtInRules[key{name, valueType}] // TODO: move inside switch
 
 	if (!ok || len(rules) == 0) && !hasBuiltin {
-		return nil, fmt.Errorf("model: rule %q is not registered", name)
+		return nil, fmt.Errorf("model: validationRule %q is not registered", name)
 	}
 
 	var (
-		exacts  []validationRule
-		assigns []validationRule
+		exacts  []Rule
+		assigns []Rule
 	)
 	for _, rr := range rules {
 		//if ad.fieldType == nil || ad.fn == nil {
@@ -88,7 +93,7 @@ func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
 	case len(exacts) > 1:
 		// TODO: check for duplicates in add to prevent this
 		return nil, fmt.Errorf(
-			"model: rule %q is ambiguous for type %s; %d exact overloads registered",
+			"model: validationRule %q is ambiguous for type %s; %d exact overloads registered",
 			name,
 			valueType,
 			len(exacts),
@@ -100,7 +105,7 @@ func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
 	default:
 		// Construct helpful message of available overload types.
 		return nil, fmt.Errorf(
-			"model: rule %q has no overload for type %s (available: %s)",
+			"model: validationRule %q has no overload for type %s (available: %s)",
 			name,
 			valueType,
 			strings.Join(getFieldTypesNames(rules), ", "),
@@ -108,7 +113,7 @@ func (r *registry) get(name string, v reflect.Value) (validationRule, error) {
 	}
 }
 
-func getFieldTypesNames(rules []validationRule) []string {
+func getFieldTypesNames(rules []Rule) []string {
 	var names []string
 	for _, rr := range rules {
 		filedTypeName := rr.getFieldTypeName()

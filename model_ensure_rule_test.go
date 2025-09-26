@@ -1,7 +1,7 @@
 package model
 
-// TODO: ensureRule has been removed due to obsolescence with the new rule registration system.
-// TODO: modify these tests to validate the new rule registration and validation behavior.
+// TODO: ensureRule has been removed due to obsolescence with the new validationRule registration system.
+// TODO: modify these tests to validate the new validationRule registration and validation behavior.
 
 // Tests for ensureRule behavior and compatibility with WithValidation.
 //
@@ -9,12 +9,12 @@ package model
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 //
 //	// Empty name
-//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
-//		t.Fatalf("expected error for empty rule name")
+//	if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
+//		t.Fatalf("expected error for empty validationRule name")
 //	}
 //	// Nil function
-//	if err := ensureRule[struct{}, string](m, rule.Rule[string]{name: "x", Fn: nil}); err == nil {
-//		t.Fatalf("expected error for nil rule function")
+//	if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "x", Fn: nil}); err == nil {
+//		t.Fatalf("expected error for nil validationRule function")
 //	}
 //}
 //
@@ -28,7 +28,7 @@ package model
 //
 //func TestEnsureRule_ValidRule_AppendsAdapter(t *testing.T) {
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
-//	r := rule.Rule[string]{
+//	r := validationRule.Rule[string]{
 //		name: "customX",
 //		Fn:   func(s string, _ ...string) error { return nil },
 //	}
@@ -50,7 +50,7 @@ package model
 //
 //func TestEnsureRule_DuplicateExact_NoAppend(t *testing.T) {
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
-//	r := rule.Rule[string]{
+//	r := validationRule.Rule[string]{
 //		name: "dup",
 //		Fn:   func(s string, _ ...string) error { return nil },
 //	}

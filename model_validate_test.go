@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ygrebnov/model/rule"
 )
 
 // --- helpers & sample rules used in tests ---
@@ -78,7 +76,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vHasTags{
 					Name: "ok",
 					Wait: time.Second,
@@ -86,20 +84,23 @@ func TestModel_validate(t *testing.T) {
 				obj.Info.Note = "ok"
 				m.obj = &obj
 				// register rules
-				if err := WithRule[vHasTags, string]("nonempty", ruleNonEmpty)(m); err != nil {
-					t.Fatalf("WithRule error: %v", err)
+				nonempty, err := NewRule("nonempty", ruleNonEmpty)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
 				}
-				if err := WithRule[vHasTags, time.Duration]("nonZeroDur", ruleNonZeroDur)(m); err != nil {
-					t.Fatalf("WithRule error: %v", err)
+				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
 				}
+				WithRules[vHasTags](nonempty, nonZeroDur)(m)
 				return m.validate(), m
 			},
 			wantErr: "",
 		},
 		{
-			name: "rule failures -> ValidationError with multiple field errors",
+			name: "validationRule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vHasTags{
 					// name empty (violates nonempty)
 					// Wait zero (violates nonZeroDur)
@@ -107,12 +108,15 @@ func TestModel_validate(t *testing.T) {
 				// nested struct field also empty (violates nonempty)
 				m.obj = &obj
 				// register rules
-				if err := WithRule[vHasTags, string]("nonempty", ruleNonEmpty)(m); err != nil {
-					t.Fatalf("WithRule error: %v", err)
+				nonempty, err := NewRule("nonempty", ruleNonEmpty)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
 				}
-				if err := WithRule[vHasTags, time.Duration]("nonZeroDur", ruleNonZeroDur)(m); err != nil {
-					t.Fatalf("WithRule error: %v", err)
+				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
 				}
+				WithRules[vHasTags](nonempty, nonZeroDur)(m)
 				return m.validate(), m
 			},
 			wantErr: "validation", // we’ll assert concrete type & fields in verify
@@ -127,14 +131,14 @@ func TestModel_validate(t *testing.T) {
 				}
 				// ensure important paths exist
 				by := ve.ByField()
-				wantPaths := []string{"name", "Wait", "Info.Note"}
+				wantPaths := []string{"Name", "Wait", "Info.Note"}
 				for _, p := range wantPaths {
 					if _, ok := by[p]; !ok {
 						t.Errorf("missing error for field path %q", p)
 					}
 				}
 				// check representative messages
-				if es := by["name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "must not be empty") {
+				if es := by["Name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "must not be empty") {
 					t.Errorf("expected nonempty error for name, got: %+v", es)
 				}
 				if es := by["Wait"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "non-zero") {
@@ -143,25 +147,25 @@ func TestModel_validate(t *testing.T) {
 			},
 		},
 		{
-			name: "unknown rule -> ValidationError with rule-not-registered message",
+			name: "unknown validationRule -> ValidationError with validationRule-not-registered message",
 			run: func() (error, any) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{rulesMapping: rule.NewCache(), rulesRegistry: rule.NewRegistry()}
+				m := &Model[vUnknown]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vUnknown{}
 				m.obj = &obj
 				// no rules registered on purpose
 				return m.validate(), m
 			},
-			wantErr: "rule \"doesNotExist\" is not registered",
+			wantErr: "validationRule \"doesNotExist\" is not registered",
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *ValidationError
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if len(ve.ByField()["Alias"]) == 0 {
-					t.Fatalf("expected Alias to have a rule-not-registered error")
+					t.Fatalf("expected Alias to have a validationRule-not-registered error")
 				}
 			},
 		},

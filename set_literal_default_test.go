@@ -239,5 +239,5 @@ func TestSetLiteralDefault(t *testing.T) {
 		}
 		// nothing to assert further; just ensuring no panic and no error
 	})
-	// TODO: add cases for other int/float kinds (e.g., int32, float32) by extending extend holder with those fields.
+	// TODO: add cases for other int/float kinds (e.g., int32, float32) by extending holder with those fields.
 }
