@@ -126,7 +126,7 @@ func TestModel_ApplyDefaults(t *testing.T) {
 					}
 				}
 			default:
-				t.Fatalf("unexpected model type in setup")
+				t.Fatalf("unexpected model type in setupRegistry")
 			}
 		})
 	}

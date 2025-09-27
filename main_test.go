@@ -15,6 +15,20 @@ func getTestRules(t *testing.T) map[string]Rule {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
+	intOverloadForStringRule, err := NewRule(
+		"stringRule",
+		func(v int, _ ...string) error { return errors.New("intOverloadForStringRule") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	interfaceOverloadForStringRule, err := NewRule(
+		"stringRule",
+		func(v interface{}, _ ...string) error { return errors.New("interfaceOverloadForStringRule") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
 	intRule, err := NewRule(
 		"intRule",
 		func(v int, _ ...string) error { return errors.New("intRule") },
@@ -32,6 +46,13 @@ func getTestRules(t *testing.T) map[string]Rule {
 	interfaceRule, err := NewRule(
 		"interfaceRule",
 		func(v interface{}, _ ...string) error { return errors.New("interfaceRule") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	interfaceRule2, err := NewRule(
+		"interfaceRule",
+		func(v interface{}, _ ...string) error { return errors.New("interfaceRule2") },
 	)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
@@ -57,13 +78,25 @@ func getTestRules(t *testing.T) map[string]Rule {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
+	pointerToInterfaceRule2, err := NewRule(
+		"pointerToInterfaceRule",
+		func(v *interface{}, _ ...string) error { return errors.New("pointerToInterfaceRule2") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+
 	return map[string]Rule{
-		"stringRule":             stringRule,
-		"intRule":                intRule,
-		"floatRule":              floatRule,
-		"interfaceRule":          interfaceRule,
-		"structARule":            structARule,
-		"structRule":             structRule,
-		"pointerToInterfaceRule": pointerToInterfaceRule,
+		"stringRule":                     stringRule,
+		"intOverloadForStringRule":       intOverloadForStringRule,
+		"interfaceOverloadForStringRule": interfaceOverloadForStringRule,
+		"intRule":                        intRule,
+		"floatRule":                      floatRule,
+		"interfaceRule":                  interfaceRule,
+		"interfaceRule2":                 interfaceRule2,
+		"structARule":                    structARule,
+		"structRule":                     structRule,
+		"pointerToInterfaceRule":         pointerToInterfaceRule,
+		"pointerToInterfaceRule2":        pointerToInterfaceRule2,
 	}
 }

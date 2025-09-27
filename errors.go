@@ -9,4 +9,5 @@ var (
 	ErrDuplicateOverloadRule = errors.New("model: duplicate overload rule")
 	ErrRuleNotFound          = errors.New("model: rule not found")
 	ErrRuleOverloadNotFound  = errors.New("model: rule overload not found")
+	ErrInvalidValue          = errors.New("model: invalid value")
 )

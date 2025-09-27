@@ -79,7 +79,7 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	defer r.mu.RUnlock()
 
 	if !v.IsValid() {
-		return nil, fmt.Errorf("model: invalid value for rule %q", name)
+		return nil, errorc.With(ErrInvalidValue, errorc.Field("rule_name", name))
 	}
 
 	valueType := v.Type()
