@@ -47,7 +47,7 @@ type newDefaultsBad struct {
 }
 
 type newValidateBad struct {
-	Name string `validate:"nonempty"` // empty -> error when validationRule registered
+	Name string `validate:"nonempty"` // empty -> error when rule registered
 }
 
 // ---- Tests ----
@@ -176,9 +176,9 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
-		// Dispatch to prove adapter is wired; expect validationRule error (we pass empty string)
+		// Dispatch to prove adapter is wired; expect rule error (we pass empty string)
 		if err := m.applyRule("nonempty", reflect.ValueOf(obj.S)); err == nil || !strings.Contains(err.Error(), "must not be empty") {
-			t.Fatalf("applyRule expected validationRule error, got: %v", err)
+			t.Fatalf("applyRule expected rule error, got: %v", err)
 		}
 	})
 

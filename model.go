@@ -7,7 +7,7 @@ import (
 )
 
 type rulesRegistry interface {
-	add(r Rule)
+	add(r Rule) error
 	get(name string, v reflect.Value) (Rule, error)
 }
 
@@ -48,7 +48,9 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 
 	m := &Model[TObject]{obj: obj}
 	for _, opt := range opts {
-		opt(m)
+		if err := opt(m); err != nil {
+			return nil, err
+		}
 	}
 	// Optionally apply defaults once per model instance
 	if m.applyDefaultsOnNew {
@@ -71,52 +73,34 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 }
 
 // Option configures a Model at construction time.
-type Option[TObject any] func(*Model[TObject])
+type Option[TObject any] func(*Model[TObject]) error
 
 // WithDefaults enables applying defaults during New(). If not specified, defaults are NOT applied automatically.
 func WithDefaults[TObject any]() Option[TObject] {
-	return func(m *Model[TObject]) { m.applyDefaultsOnNew = true }
-}
-
-func initRules[TObject any](m *Model[TObject]) {
-	if m.rulesMapping == nil {
-		m.rulesMapping = newRulesMapping()
-	}
-	if m.rulesRegistry == nil {
-		m.rulesRegistry = newRulesRegistry()
-	}
+	return func(m *Model[TObject]) error { m.applyDefaultsOnNew = true; return nil }
 }
 
 // WithValidation enables running Validate() during New(). If validation fails, New() returns an error.
 // If not specified, validation is NOT run automatically.
 // If no custom rules are registered, built-in rules are used for any `validate` tags present.
 func WithValidation[TObject any]() Option[TObject] {
-	return func(m *Model[TObject]) {
+	return func(m *Model[TObject]) error {
 		m.validateOnNew = true
-		initRules[TObject](m)
+		m.initRules()
+		return nil
 	}
 }
 
-// WithRules registers one or many named custom validation rules of the same field type
-// into the model's validator rulesRegistry.
+// WithRules registers one or many named custom validation rules into the model's validator.
+// Registered validation rules can be executed in New() if WithValidation is also specified,
+// or later by calling Validate().
 //
-// WithRules does not imply WithValidation. If you want validation to run during New(),
-// you must also specify WithValidation.
+// All rules must be of the same field type (e.g., string, int).
 //
-// Example:
-//
-//	m, err := model.New(&myObj,
-//	    model.WithRules[MyType, string](myRule1, myRule2),
-//	    model.WithValidation[MyType](),
-//	)
-//
-// See NewRule for creating rules.
+// See the Rule type and NewRule function for details on creating rules.
 func WithRules[TObject any](rules ...Rule) Option[TObject] {
-	return func(m *Model[TObject]) {
-		initRules[TObject](m)
-		for _, rule := range rules {
-			m.rulesRegistry.add(rule)
-		}
+	return func(m *Model[TObject]) error {
+		return m.RegisterRules(rules...)
 	}
 }
 
@@ -128,7 +112,7 @@ func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	}
 	rv := reflect.ValueOf(m.obj)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		// effectively unreachable due to generic type constraint, left for completeness
+		// defensive: unreachable under normal generic use
 		return reflect.Value{}, fmt.Errorf("model: %s: object must be a non-nil pointer to struct; got %s", phase, rv.Kind())
 	}
 	rv = rv.Elem()

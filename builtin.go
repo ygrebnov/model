@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Built-in validationRule sets
+// Built-in rule sets
 
 // key consists of a name and a field value type.
 type key struct {

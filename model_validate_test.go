@@ -92,13 +92,15 @@ func TestModel_validate(t *testing.T) {
 				if err != nil {
 					t.Fatalf("NewRule error: %v", err)
 				}
-				WithRules[vHasTags](nonempty, nonZeroDur)(m)
+				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
+					t.Fatalf("RegisterRules error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "",
 		},
 		{
-			name: "validationRule failures -> ValidationError with multiple field errors",
+			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
 				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vHasTags{
@@ -116,7 +118,9 @@ func TestModel_validate(t *testing.T) {
 				if err != nil {
 					t.Fatalf("NewRule error: %v", err)
 				}
-				WithRules[vHasTags](nonempty, nonZeroDur)(m)
+				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
+					t.Fatalf("RegisterRules error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "validation", // we’ll assert concrete type & fields in verify
@@ -147,7 +151,7 @@ func TestModel_validate(t *testing.T) {
 			},
 		},
 		{
-			name: "unknown validationRule -> ValidationError with validationRule-not-registered message",
+			name: "unknown rule -> ValidationError with rule-not-registered message",
 			run: func() (error, any) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
@@ -158,14 +162,14 @@ func TestModel_validate(t *testing.T) {
 				// no rules registered on purpose
 				return m.validate(), m
 			},
-			wantErr: "validationRule \"doesNotExist\" is not registered",
+			wantErr: "rule \"doesNotExist\" is not registered",
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *ValidationError
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if len(ve.ByField()["Alias"]) == 0 {
-					t.Fatalf("expected Alias to have a validationRule-not-registered error")
+					t.Fatalf("expected Alias to have a rule-not-registered error")
 				}
 			},
 		},

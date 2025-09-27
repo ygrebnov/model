@@ -255,7 +255,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int64 positive fails (must be > 0)",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64PositiveOnly{P: 0} // triggers positive validationRule
+				obj := int64PositiveOnly{P: 0} // triggers positive rule
 				_, err := New(
 					&obj,
 					//WithRules[int64PositiveOnly, int64](BuiltinInt64Rules()),
@@ -280,7 +280,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int64 nonzero fails (must not be zero)",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64NonZeroOnly{NZ: 0} // triggers nonzero validationRule
+				obj := int64NonZeroOnly{NZ: 0} // triggers nonzero rule
 				_, err := New(
 					&obj,
 					//WithRules[int64NonZeroOnly, int64](BuiltinInt64Rules()),
@@ -305,7 +305,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int64 oneof fails on invalid parameter",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64OneOfBadParam{N: 20} // value irrelevant; validationRule errors on parsing "a"
+				obj := int64OneOfBadParam{N: 20} // value irrelevant; rule errors on parsing "a"
 				_, err := New(
 					&obj,
 					//WithRules[int64OneOfBadParam, int64](BuiltinInt64Rules()),
@@ -330,7 +330,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int positive fails (must be > 0)",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intPositiveOnly{P: 0} // triggers positive validationRule
+				obj := intPositiveOnly{P: 0} // triggers positive rule
 				_, err := New(
 					&obj,
 					//WithRules[intPositiveOnly, int](BuiltinIntRules()),
@@ -355,7 +355,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int nonzero fails (must not be zero)",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intNonZeroOnly{NZ: 0} // triggers nonzero validationRule
+				obj := intNonZeroOnly{NZ: 0} // triggers nonzero rule
 				_, err := New(
 					&obj,
 					//WithRules[intNonZeroOnly, int](BuiltinIntRules()),
@@ -380,7 +380,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int oneof fails on invalid parameter",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intOneOfBadParam{N: 2} // value doesn't matter; validationRule should error on parsing "a"
+				obj := intOneOfBadParam{N: 2} // value doesn't matter; rule should error on parsing "a"
 				_, err := New(
 					&obj,
 					//WithRules[intOneOfBadParam, int](BuiltinIntRules()),
@@ -589,7 +589,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "float64 oneof fails on invalid parameter",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := float64OneOfBadParam{F: 1.0} // value irrelevant; validationRule errors parsing "a"
+				obj := float64OneOfBadParam{F: 1.0} // value irrelevant; rule errors parsing "a"
 				_, err := New(
 					&obj,
 					//WithRules[float64OneOfBadParam, float64](BuiltinFloat64Rules()),

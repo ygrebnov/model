@@ -17,41 +17,41 @@ func TestFieldError_Error(t *testing.T) {
 		wantNot []string // substrings that must be absent
 	}{
 		{
-			name: "with validationRule and non-nil error",
+			name: "with rule and non-nil error",
 			fe: FieldError{
 				Path: "Root.name",
 				Rule: "nonempty",
 				Err:  errors.New("must not be empty"),
 			},
-			wantHas: []string{"Root.name", "must not be empty", "(validationRule nonempty)"},
+			wantHas: []string{"Root.name", "must not be empty", "(rule nonempty)"},
 		},
 		{
-			name: "without validationRule and non-nil error",
+			name: "without rule and non-nil error",
 			fe: FieldError{
 				Path: "Wait",
 				Err:  errors.New("non-zero required"),
 			},
 			wantHas: []string{"Wait", "non-zero required"},
-			wantNot: []string{"(validationRule"},
+			wantNot: []string{"(rule"},
 		},
 		{
-			name: "with validationRule and nil error (should still include path and validationRule, no panic)",
+			name: "with rule and nil error (should still include path and rule, no panic)",
 			fe: FieldError{
 				Path: "X",
 				Rule: "some",
 				Err:  nil,
 			},
-			// Implementation currently formats the nil error; we only assert it contains path and validationRule marker.
-			wantHas: []string{"X", "(validationRule some)"},
+			// Implementation currently formats the nil error; we only assert it contains path and rule marker.
+			wantHas: []string{"X", "(rule some)"},
 		},
 		{
-			name: "without validationRule and nil error (should still include path, no panic)",
+			name: "without rule and nil error (should still include path, no panic)",
 			fe: FieldError{
 				Path: "Field",
 				Err:  nil,
 			},
 			wantHas: []string{"Field"},
-			wantNot: []string{"(validationRule"},
+			wantNot: []string{"(rule"},
 		},
 	}
 
@@ -105,7 +105,7 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 				Params: []string{"p1", "p2"},
 				Err:    errors.New("must not be empty"),
 			},
-			wantHas:    []string{`"path":"User.Email"`, `"validationRule":"nonempty"`, `"params":["p1","p2"]`, `"message":"must not be empty"`},
+			wantHas:    []string{`"path":"User.Email"`, `"rule":"nonempty"`, `"params":["p1","p2"]`, `"message":"must not be empty"`},
 			wantNotHas: []string{}, // all present
 		},
 		{
@@ -115,7 +115,7 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 				Rule: "r",
 				Err:  errors.New("x"),
 			},
-			wantHas:    []string{`"path":"A"`, `"validationRule":"r"`, `"message":"x"`},
+			wantHas:    []string{`"path":"A"`, `"rule":"r"`, `"message":"x"`},
 			wantNotHas: []string{`"params"`},
 		},
 		{
@@ -126,17 +126,17 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 				Params: []string{"k"},
 				Err:    nil,
 			},
-			wantHas:    []string{`"path":"B"`, `"validationRule":"r2"`, `"params":["k"]`, `"message":""`},
+			wantHas:    []string{`"path":"B"`, `"rule":"r2"`, `"params":["k"]`, `"message":""`},
 			wantNotHas: []string{},
 		},
 		{
-			name: "empty validationRule allowed",
+			name: "empty rule allowed",
 			fe: FieldError{
 				Path: "C",
 				Rule: "",
 				Err:  errors.New("oops"),
 			},
-			wantHas:    []string{`"path":"C"`, `"validationRule":""`, `"message":"oops"`},
+			wantHas:    []string{`"path":"C"`, `"rule":""`, `"message":"oops"`},
 			wantNotHas: []string{},
 		},
 	}

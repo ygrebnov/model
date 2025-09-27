@@ -5,16 +5,43 @@ import (
 	"reflect"
 )
 
+// initRules ensures the model's rulesMapping and rulesRegistry are initialized.
+func (m *Model[TObject]) initRules() {
+	if m.rulesMapping == nil {
+		m.rulesMapping = newRulesMapping()
+	}
+	if m.rulesRegistry == nil {
+		m.rulesRegistry = newRulesRegistry()
+	}
+}
+
+// RegisterRules registers one or many named custom validation rules of the same field type
+// into the model's validator rulesRegistry.
+//
+// See the Rule type and NewRule function for details on creating rules.
+func (m *Model[TObject]) RegisterRules(rules ...Rule) error {
+	m.initRules()
+	for _, rule := range rules {
+		if err := m.rulesRegistry.add(rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Validate runs the registered validation rules against the model's bound object.
 // It delegates to the internal validate method which performs the actual work.
-func (m *Model[TObject]) Validate() error { return m.validate() }
+func (m *Model[TObject]) Validate() error {
+	m.initRules()
+	return m.validate()
+}
 
 // validate is the internal implementation that walks struct fields and applies rules
-// declared in `validate:"..."` tags. It supports validationRule parameters via the syntax
-// "validationRule" or "validationRule(p1,p2)" and multiple rules separated by commas.
-func (m *Model[TObject]) validate() error {
-	rv, err := m.rootStructValue("Validate")
-	if err != nil {
+// declared in `validate:"..."` tags. It supports rule parameters via the syntax
+// "rule" or "rule(p1,p2)" and multiple rules separated by commas.
+func (m *Model[TObject]) validate() (err error) {
+	var rv reflect.Value
+	if rv, err = m.rootStructValue("Validate"); err != nil {
 		return err
 	}
 	ve := &ValidationError{}
@@ -87,45 +114,14 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 				m.rulesMapping.add(typ, i, tagValidateElem, elemRules)
 			}
 
-			m.validateElementsWithRules(fv, fpath, elemRules, ve)
+			m.validateElements(fv, fpath, elemRules, ve)
 		}
 	}
 }
 
-// validateElements applies validation rules to elements of a slice, array, or map.
-func (m *Model[TObject]) validateElements(fv reflect.Value, fpath, elemRaw string, ve *ValidationError) {
-	cont := fv
-	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-		cont = cont.Elem()
-	}
-
-	rules := parseTag(elemRaw)
-	if len(rules) == 0 {
-		return
-	}
-
-	// Special case: validateElem:"dive" means recurse into element structs
-	isDiveOnly := len(rules) == 1 && rules[0].name == tagDive && len(rules[0].params) == 0
-
-	switch cont.Kind() {
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < cont.Len(); i++ {
-			elem := cont.Index(i)
-			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
-			m.validateSingleElement(elem, pathIdx, rules, isDiveOnly, ve)
-		}
-	case reflect.Map:
-		for _, key := range cont.MapKeys() {
-			elem := cont.MapIndex(key)
-			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-			m.validateSingleElement(elem, pathKey, rules, isDiveOnly, ve)
-		}
-	}
-}
-
-// validateElementsWithRules applies validation rules to elements of a slice, array, or map
+// validateElements applies validation rules to elements of a slice, array, or map
 // using pre-parsed rules (e.g., retrieved from the cache).
-func (m *Model[TObject]) validateElementsWithRules(fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) {
+func (m *Model[TObject]) validateElements(fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) {
 	cont := fv
 	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
 		cont = cont.Elem()

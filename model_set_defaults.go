@@ -27,11 +27,11 @@ func (m *Model[TObject]) SetDefaults() error {
 //   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
 //   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
 func (m *Model[TObject]) applyDefaults() error {
-	rv, err := m.rootStructValue("SetDefaults")
-	if err != nil {
+	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
 		return err
+	} else {
+		return m.setDefaultsStruct(rv)
 	}
-	return m.setDefaultsStruct(rv)
 }
 
 func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TODO: check if we still need these tests as the order of validationRule fetching is now deterministic.
+// TODO: check if we still need these tests as the order of rule fetching is now deterministic.
 
 type bv struct {
 	Name  string  `validate:"nonempty"`

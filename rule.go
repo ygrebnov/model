@@ -37,7 +37,7 @@ func newRule[FieldType any](name string, fn func(value FieldType, params ...stri
 					// As a fallback for interface FieldType, use Implements for clarity.
 					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
 						return fmt.Errorf(
-							"%w: cannot use %s value with validationRule for type %s",
+							"%w: cannot use %s value with rule for type %s",
 							ErrRuleTypeMismatch,
 							v.Type(),
 							fieldType,
@@ -60,6 +60,10 @@ func (r validationRule) getFieldTypeName() string {
 		return ""
 	}
 	return r.fieldType.String()
+}
+
+func (r validationRule) getFieldType() reflect.Type {
+	return r.fieldType
 }
 
 func (r validationRule) getValidationFn() func(v reflect.Value, params ...string) error {

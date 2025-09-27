@@ -24,22 +24,22 @@ type vInner struct {
 // Struct under test with a variety of fields/tags.
 type vOuter struct {
 	// Recursion targets
-	In  vInner  `validate:""`         // explicit empty (no validationRule), but should dive due to struct recursion
+	In  vInner  `validate:""`         // explicit empty (no rule), but should dive due to struct recursion
 	PIn *vInner `validate:""`         // pointer; nil → no validation; non-nil → dive
 	pin *vInner `validate:"nonempty"` // unexported: must be skipped despite tag
 
 	// Simple rules
 	Name string `validate:"nonempty"`
-	// params test (commas inside parens; also followed by another validationRule)
+	// params test (commas inside parens; also followed by another rule)
 	Note string `validate:"withParams(a, b, c),nonempty"`
 
-	// Unknown validationRule
+	// Unknown rule
 	Alias string `validate:"doesNotExist"`
 
 	// Ambiguity: same name registered twice for exact type
 	Amb string `validate:"dup"`
 
-	// Assignable: validationRule registered for fmt.Stringer, field is concrete strWrap
+	// Assignable: rule registered for fmt.Stringer, field is concrete strWrap
 	Wrapped strWrap `validate:"stringerBad"`
 
 	// Tokenizer coverage: nested parentheses and leading/trailing commas
@@ -95,7 +95,7 @@ func ruleNonzeroDuration(d time.Duration, _ ...string) error {
 	return nil
 }
 
-// int validationRule that always errors (to populate FieldError)
+// int rule that always errors (to populate FieldError)
 func ruleIntAlwaysErr(_ int, _ ...string) error {
 	return fmt.Errorf("bad int")
 }
@@ -125,7 +125,7 @@ func TestModel_validateStruct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	// Register ambiguous validationRule (same name & type twice) → exact duplicates trigger ambiguity
+	// Register ambiguous rule (same name & type twice) → exact duplicates trigger ambiguity
 	stringDup1, err := NewRule[string]("dup", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
@@ -134,16 +134,27 @@ func TestModel_validateStruct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	// Also a validationRule for int to demonstrate element rules on int slices if needed
+	// Also a rule for int to demonstrate element rules on int slices if needed
 	intSlices, err := NewRule[int]("intErr", ruleIntAlwaysErr)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
 
 	// Apply all to model
-	WithRules[vOuter](stringNonEmpty, stringWithParams, durationNonzero, stringerBad, stringDup1, stringDup2, intSlices)(m)
+	err = m.RegisterRules(
+		stringNonEmpty,
+		stringWithParams,
+		durationNonzero,
+		stringerBad,
+		stringDup1,
+		stringDup2,
+		intSlices,
+	)
+	if err != nil {
+		t.Fatalf("RegisterRules error: %v", err)
+	}
 
-	t.Run("recursion, params parsing, unknown validationRule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
+	t.Run("recursion, params parsing, unknown rule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
 		obj := vOuter{
 			// Recursion: In has validate tags; PIn initially nil (no dive); pin unexported ignored
 			In: vInner{
@@ -154,14 +165,14 @@ func TestModel_validateStruct(t *testing.T) {
 			// Simple rules
 			Name:      "",               // nonempty → error
 			Note:      "",               // withParams(...) → error with params; then nonempty → error
-			Alias:     "",               // unknown validationRule → error from applyRule
-			Amb:       "",               // dup validationRule → ambiguity error
+			Alias:     "",               // unknown rule → error from applyRule
+			Amb:       "",               // dup rule → ambiguity error
 			Wrapped:   strWrap{v: "ok"}, // ruleStringerBad → error (we're asserting AssignableTo used)
-			TokNested: "",               // triggers unknown validationRule errors (tokA, tokB) but exercises nested paren tokenization
+			TokNested: "",               // triggers unknown rule errors (tokA, tokB) but exercises nested paren tokenization
 			TokEdges:  "",               // leading/trailing commas around nonempty -> one nonempty error
 
 			// validateElem tokenizer coverage
-			ElemTokNested: []string{"val"}, // triggers two unknown validationRule applications on the same element
+			ElemTokNested: []string{"val"}, // triggers two unknown rule applications on the same element
 			ElemTokEdges:  []string{""},    // leading/trailing commas -> only nonempty applies
 			ElemParams:    []string{""},    // withParams(a,b,c) and nonempty apply to element[0]
 
@@ -254,9 +265,9 @@ func TestModel_validateStruct(t *testing.T) {
 			}
 		}
 
-		// Unknown validationRule applied
+		// Unknown rule applied
 		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "is not registered") {
-			t.Errorf("expected unknown validationRule error at Root.Alias, got: %+v", es)
+			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
 		}
 
 		// Ambiguity on dup
@@ -264,7 +275,7 @@ func TestModel_validateStruct(t *testing.T) {
 			t.Errorf("expected ambiguity error at Root.Amb, got: %+v", es)
 		}
 
-		// Assignable interface validationRule
+		// Assignable interface rule
 		if es := by["Root.Wrapped"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "bad stringer") {
 			t.Errorf("expected stringerBad error at Root.Wrapped, got: %+v", es)
 		}
@@ -273,12 +284,12 @@ func TestModel_validateStruct(t *testing.T) {
 		if es := by["Root.TokNested"]; len(es) != 2 {
 			t.Errorf("expected 2 errors for Root.TokNested (tokA and tokB), got %d: %+v", len(es), es)
 		} else {
-			// Ensure rules are tokA and tokB (unknown validationRule errors)
+			// Ensure rules are tokA and tokB (unknown rule errors)
 			have := map[string]bool{"tokA": false, "tokB": false}
 			for _, fe := range es {
 				have[fe.Rule] = true
 				if !strings.Contains(fe.Err.Error(), "is not registered") {
-					t.Errorf("expected unknown validationRule error for %s, got %v", fe.Rule, fe.Err)
+					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}
 			if !have["tokA"] || !have["tokB"] {
@@ -300,7 +311,7 @@ func TestModel_validateStruct(t *testing.T) {
 			for _, fe := range es {
 				have[fe.Rule] = true
 				if !strings.Contains(fe.Err.Error(), "is not registered") {
-					t.Errorf("expected unknown validationRule error for %s, got %v", fe.Rule, fe.Err)
+					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}
 			if !have["tokEA"] || !have["tokEB"] {
@@ -392,7 +403,7 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 
 		// Maps
-		// Labels map[string]string with nonempty element validationRule
+		// Labels map[string]string with nonempty element rule
 		if es := by[`Root.Labels[a]`]; len(es) == 0 {
 			t.Errorf("expected nonempty error at Root.Labels[a]")
 		}

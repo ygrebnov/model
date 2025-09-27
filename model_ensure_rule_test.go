@@ -1,30 +1,32 @@
 package model
 
+import "testing"
+
 // TODO: ensureRule has been removed due to obsolescence with the new validationRule registration system.
 // TODO: modify these tests to validate the new validationRule registration and validation behavior.
 
 // Tests for ensureRule behavior and compatibility with WithValidation.
 //
-//func TestEnsureRule_InvalidRule_Errors(t *testing.T) {
-//	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
+//	func TestEnsureRule_InvalidRule_Errors(t *testing.T) {
+//		m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
 //
-//	// Empty name
-//	if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
-//		t.Fatalf("expected error for empty validationRule name")
+//		// Empty name
+//		if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "", Fn: func(string, ...string) error { return nil }}); err == nil {
+//			t.Fatalf("expected error for empty validationRule name")
+//		}
+//		// Nil function
+//		if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "x", Fn: nil}); err == nil {
+//			t.Fatalf("expected error for nil validationRule function")
+//		}
 //	}
-//	// Nil function
-//	if err := ensureRule[struct{}, string](m, validationRule.Rule[string]{name: "x", Fn: nil}); err == nil {
-//		t.Fatalf("expected error for nil validationRule function")
-//	}
-//}
-//
-//func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
-//	type Obj struct{ S string }
-//	obj := Obj{}
-//	if _, err := New(&obj, WithValidation[Obj]()); err != nil {
-//		t.Fatalf("WithValidation should not error for valid builtins, got: %v", err)
-//	}
-//}
+func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
+	type Obj struct{ S string }
+	obj := Obj{}
+	if _, err := New(&obj, WithValidation[Obj]()); err != nil {
+		t.Fatalf("WithValidation should not error for valid builtins, got: %v", err)
+	}
+}
+
 //
 //func TestEnsureRule_ValidRule_AppendsAdapter(t *testing.T) {
 //	m := &Model[struct{}]{validators: make(map[string][]ruleAdapter)}
