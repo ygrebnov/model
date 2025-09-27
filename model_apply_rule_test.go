@@ -26,7 +26,7 @@ func ruleIfaceStringer(v stringer, _ ...string) error {
 	return fmt.Errorf("assign:stringer:%s", v.String())
 }
 
-// another exact rule for ambiguity checks
+// another exact rule (now only used to test duplicate rejection)
 func ruleExactString2(v string, _ ...string) error {
 	return fmt.Errorf("exact2:string:%s", v)
 }
@@ -36,32 +36,25 @@ func ruleInt(v int, _ ...string) error {
 	return fmt.Errorf("int:%d", v)
 }
 
-// a no-op rule that succeeds (used to verify skipping of nil adapters)
-//func rulePassString(v string, _ ...string) error { return nil }
-
 type dummy struct{}
 
 func TestModel_applyRule(t *testing.T) {
-	t.Parallel()
+	// NOTE: ambiguity case removed because registry now rejects duplicate exact overloads.
 
+	// Unregistered rule -> ErrRuleNotFound
 	t.Run("unregistered rule -> error", func(t *testing.T) {
 		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
 		err := m.applyRule("nope", reflect.ValueOf("x"))
-		if err == nil || !strings.Contains(err.Error(), `rule "nope" is not registered`) {
+		if err == nil || !strings.Contains(err.Error(), "rule not found") {
 			t.Fatalf("expected unregistered-rule error, got: %v", err)
 		}
 	})
 
 	t.Run("invalid reflect.Value -> error", func(t *testing.T) {
 		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
-		// Register something so we don't hit the 'not registered' branch
-		//if err := WithRule[dummy, string]("r", ruleExactString)(m); err != nil {
-		//	t.Fatalf("WithRule error: %v", err)
-		//}
-
 		var invalid reflect.Value // zero Value is invalid
 		err := m.applyRule("r", invalid)
-		if err == nil || !strings.Contains(err.Error(), `invalid value`) {
+		if err == nil || !strings.Contains(err.Error(), "invalid value") {
 			t.Fatalf("expected invalid-value error, got: %v", err)
 		}
 	})
@@ -94,7 +87,6 @@ func TestModel_applyRule(t *testing.T) {
 		if err = m.RegisterRules(interfaceOverload, exactOverload); err != nil {
 			t.Fatalf("RegisterRules error: %v", err)
 		}
-
 		err = m.applyRule("pick", reflect.ValueOf("yo"))
 		if err == nil || !strings.Contains(err.Error(), "exact:string:yo") {
 			t.Fatalf("expected EXACT overload chosen, got: %v", err)
@@ -110,7 +102,6 @@ func TestModel_applyRule(t *testing.T) {
 		if err = m.RegisterRules(iface); err != nil {
 			t.Fatalf("RegisterRules error: %v", err)
 		}
-
 		v := sw{s: "wrapped"}
 		err = m.applyRule("iface", reflect.ValueOf(v))
 		if err == nil || !strings.Contains(err.Error(), "assign:stringer:wrapped") {
@@ -118,7 +109,7 @@ func TestModel_applyRule(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple exact overloads -> ambiguous error", func(t *testing.T) {
+	t.Run("duplicate exact overloads -> registration error", func(t *testing.T) {
 		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
 		exactString1, err := NewRule[string]("dup", ruleExactString)
 		if err != nil {
@@ -128,13 +119,9 @@ func TestModel_applyRule(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = m.RegisterRules(exactString1, exactString2); err != nil {
-			t.Fatalf("RegisterRules error: %v", err)
-		}
-
-		err = m.applyRule("dup", reflect.ValueOf("x"))
-		if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-			t.Fatalf("expected ambiguity error, got: %v", err)
+		err = m.RegisterRules(exactString1, exactString2)
+		if err == nil || !strings.Contains(err.Error(), "duplicate overload rule") {
+			t.Fatalf("expected duplicate overload error, got: %v", err)
 		}
 	})
 
@@ -151,69 +138,15 @@ func TestModel_applyRule(t *testing.T) {
 		if err = m.RegisterRules(stringOverload, intOverload); err != nil {
 			t.Fatalf("RegisterRules error: %v", err)
 		}
-
 		// Trigger no-overload with a float
 		err = m.applyRule("r", reflect.ValueOf(3.14))
-		if err == nil || !strings.Contains(err.Error(), "has no overload for type float64") {
-			t.Fatalf("expected no-overload error, got: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "rule overload not found") {
+			t.Fatalf("expected no-overload rule-not-found error, got: %v", err)
 		}
-		// Should include available types list
-		if !strings.Contains(err.Error(), "string") || !strings.Contains(err.Error(), "int") {
-			t.Fatalf("expected available types in message, got: %v", err)
+		if !strings.Contains(err.Error(), "available_types: int, string") {
+			t.Fatalf("expected available_types list, got: %v", err)
 		}
 	})
-
-	// TODO: revise the test below.
-	//t.Run("skips nil adapters; validation passes", func(t *testing.T) {
-	//	m := &Model[dummy]{validators: make(map[string][]rule.Adapter), rulesRegistry: validationRule.NewRegistry()}
-	//
-	//	// Intentionally place a nil/zero adapter first; applyRule must skip it.
-	//	nilAdapter := ruleAdapter{} // fieldType == nil, fn == nil
-	//	goodAdapter := newRuleAdapter[string](rulePassString)
-	//
-	//	m.validators["ok"] = []validationRule.Adapter{nilAdapter, goodAdapter}
-	//
-	//	if err := m.applyRule("ok", reflect.ValueOf("pass")); err != nil {
-	//		t.Fatalf("expected nil error (successful validation), got: %v", err)
-	//	}
-	//})
-
-	// TODO: revise the test below.
-	//t.Run("newRuleAdapter panics on invalid or non-assignable value", func(t *testing.T) {
-	//	t.Parallel()
-	//
-	//	// Build a typed adapter for string and then deliberately call it
-	//	// with (1) an invalid reflect.Value and (2) a non-assignable type.
-	//	ad := newRuleAdapter[string](rulePassString)
-	//
-	//	cases := []struct {
-	//		name string
-	//		val  reflect.Value
-	//	}{
-	//		{name: "non-assignable type", val: reflect.ValueOf(123)}, // int not assignable to string
-	//	}
-	//
-	//	for _, tc := range cases {
-	//		tc := tc
-	//		t.Run(tc.name, func(t *testing.T) {
-	//			t.Parallel()
-	//			defer func() {
-	//				if r := recover(); r == nil {
-	//					t.Fatalf("expected panic for %q, got none", tc.name)
-	//				} else {
-	//					msg := fmt.Sprint(r)
-	//					if !strings.Contains(msg, "validationRule type mismatch") {
-	//						t.Fatalf("unexpected panic message for %q: %s", tc.name, msg)
-	//					}
-	//				}
-	//			}()
-	//
-	//			// This should panic inside newRuleAdapter's adapter fn when v is invalid
-	//			// or not assignable to the expected type.
-	//			_ = ad.fn(tc.val)
-	//		})
-	//	}
-	//})
 
 	t.Run("available types list is sorted deterministically", func(t *testing.T) {
 		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
@@ -225,21 +158,17 @@ func TestModel_applyRule(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		// Add in non-sorted order
 		if err = m.RegisterRules(stringOverload, intOverload); err != nil {
 			t.Fatalf("RegisterRules error: %v", err)
 		}
-
-		// Trigger no-overload with a float
 		err = m.applyRule("sorted", reflect.ValueOf(1.23))
 		if err == nil {
 			t.Fatalf("expected error")
 		}
 		msg := err.Error()
 		// Expect available list to be sorted as "int, string"
-		want := "(available: int, string)"
-		if !strings.Contains(msg, want) {
-			t.Fatalf("expected sorted available list %q in %q", want, msg)
+		if !strings.Contains(msg, "available_types: int, string") {
+			t.Fatalf("expected sorted available list in error, got: %q", msg)
 		}
 	})
 }

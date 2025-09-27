@@ -162,14 +162,14 @@ func TestModel_validate(t *testing.T) {
 				// no rules registered on purpose
 				return m.validate(), m
 			},
-			wantErr: "rule \"doesNotExist\" is not registered",
+			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *ValidationError
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if len(ve.ByField()["Alias"]) == 0 {
-					t.Fatalf("expected Alias to have a rule-not-registered error")
+					t.Fatalf("expected Alias to have a rule-not-found error")
 				}
 			},
 		},

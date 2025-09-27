@@ -125,12 +125,8 @@ func TestModel_validateStruct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	// Register ambiguous rule (same name & type twice) → exact duplicates trigger ambiguity
+	// Register single rule for dup (used to be ambiguous with duplicates)
 	stringDup1, err := NewRule[string]("dup", ruleNonEmpty)
-	if err != nil {
-		t.Fatalf("NewRule error: %v", err)
-	}
-	stringDup2, err := NewRule[string]("dup", ruleExactString)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
@@ -147,7 +143,6 @@ func TestModel_validateStruct(t *testing.T) {
 		durationNonzero,
 		stringerBad,
 		stringDup1,
-		stringDup2,
 		intSlices,
 	)
 	if err != nil {
@@ -265,14 +260,14 @@ func TestModel_validateStruct(t *testing.T) {
 			}
 		}
 
-		// Unknown rule applied
-		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "is not registered") {
-			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
+		// Ambiguity on dup (no longer ambiguous). Expect a single nonempty error.
+		if es := by["Root.Amb"]; len(es) == 0 || es[0].Rule != "dup" || !strings.Contains(es[0].Err.Error(), "must not be empty") {
+			t.Errorf("expected nonempty error at Root.Amb, got: %+v", es)
 		}
 
-		// Ambiguity on dup
-		if es := by["Root.Amb"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "ambiguous") {
-			t.Errorf("expected ambiguity error at Root.Amb, got: %+v", es)
+		// Unknown rule applied (rule not found)
+		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "rule not found") {
+			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
 		}
 
 		// Assignable interface rule
@@ -288,7 +283,7 @@ func TestModel_validateStruct(t *testing.T) {
 			have := map[string]bool{"tokA": false, "tokB": false}
 			for _, fe := range es {
 				have[fe.Rule] = true
-				if !strings.Contains(fe.Err.Error(), "is not registered") {
+				if !strings.Contains(fe.Err.Error(), "rule not found") {
 					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}
@@ -310,7 +305,7 @@ func TestModel_validateStruct(t *testing.T) {
 			have := map[string]bool{"tokEA": false, "tokEB": false}
 			for _, fe := range es {
 				have[fe.Rule] = true
-				if !strings.Contains(fe.Err.Error(), "is not registered") {
+				if !strings.Contains(fe.Err.Error(), "rule not found") {
 					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}

@@ -44,6 +44,10 @@ func (r *registry) add(rule Rule) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if rule == nil {
+		return nil
+	}
+
 	name := rule.getName()
 	existing, exists := r.rules[name]
 	if exists {
@@ -109,7 +113,7 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	case len(exacts) == 1:
 		return exacts[0], nil
 	case len(exacts) > 1:
-		// TODO: check it is still possible
+		// TODO: check if it is still possible
 		return nil, fmt.Errorf(
 			"model: rule %q is ambiguous for type %s; %d exact overloads registered",
 			name,
@@ -123,7 +127,7 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	default:
 		// Construct helpful message of available overload types.
 		return nil, errorc.With(
-			ErrRuleNotFound,
+			ErrRuleOverloadNotFound,
 			errorc.Field("rule_name", name),
 			errorc.Field("value_type", valueType.String()),
 			errorc.Field("available_types", strings.Join(getFieldTypesNames(rules), ", ")),

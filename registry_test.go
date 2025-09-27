@@ -74,6 +74,27 @@ func TestRegistry_add(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
+	intOverloadForStringRule, err := NewRule(
+		"stringRule",
+		func(v int, _ ...string) error { return errors.New("stringRule_intOverload") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule intOverloadForStringRule error: %v", err)
+	}
+	pointerToInterfaceRule2, err := NewRule(
+		"pointerToInterfaceRule",
+		func(v *interface{}, _ ...string) error { return errors.New("pointerToInterfaceRule2") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule pointerToInterfaceRule2 error: %v", err)
+	}
+	interfaceRule2, err := NewRule(
+		"interfaceRule",
+		func(v interface{}, _ ...string) error { return errors.New("interfaceRule2") },
+	)
+	if err != nil {
+		t.Fatalf("NewRule interfaceRule2 error: %v", err)
+	}
 
 	tests := []struct {
 		name          string
@@ -104,15 +125,69 @@ func TestRegistry_add(t *testing.T) {
 			name: "add rule with existing name, but for different type",
 			rulesToAdd: []Rule{
 				testRules["stringRule"],
-				stringRule2,
+				stringRule2, // interface{} overload
 			},
 			expectedRules: map[string][]Rule{
 				"stringRule": {testRules["stringRule"], stringRule2},
 			},
 		},
+		{
+			name: "add multiple distinct overloads (string, interface, int)",
+			rulesToAdd: []Rule{
+				testRules["stringRule"],
+				stringRule2,
+				intOverloadForStringRule,
+			},
+			expectedRules: map[string][]Rule{
+				"stringRule": {testRules["stringRule"], stringRule2, intOverloadForStringRule},
+			},
+		},
+		{
+			name: "short-circuit after duplicate (second add fails; third not applied)",
+			rulesToAdd: []Rule{
+				testRules["stringRule"],  // ok
+				testRules["stringRule"],  // duplicate -> error
+				intOverloadForStringRule, // must NOT be added
+			},
+			expectedError: errorc.With(
+				ErrDuplicateOverloadRule,
+				errorc.Field("rule_name", "stringRule"),
+				errorc.Field("field_type", "string"),
+			),
+		},
+		{
+			name: "duplicate pointer overload",
+			rulesToAdd: []Rule{
+				testRules["pointerToInterfaceRule"],
+				pointerToInterfaceRule2, // duplicate *interface{}
+			},
+			expectedError: errorc.With(
+				ErrDuplicateOverloadRule,
+				errorc.Field("rule_name", "pointerToInterfaceRule"),
+				errorc.Field("field_type", "*interface {}"),
+			),
+		},
+		{
+			name: "duplicate interface overload",
+			rulesToAdd: []Rule{
+				testRules["interfaceRule"],
+				interfaceRule2,
+			},
+			expectedError: errorc.With(
+				ErrDuplicateOverloadRule,
+				errorc.Field("rule_name", "interfaceRule"),
+				errorc.Field("field_type", "interface {}"),
+			),
+		},
+		{
+			name:          "nil rule",
+			rulesToAdd:    []Rule{nil},
+			expectedRules: map[string][]Rule{},
+		},
 	}
 
 	for _, test := range tests {
+		// capture range var
 		t.Run(test.name, func(t *testing.T) {
 			reg := newRegistry()
 			var err error
@@ -138,7 +213,7 @@ func TestRegistry_add(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// Verify the rules in the registry
+			// Validate internal registry state
 			if len(reg.rules) != len(test.expectedRules) {
 				t.Fatalf("expected %d rule entries, got %d", len(test.expectedRules), len(reg.rules))
 			}
@@ -148,34 +223,24 @@ func TestRegistry_add(t *testing.T) {
 					t.Fatalf("expected rule name %s not found in registry", name)
 				}
 				if len(actualOverloads) != len(expectedOverloads) {
-					t.Fatalf(
-						"for rule %s, expected %d overloads, got %d",
-						name, len(expectedOverloads), len(actualOverloads),
-					)
+					t.Fatalf("for rule %s, expected %d overloads, got %d", name, len(expectedOverloads), len(actualOverloads))
 				}
 
-				// Sort both slices by field type name to ensure consistent order for comparison
+				// stable ordering by field type name
 				slices.SortFunc(actualOverloads, func(i, j Rule) int {
-					return strings.Compare(i.getName(), j.getName())
+					return strings.Compare(i.getFieldTypeName(), j.getFieldTypeName())
 				})
 				slices.SortFunc(expectedOverloads, func(i, j Rule) int {
-					return strings.Compare(i.getName(), j.getName())
+					return strings.Compare(i.getFieldTypeName(), j.getFieldTypeName())
 				})
 
-				// Compare each overload
 				for i, exp := range expectedOverloads {
 					act := actualOverloads[i]
 					if act.getName() != exp.getName() {
-						t.Fatalf(
-							"for rule %s overload %d, expected name %s, got %s",
-							name, i, exp.getName(), act.getName(),
-						)
+						t.Fatalf("for rule %s overload %d, expected name %s, got %s", name, i, exp.getName(), act.getName())
 					}
 					if act.getFieldType() != exp.getFieldType() {
-						t.Fatalf(
-							"for rule %s overload %d, expected type %s, got %s",
-							name, i, exp.getFieldTypeName(), act.getFieldTypeName(),
-						)
+						t.Fatalf("for rule %s overload %d, expected type %s, got %s", name, i, exp.getFieldTypeName(), act.getFieldTypeName())
 					}
 				}
 			}

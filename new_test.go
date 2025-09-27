@@ -53,7 +53,7 @@ type newValidateBad struct {
 // ---- Tests ----
 
 func TestNew(t *testing.T) {
-	t.Parallel()
+	// t.Parallel() (removed parallel to avoid race with global builtIns if any)
 
 	t.Run("error: nil object", func(t *testing.T) {
 		m, err := New[*int](nil)
@@ -214,7 +214,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("validators map initialized and preserves order on multiple WithRule", func(t *testing.T) {
+	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
 		r1, err := NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
 		if err != nil {
@@ -224,14 +224,12 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewRule r2 error: %v", err)
 		}
-		m, err := New(&obj, WithRules[struct{ S string }](r1, r2))
-		if err != nil {
-			t.Fatalf("New error: %v", err)
-		}
-
-		// And confirm dispatch reports ambiguity for multiple exact overloads.
-		if err := m.applyRule("r", reflect.ValueOf("x")); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-			t.Fatalf("expected ambiguity error from applyRule, got: %v", err)
+		_, err = New(&obj, WithRules[struct{ S string }](r1, r2))
+		if err == nil || !strings.Contains(err.Error(), "duplicate overload rule") {
+			if err == nil {
+				t.Fatalf("expected duplicate overload rule error, got nil")
+			}
+			t.Fatalf("expected duplicate overload rule error, got: %v", err)
 		}
 	})
 
