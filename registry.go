@@ -115,7 +115,7 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 		return assigns[0], nil
 	default:
 		// No matches; check for built-in rule as fallback.
-		builtinRule, hasBuiltin := builtInRules[key{name, valueType}]
+		builtinRule, hasBuiltin := lookupBuiltin(name, valueType)
 		if hasBuiltin {
 			return builtinRule, nil
 		}

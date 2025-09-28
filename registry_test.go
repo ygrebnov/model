@@ -16,6 +16,16 @@ type wrapGet struct{ v string }
 
 func (w wrapGet) String() string { return w.v }
 
+// Helper to fetch a builtin rule for tests after lazy-init refactor.
+func builtinRuleForTest(t *testing.T, name string, typ reflect.Type) Rule {
+	t.Helper()
+	r, ok := lookupBuiltin(name, typ)
+	if !ok {
+		t.Fatalf("builtin rule %q for %s not found", name, typ)
+	}
+	return r
+}
+
 func TestGetFieldTypesNames(t *testing.T) {
 	testRules := getTestRules(t)
 
@@ -74,6 +84,14 @@ func TestGetFieldTypesNames(t *testing.T) {
 func TestRegistry_add(t *testing.T) {
 	testRules := getTestRules(t)
 
+	// Additional overloads for stringRule (interface and int versions)
+	interfaceOverloadForStringRule, _ := NewRule[interface{}]("stringRule", func(v interface{}, _ ...string) error { return errors.New("stringRule_iface") })
+	intOverloadForStringRule, _ := NewRule[int]("stringRule", func(v int, _ ...string) error { return errors.New("stringRule_int") })
+	// Duplicate pointer overload for pointerToInterfaceRule
+	pointerToInterfaceRule2, _ := NewRule[*interface{}]("pointerToInterfaceRule", func(v *interface{}, _ ...string) error { return errors.New("pointerToInterfaceRule_dup") })
+	// Duplicate interface overload for interfaceRule
+	interfaceRule2, _ := NewRule[interface{}]("interfaceRule", func(v interface{}, _ ...string) error { return errors.New("interfaceRule_dup") })
+
 	tests := []struct {
 		name          string
 		rulesToAdd    []Rule
@@ -88,11 +106,8 @@ func TestRegistry_add(t *testing.T) {
 			},
 		},
 		{
-			name: "add duplicate overload rule for same type",
-			rulesToAdd: []Rule{
-				testRules["stringRule"],
-				testRules["stringRule"],
-			},
+			name:       "add duplicate overload rule for same type",
+			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"]},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
 				errorc.Field("rule_name", "stringRule"),
@@ -100,37 +115,22 @@ func TestRegistry_add(t *testing.T) {
 			),
 		},
 		{
-			name: "add rule with existing name, but for different type",
-			rulesToAdd: []Rule{
-				testRules["stringRule"],
-				testRules["interfaceOverloadForStringRule"],
-			},
+			name:       "add rule with existing name, but for different type",
+			rulesToAdd: []Rule{testRules["stringRule"], interfaceOverloadForStringRule},
 			expectedRules: map[string][]Rule{
-				"stringRule": {testRules["stringRule"], testRules["interfaceOverloadForStringRule"]},
+				"stringRule": {testRules["stringRule"], interfaceOverloadForStringRule},
 			},
 		},
 		{
-			name: "add multiple distinct overloads (string, interface, int)",
-			rulesToAdd: []Rule{
-				testRules["stringRule"],
-				testRules["interfaceOverloadForStringRule"],
-				testRules["intOverloadForStringRule"],
-			},
+			name:       "add multiple distinct overloads (string, interface, int)",
+			rulesToAdd: []Rule{testRules["stringRule"], interfaceOverloadForStringRule, intOverloadForStringRule},
 			expectedRules: map[string][]Rule{
-				"stringRule": {
-					testRules["stringRule"],
-					testRules["interfaceOverloadForStringRule"],
-					testRules["intOverloadForStringRule"],
-				},
+				"stringRule": {testRules["stringRule"], interfaceOverloadForStringRule, intOverloadForStringRule},
 			},
 		},
 		{
-			name: "short-circuit after duplicate (second add fails; third not applied)",
-			rulesToAdd: []Rule{
-				testRules["stringRule"],               // ok
-				testRules["stringRule"],               // duplicate -> error
-				testRules["intOverloadForStringRule"], // must NOT be added
-			},
+			name:       "short-circuit after duplicate (second add fails; third not applied)",
+			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"], intOverloadForStringRule},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
 				errorc.Field("rule_name", "stringRule"),
@@ -138,11 +138,8 @@ func TestRegistry_add(t *testing.T) {
 			),
 		},
 		{
-			name: "duplicate pointer overload",
-			rulesToAdd: []Rule{
-				testRules["pointerToInterfaceRule"],
-				testRules["pointerToInterfaceRule2"], // duplicate *interface{}
-			},
+			name:       "duplicate pointer overload",
+			rulesToAdd: []Rule{testRules["pointerToInterfaceRule"], pointerToInterfaceRule2},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
 				errorc.Field("rule_name", "pointerToInterfaceRule"),
@@ -150,11 +147,8 @@ func TestRegistry_add(t *testing.T) {
 			),
 		},
 		{
-			name: "duplicate interface overload",
-			rulesToAdd: []Rule{
-				testRules["interfaceRule"],
-				testRules["interfaceRule2"],
-			},
+			name:       "duplicate interface overload",
+			rulesToAdd: []Rule{testRules["interfaceRule"], interfaceRule2},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
 				errorc.Field("rule_name", "interfaceRule"),
@@ -264,7 +258,7 @@ func TestRegistry_get(t *testing.T) {
 			setupRegistry: defaultRegistry,
 			ruleName:      "nonempty",
 			value:         reflect.ValueOf(""),
-			expectedRule:  BuiltinStringRules()[0],
+			expectedRule:  builtinRuleForTest(t, "nonempty", reflect.TypeOf("")),
 		},
 		{
 			name: "builtin fallback when empty slice present",
@@ -276,7 +270,7 @@ func TestRegistry_get(t *testing.T) {
 			},
 			ruleName:     "nonempty",
 			value:        reflect.ValueOf(""),
-			expectedRule: BuiltinStringRules()[0],
+			expectedRule: builtinRuleForTest(t, "nonempty", reflect.TypeOf("")),
 		},
 		{
 			name: "exact match single overload",

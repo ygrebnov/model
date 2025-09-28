@@ -209,43 +209,16 @@ Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal 
 
 ---
 
-## Tag syntax and parsing
-
-Rules are parsed by a lightweight tokenizer:
-
-- Splits only on top-level commas (commas inside parentheses are preserved).
-- Trims whitespace around rule names and parameters.
-- Ignores empty tokens.
-- Parameters are raw strings (no quoting/escaping support). If you need richer semantics, encode (e.g. JSON) and decode inside the rule.
-- Nested parentheses are not semantically interpreted beyond balancing for splitting.
-
-Example transformations:
-
-| Tag | Parsed |
-|-----|--------|
-| `validate:",nonempty,"` | `nonempty` |
-| `validate:"withParams(a, b , c),nonempty"` | `withParams(a,b,c)` & `nonempty` |
-| `validate:"tokA((x,y)),tokB"` | `tokA((x,y))`, `tokB` |
-
----
-
 ## Built-in rules
 
-Built-in rules are always implicitly available (you do **not** need to register them):
+Built-in rules are always implicitly available (you do **not** need to register or import anything for them):
 
 - String: `nonempty`, `oneof(...)`
 - Int / Int64 / Float64: `positive`, `nonzero`, `oneof(...)`
 
-You can still fetch helper slices if you want to explicitly re-register (e.g., for ordering tests or to copy patterns):
+Overriding: if you register a custom rule with the same name and exact type **before** validation runs, your rule is chosen (duplicate exact registrations for the same name & type are rejected). Interface-based rules still participate via assignable matching when no exact rule exists.
 
-```go
-model.BuiltinStringRules()
-model.BuiltinIntRules()
-model.BuiltinInt64Rules()
-model.BuiltinFloat64Rules()
-```
-
-If you register a custom rule with the same name and exact type before validation, it **overrides** the built-in for that type (registry uses your exact match first). Duplicate *exact* registrations for the same name & type are rejected.
+> The library lazy-loads built-ins on first use, so unused numeric/string sets impose no startup cost.
 
 ---
 
@@ -303,6 +276,66 @@ Errors for rules that cannot be dispatched include a deterministic, alphabetical
 When a rule name has overloads but none match the field's type, the error includes a sorted list of available types for stable, testable output.
 
 Example fragment: `available_types: int, string`
+
+---
+
+## Performance & benchmarks
+
+A few micro-benchmarks (run on Go 1.22, macOS, Apple M-series; numbers are illustrative) show the cost profile:
+
+| Benchmark | ns/op | B/op | allocs/op | Notes |
+|-----------|-------|------|-----------|-------|
+| BuiltinColdStart | ~3050 | ~1888 | 58 | First validation triggers lazy built-in rule initialization. |
+| BuiltinWarm | ~720 | ~240 | 11 | Subsequent validations (same model, built-ins cached). |
+| ValidateNoBuiltins | ~248 | ~120 | 5 | Custom rule only (no built-ins on the value path). |
+
+Key points:
+- The one-time lazy init cost (~3µs) is amortized quickly; warm validations drop below 1µs for this simple struct.
+- Memory allocations drop significantly after warm-up (primarily slice/map allocations for rule lookups and error structures when no failures occur).
+- You can reduce allocs further by reusing the same Model instance; `Validate()` does not mutate cached rule parsing state.
+
+Run benchmarks locally:
+
+```bash
+go test -bench . -benchmem -run ^$
+```
+
+For real workloads, overall cost will scale with number of exported fields traversed and rules applied; rule functions themselves typically dominate if they perform parsing or heavy logic.
+
+### Performance tuning tips
+
+Practical ways to minimize overhead in hot paths:
+
+1. Reuse Model instances: construct a single `Model[T]` per long‑lived object (or pool of objects) and call `Validate()` repeatedly. Tag parsing and rule registry lookups are cached; re-validation avoids re-parsing tags.
+2. Separate construction from the hot loop: do `model.New(&obj, WithValidation[T]())` outside tight request loops so the one‑time lazy built‑in initialization cost is amortized.
+3. Prefer exact type rules over interface rules when possible: exact matches are resolved faster than walking assignable interface candidates.
+4. Avoid unnecessary rule duplication: register each custom rule once up front. Re-registering (or creating rules every call) allocates and defeats caching.
+5. Aggregate small validations: if you have many tiny structs, consider grouping related fields into a single struct to reduce reflective traversal overhead.
+6. Keep rule bodies lean: do parameter parsing (e.g., strconv) once if values are static, or precompute maps/sets for frequent membership checks.
+7. Zero‑alloc fast path: if you expect mostly valid data, write rule errors succinctly; fewer allocations happen when no `FieldError`s are produced.
+8. Avoid per‑call defaults unless needed: `SetDefaults()` is guarded by `sync.Once`—calling it again is cheap, but skip it entirely in hot loops if defaults are already applied.
+9. Profile before micro‑optimizing: use `go test -bench` or `pprof` to confirm hotspots (often custom rule logic, not the framework).
+
+Minimal pattern for reuse inside a service handler:
+
+```go
+var userModel *model.Model[User]
+
+func init() {
+    u := User{} // template instance if you only validate (or allocate per request below)
+    // Register overrides & built-ins once.
+    userModel, _ = model.New(&u, model.WithValidation[User]())
+}
+
+func handle(u *User) error {
+    // Apply defaults only the first time for each concrete instance if needed:
+    // (You can wrap this logic if you manage a pool of *User objects.)
+    if err := userModel.Validate(); err != nil { // reuses cached tag parsing
+        return err
+    }
+    return nil
+}
+```
 
 ---
 
