@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+// Built-ins are always implicitly available.
+
 // key consists of a name and a field value type.
 type key struct {
 	name      string
@@ -165,5 +167,3 @@ func lookupBuiltin(name string, t reflect.Type) (Rule, bool) {
 	r, ok := builtInMap[key{name, t}]
 	return r, ok
 }
-
-// (Intentionally no exported Builtin*Rules constructors anymore. Built-ins are always implicitly available.)
