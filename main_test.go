@@ -85,6 +85,14 @@ func getTestRules(t *testing.T) map[string]Rule {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
+	// interface rule for assignable path
+	type stringer interface{ String() string }
+	stringerInterfaceRule, err := NewRule[stringer](
+		"stringerInterfaceRule",
+		func(s stringer, _ ...string) error { return errors.New("stringerInterfaceRule") })
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
 
 	return map[string]Rule{
 		"stringRule":                     stringRule,
@@ -98,5 +106,6 @@ func getTestRules(t *testing.T) map[string]Rule {
 		"structRule":                     structRule,
 		"pointerToInterfaceRule":         pointerToInterfaceRule,
 		"pointerToInterfaceRule2":        pointerToInterfaceRule2,
+		"stringerInterfaceRule":          stringerInterfaceRule,
 	}
 }

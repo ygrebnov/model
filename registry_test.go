@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -170,7 +169,6 @@ func TestRegistry_add(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		// capture range var
 		t.Run(test.name, func(t *testing.T) {
 			reg := newRegistry()
 			var err error
@@ -232,22 +230,7 @@ func TestRegistry_add(t *testing.T) {
 }
 
 func TestRegistry_get(t *testing.T) {
-	// testRules := getTestRules(t)
-
-	stringRule, err := NewRule[string]("sx", func(v string, _ ...string) error { return fmt.Errorf("sx:%s", v) })
-	if err != nil {
-		t.Fatalf("NewRule stringRule error: %v", err)
-	}
-	intRule, err := NewRule[int]("sx", func(v int, _ ...string) error { return fmt.Errorf("ix:%d", v) })
-	if err != nil {
-		t.Fatalf("NewRule intRule error: %v", err)
-	}
-	// interface rule for assignable path
-	type stringer interface{ String() string }
-	ifaceRule, err := NewRule[stringer]("ifaceOnly", func(s stringer, _ ...string) error { return fmt.Errorf("iface:%s", s.String()) })
-	if err != nil {
-		t.Fatalf("NewRule ifaceRule error: %v", err)
-	}
+	testRules := getTestRules(t)
 
 	defaultRegistry := func(t *testing.T) *registry { return newRegistry() }
 
@@ -259,16 +242,12 @@ func TestRegistry_get(t *testing.T) {
 		expectedSentinelError error
 		expectedError         error
 		expectedRule          Rule
-
-		wantErrSub string
-		wantRuleFn string // substring expected from rule fn when invoked
 	}{
 		{
 			name:                  "invalid reflect.Value",
 			setupRegistry:         defaultRegistry,
 			ruleName:              "anything",
 			value:                 reflect.Value{},
-			wantErrSub:            "invalid value",
 			expectedSentinelError: ErrInvalidValue,
 			expectedError:         errorc.With(ErrInvalidValue, errorc.Field("rule_name", "anything")),
 		},
@@ -277,7 +256,6 @@ func TestRegistry_get(t *testing.T) {
 			setupRegistry:         defaultRegistry,
 			ruleName:              "doesNotExist",
 			value:                 reflect.ValueOf(123),
-			wantErrSub:            "rule not found",
 			expectedSentinelError: ErrRuleNotFound,
 			expectedError:         errorc.With(ErrRuleNotFound, errorc.Field("rule_name", "doesNotExist")),
 		},
@@ -286,7 +264,6 @@ func TestRegistry_get(t *testing.T) {
 			setupRegistry: defaultRegistry,
 			ruleName:      "nonempty",
 			value:         reflect.ValueOf(""),
-			wantRuleFn:    "must not be empty", // builtin error substring
 			expectedRule:  BuiltinStringRules()[0],
 		},
 		{
@@ -299,69 +276,83 @@ func TestRegistry_get(t *testing.T) {
 			},
 			ruleName:     "nonempty",
 			value:        reflect.ValueOf(""),
-			wantRuleFn:   "must not be empty",
 			expectedRule: BuiltinStringRules()[0],
 		},
 		{
 			name: "exact match single overload",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				e := r.add(stringRule)
-				if e != nil {
-					t.Fatalf("add stringRule error: %v", e)
-				}
+				r.rules["singleOverload"] = []Rule{testRules["stringRule"]}
 				return r
 			},
-			ruleName:   "sx",
-			value:      reflect.ValueOf("hi"),
-			wantRuleFn: "sx:hi",
+			ruleName:     "singleOverload",
+			value:        reflect.ValueOf("hi"),
+			expectedRule: testRules["stringRule"],
 		},
 		{
 			name: "assignable interface match (no exact)",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				e := r.add(ifaceRule)
-				if e != nil {
-					t.Fatalf("add ifaceRule error: %v", e)
-				}
+				r.rules["assignableInterface"] = []Rule{testRules["stringerInterfaceRule"]}
 				return r
 			},
-			ruleName:   "ifaceOnly",
-			value:      reflect.ValueOf(wrapGet{v: "W"}),
-			wantRuleFn: "iface:W",
+			ruleName:     "assignableInterface",
+			value:        reflect.ValueOf(wrapGet{v: "W"}),
+			expectedRule: testRules["stringerInterfaceRule"],
 		},
 		{
 			name: "exact preferred over assignable (both registered)",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				_ = r.add(ifaceRule)
-				// add exact string rule with same name
-				strExact, _ := NewRule[string]("ifaceOnly", func(s string, _ ...string) error { return fmt.Errorf("exact:%s", s) })
-				_ = r.add(strExact)
+				r.rules["exactOverAssignable"] = []Rule{
+					testRules["stringerInterfaceRule"],
+					testRules["stringRule"],
+				}
 				return r
 			},
-			ruleName:   "ifaceOnly",
-			value:      reflect.ValueOf("ZZ"),
-			wantRuleFn: "exact:ZZ",
+			ruleName:     "exactOverAssignable",
+			value:        reflect.ValueOf("ZZ"),
+			expectedRule: testRules["stringRule"],
 		},
 		{
-			name:          "no overload for value type -> available types list",
-			setupRegistry: func(t *testing.T) *registry { r := newRegistry(); _ = r.add(stringRule); _ = r.add(intRule); return r },
-			ruleName:      "sx",
-			value:         reflect.ValueOf(3.14), // float64 -> none matches
-			wantErrSub:    "available_types: int, string",
+			name: "no overload for value type -> available types list",
+			setupRegistry: func(t *testing.T) *registry {
+				r := newRegistry()
+				r.rules["noOverload"] = []Rule{
+					testRules["stringRule"],
+					testRules["intRule"],
+				}
+				return r
+			},
+			ruleName:              "noOverload",
+			value:                 reflect.ValueOf(3.14), // float64 -> none matches
+			expectedSentinelError: ErrRuleOverloadNotFound,
+			expectedError: errorc.With(
+				ErrRuleOverloadNotFound,
+				errorc.Field("rule_name", "noOverload"),
+				errorc.Field("value_type", "float64"),
+				errorc.Field("available_types", "int, string"),
+			),
 		},
 		{
 			name: "ambiguous duplicates (manually inserted unreachable path)",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
 				// force two exact duplicates bypassing add's guard
-				r.rules["dup"] = []Rule{stringRule, stringRule}
+				r.rules["ambiguousDuplicates"] = []Rule{
+					testRules["stringRule"],
+					testRules["stringRule"],
+				}
 				return r
 			},
-			ruleName:   "dup",
-			value:      reflect.ValueOf("x"),
-			wantErrSub: "ambiguous",
+			ruleName:              "ambiguousDuplicates",
+			value:                 reflect.ValueOf("x"),
+			expectedSentinelError: ErrAmbiguousRule,
+			expectedError: errorc.With(
+				ErrAmbiguousRule,
+				errorc.Field("rule_name", "ambiguousDuplicates"),
+				errorc.Field("value_type", "string"),
+			),
 		},
 	}
 
@@ -400,29 +391,6 @@ func TestRegistry_get(t *testing.T) {
 						tc.expectedRule.getFieldType(),
 						rule.getFieldType(),
 					)
-				}
-			}
-
-			if tc.wantErrSub != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.wantErrSub) {
-					t.Fatalf("expected error containing %q, got %v", tc.wantErrSub, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			// invoke rule fn to confirm identity
-			if tc.wantRuleFn != "" {
-				err2 := rule.getValidationFn()(tc.value)
-				if err2 == nil || !strings.Contains(err2.Error(), tc.wantRuleFn) {
-					// builtin rules may succeed depending on input; ensure substring
-					if err2 == nil || !strings.Contains(err2.Error(), tc.wantRuleFn) {
-						// retry only for builtin nonempty with non-empty value? Not needed here
-						// Fail
-						// Provide context
-						t.Fatalf("expected rule fn error containing %q, got %v", tc.wantRuleFn, err2)
-					}
 				}
 			}
 		})

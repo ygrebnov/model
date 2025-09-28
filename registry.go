@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -83,29 +82,22 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	}
 
 	valueType := v.Type()
-
-	rules, ok := r.rules[name]
-	builtinRule, hasBuiltin := builtInRules[key{name, valueType}] // TODO: move inside switch
-
-	if (!ok || len(rules) == 0) && !hasBuiltin {
-		return nil, errorc.With(ErrRuleNotFound, errorc.Field("rule_name", name))
-	}
+	rules, _ := r.rules[name]
 
 	var (
 		exacts  []Rule
 		assigns []Rule
 	)
-	for _, rr := range rules {
-		//if ad.fieldType == nil || ad.fn == nil {
-		//	continue
-		//}
-		// TODO: can valueType be nil?
-		if rr.isOfType(valueType) {
-			exacts = append(exacts, rr)
+	for _, rule := range rules {
+		if rule.getFieldType() == nil || rule.getValidationFn() == nil {
+			continue // defensive, should not happen due to checks in NewRule
+		}
+		if rule.isOfType(valueType) {
+			exacts = append(exacts, rule)
 			continue
 		}
-		if rr.isAssignableTo(valueType) {
-			assigns = append(assigns, rr)
+		if rule.isAssignableTo(valueType) {
+			assigns = append(assigns, rule)
 		}
 	}
 
@@ -113,18 +105,27 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	case len(exacts) == 1:
 		return exacts[0], nil
 	case len(exacts) > 1:
-		// TODO: check if it is still possible
-		return nil, fmt.Errorf(
-			"model: rule %q is ambiguous for type %s; %d exact overloads registered",
-			name,
-			valueType,
-			len(exacts),
+		// defensive: should not happen due to add() checks
+		return nil, errorc.With(
+			ErrAmbiguousRule,
+			errorc.Field("rule_name", name),
+			errorc.Field("value_type", valueType.String()),
 		)
 	case len(assigns) >= 1:
 		return assigns[0], nil
-	case hasBuiltin:
-		return builtinRule, nil
 	default:
+		// No matches; check for built-in rule as fallback.
+		builtinRule, hasBuiltin := builtInRules[key{name, valueType}]
+		if hasBuiltin {
+			return builtinRule, nil
+		}
+
+		if len(rules) == 0 {
+			// No rules by the given name neither in registry no from in built-ins.
+			return nil, errorc.With(ErrRuleNotFound, errorc.Field("rule_name", name))
+		}
+
+		// Some rules exist by the given name, but none match the value type.
 		// Construct helpful message of available overload types.
 		return nil, errorc.With(
 			ErrRuleOverloadNotFound,
@@ -139,8 +140,7 @@ func getFieldTypesNames(rules []Rule) []string {
 	var names []string
 	for _, rule := range rules {
 		filedTypeName := rule.getFieldTypeName()
-		if filedTypeName != "" {
-			// TODO: is it possible?
+		if filedTypeName != "" { // defensive, cannot be empty due to checks in NewRule
 			names = append(names, filedTypeName)
 		}
 	}

@@ -10,4 +10,5 @@ var (
 	ErrRuleNotFound          = errors.New("model: rule not found")
 	ErrRuleOverloadNotFound  = errors.New("model: rule overload not found")
 	ErrInvalidValue          = errors.New("model: invalid value")
+	ErrAmbiguousRule         = errors.New("model: ambiguous rule")
 )
