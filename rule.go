@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/ygrebnov/errorc"
 )
 
 var (
@@ -36,11 +38,10 @@ func newRule[FieldType any](name string, fn func(value FieldType, params ...stri
 				if !v.Type().AssignableTo(fieldType) {
 					// As a fallback for interface FieldType, use Implements for clarity.
 					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
-						return fmt.Errorf(
-							"%w: cannot use %s value with rule for type %s",
+						return errorc.With(
 							ErrRuleTypeMismatch,
-							v.Type(),
-							fieldType,
+							errorc.String(ErrorFieldValueType, v.Type().String()),
+							errorc.String(ErrorFieldFieldType, fieldType.String()),
 						)
 					}
 				}
@@ -57,7 +58,7 @@ func (r validationRule) getName() string {
 
 func (r validationRule) getFieldTypeName() string {
 	if r.fieldType == nil {
-		return ""
+		return "" // defensive, cannot happen due to constructor check
 	}
 	return r.fieldType.String()
 }
@@ -75,6 +76,8 @@ func (r validationRule) isOfType(t reflect.Type) bool {
 }
 
 func (r validationRule) isAssignableTo(t reflect.Type) bool {
-	// TODO: if r.fieldType is nil?
+	if r.fieldType == nil {
+		return false // defensive, cannot happen due to constructor check
+	}
 	return t.AssignableTo(r.fieldType)
 }

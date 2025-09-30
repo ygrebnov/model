@@ -77,7 +77,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 			t.Fatal("expected error due to BadStruct literal, got nil")
 		}
 		// Ensure error is the wrapped field-specific one
-		if !strings.Contains(err.Error(), "default for BadStruct") {
+		if !strings.Contains(err.Error(), "cannot set default value") {
 			t.Fatalf("expected error mentioning BadStruct, got: %v", err)
 		}
 
@@ -272,7 +272,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
-		if !strings.Contains(err.Error(), "default for St") {
+		if !strings.Contains(err.Error(), "cannot set default value") {
 			t.Fatalf("expected field-wrapped error mentioning St, got: %v", err)
 		}
 	})

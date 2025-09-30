@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ygrebnov/errorc"
 )
 
 // SetDefaults applies default values based on `default:"..."` tags to the model's object.
@@ -76,7 +78,11 @@ func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string
 		return nil
 	default:
 		if err := setLiteralDefault(fv, tag); err != nil {
-			return fmt.Errorf("default for %s: %w", fieldName, err)
+			return errorc.With(
+				ErrSetDefault,
+				errorc.String(ErrorFieldFieldName, fieldName),
+				errorc.Error(ErrorFieldCause, err),
+			)
 		}
 		return nil
 	}
@@ -228,7 +234,10 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 		}
 		target.SetFloat(fv)
 	default:
-		return fmt.Errorf("unsupported kind %s for default literal", target.Kind())
+		return errorc.With(
+			ErrDefaultLiteralUnsupportedKind,
+			errorc.String(ErrorFieldDefaultLiteralKind, target.Kind().String()),
+		)
 	}
 	return nil
 }

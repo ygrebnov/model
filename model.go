@@ -1,9 +1,10 @@
 package model
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/ygrebnov/errorc"
 )
 
 type rulesRegistry interface {
@@ -43,7 +44,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 	}
 	elem := reflect.TypeOf(obj).Elem()
 	if elem.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("%w; got pointer to %s", ErrNotStructPtr, elem.Kind())
+		return nil, errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, elem.Kind().String()))
 	}
 
 	m := &Model[TObject]{obj: obj}
@@ -108,16 +109,27 @@ func WithRules[TObject any](rules ...Rule) Option[TObject] {
 // The phase string is used in error messages (e.g., "Validate", "SetDefaults").
 func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	if m.obj == nil {
-		return reflect.Value{}, fmt.Errorf("model: %s: nil object", phase)
+		// defensive, cannot happen due to New() checks
+		return reflect.Value{}, errorc.With(ErrNilObject, errorc.String(ErrorFieldPhase, phase))
 	}
 	rv := reflect.ValueOf(m.obj)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		// defensive: unreachable under normal generic use
-		return reflect.Value{}, fmt.Errorf("model: %s: object must be a non-nil pointer to struct; got %s", phase, rv.Kind())
+		return reflect.Value{},
+			errorc.With(
+				ErrNotStructPtr,
+				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(ErrorFieldPhase, phase),
+			)
 	}
 	rv = rv.Elem()
 	if rv.Kind() != reflect.Struct {
-		return reflect.Value{}, fmt.Errorf("model: %s: object must point to a struct; got %s", phase, rv.Kind())
+		return reflect.Value{},
+			errorc.With(
+				ErrNotStructPtr,
+				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(ErrorFieldPhase, phase),
+			)
 	}
 	return rv, nil
 }

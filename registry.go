@@ -55,8 +55,8 @@ func (r *registry) add(rule Rule) error {
 			if er.isOfType(rule.getFieldType()) {
 				return errorc.With(
 					ErrDuplicateOverloadRule,
-					errorc.Field(ErrorFieldRuleName, name),
-					errorc.Field(ErrorFieldFieldType, rule.getFieldTypeName()),
+					errorc.String(ErrorFieldRuleName, name),
+					errorc.String(ErrorFieldFieldType, rule.getFieldTypeName()),
 				)
 			}
 		}
@@ -78,7 +78,7 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 	defer r.mu.RUnlock()
 
 	if !v.IsValid() {
-		return nil, errorc.With(ErrInvalidValue, errorc.Field(ErrorFieldRuleName, name))
+		return nil, errorc.With(ErrInvalidValue, errorc.String(ErrorFieldRuleName, name))
 	}
 
 	valueType := v.Type()
@@ -108,8 +108,8 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 		// defensive: should not happen due to add() checks
 		return nil, errorc.With(
 			ErrAmbiguousRule,
-			errorc.Field(ErrorFieldRuleName, name),
-			errorc.Field(ErrorFieldValueType, valueType.String()),
+			errorc.String(ErrorFieldRuleName, name),
+			errorc.String(ErrorFieldValueType, valueType.String()),
 		)
 	case len(assigns) >= 1:
 		return assigns[0], nil
@@ -122,16 +122,16 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 
 		if len(rules) == 0 {
 			// No rules by the given name neither in registry no from in built-ins.
-			return nil, errorc.With(ErrRuleNotFound, errorc.Field(ErrorFieldRuleName, name))
+			return nil, errorc.With(ErrRuleNotFound, errorc.String(ErrorFieldRuleName, name))
 		}
 
 		// Some rules exist by the given name, but none match the value type.
 		// Construct helpful message of available overload types.
 		return nil, errorc.With(
 			ErrRuleOverloadNotFound,
-			errorc.Field(ErrorFieldRuleName, name),
-			errorc.Field(ErrorFieldValueType, valueType.String()),
-			errorc.Field(ErrorFieldAvailableTypes, strings.Join(getFieldTypesNames(rules), ", ")),
+			errorc.String(ErrorFieldRuleName, name),
+			errorc.String(ErrorFieldValueType, valueType.String()),
+			errorc.String(ErrorFieldAvailableTypes, strings.Join(getFieldTypesNames(rules), ", ")),
 		)
 	}
 }

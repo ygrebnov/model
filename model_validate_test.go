@@ -61,7 +61,7 @@ func TestModel_validate(t *testing.T) {
 				m.obj = &x // *int (Elem != struct)
 				return m.validate(), &m
 			},
-			wantErr: "object must point to a struct",
+			wantErr: "object must be a non-nil pointer to struct",
 		},
 		{
 			name: "no tags -> ok (nil error)",

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/errorc"
 )
 
 // ---- Helpers ----
@@ -53,8 +55,6 @@ type newValidateBad struct {
 // ---- Tests ----
 
 func TestNew(t *testing.T) {
-	// t.Parallel() (removed parallel to avoid race with global builtIns if any)
-
 	t.Run("error: nil object", func(t *testing.T) {
 		m, err := New[*int](nil)
 		if m != nil {
@@ -62,6 +62,9 @@ func TestNew(t *testing.T) {
 		}
 		if !errors.Is(err, ErrNilObject) {
 			t.Fatalf("expected ErrNilObject, got %v", err)
+		}
+		if err.Error() != ErrNilObject.Error() {
+			t.Fatalf("expected ErrNilObject message, got %q", err.Error())
 		}
 	})
 
@@ -73,6 +76,10 @@ func TestNew(t *testing.T) {
 		}
 		if !errors.Is(err, ErrNotStructPtr) {
 			t.Fatalf("expected ErrNotStructPtr, got %v", err)
+		}
+		expectedError := errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, "int"))
+		if err.Error() != expectedError.Error() {
+			t.Fatalf("expected %q message, got %q", expectedError.Error(), err.Error())
 		}
 	})
 
@@ -106,7 +113,7 @@ func TestNew(t *testing.T) {
 			// model is returned only if err == nil
 			t.Fatalf("expected nil model on error, got non-nil")
 		}
-		if err == nil || !strings.Contains(err.Error(), "default for In") {
+		if err == nil || !strings.Contains(err.Error(), "cannot set default value") {
 			t.Fatalf("expected error mentioning 'default for In', got: %v", err)
 		}
 	})

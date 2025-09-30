@@ -49,7 +49,7 @@ func TestModel_ApplyDefaults(t *testing.T) {
 				m.obj = v
 				return &m
 			},
-			wantErr: "object must point to a struct",
+			wantErr: "object must be a non-nil pointer to struct",
 		},
 		{
 			name: "success: struct with defaults applied",
@@ -81,7 +81,7 @@ func TestModel_ApplyDefaults(t *testing.T) {
 				m.obj = &o
 				return &m
 			},
-			wantErr: "default for Inner",
+			wantErr: "cannot set default value",
 		},
 	}
 

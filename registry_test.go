@@ -110,8 +110,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"]},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
-				errorc.Field("rule_name", "stringRule"),
-				errorc.Field("field_type", "string"),
+				errorc.String(ErrorFieldRuleName, "stringRule"),
+				errorc.String(ErrorFieldFieldType, "string"),
 			),
 		},
 		{
@@ -133,8 +133,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"], intOverloadForStringRule},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
-				errorc.Field("rule_name", "stringRule"),
-				errorc.Field("field_type", "string"),
+				errorc.String(ErrorFieldRuleName, "stringRule"),
+				errorc.String(ErrorFieldFieldType, "string"),
 			),
 		},
 		{
@@ -142,8 +142,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["pointerToInterfaceRule"], pointerToInterfaceRule2},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
-				errorc.Field("rule_name", "pointerToInterfaceRule"),
-				errorc.Field("field_type", "*interface {}"),
+				errorc.String(ErrorFieldRuleName, "pointerToInterfaceRule"),
+				errorc.String(ErrorFieldFieldType, "*interface {}"),
 			),
 		},
 		{
@@ -151,8 +151,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["interfaceRule"], interfaceRule2},
 			expectedError: errorc.With(
 				ErrDuplicateOverloadRule,
-				errorc.Field("rule_name", "interfaceRule"),
-				errorc.Field("field_type", "interface {}"),
+				errorc.String(ErrorFieldRuleName, "interfaceRule"),
+				errorc.String(ErrorFieldFieldType, "interface {}"),
 			),
 		},
 		{
@@ -228,7 +228,7 @@ func TestRegistry_get(t *testing.T) {
 
 	defaultRegistry := func(t *testing.T) *registry { return newRegistry() }
 
-	tests := []struct {
+	cases := []struct { // rename internal for clarity
 		name                  string
 		setupRegistry         func(t *testing.T) *registry
 		ruleName              string
@@ -243,7 +243,7 @@ func TestRegistry_get(t *testing.T) {
 			ruleName:              "anything",
 			value:                 reflect.Value{},
 			expectedSentinelError: ErrInvalidValue,
-			expectedError:         errorc.With(ErrInvalidValue, errorc.Field("rule_name", "anything")),
+			expectedError:         errorc.With(ErrInvalidValue, errorc.String(ErrorFieldRuleName, "anything")),
 		},
 		{
 			name:                  "rule not found (no custom, no builtin)",
@@ -251,7 +251,7 @@ func TestRegistry_get(t *testing.T) {
 			ruleName:              "doesNotExist",
 			value:                 reflect.ValueOf(123),
 			expectedSentinelError: ErrRuleNotFound,
-			expectedError:         errorc.With(ErrRuleNotFound, errorc.Field("rule_name", "doesNotExist")),
+			expectedError:         errorc.With(ErrRuleNotFound, errorc.String(ErrorFieldRuleName, "doesNotExist")),
 		},
 		{
 			name:          "builtin fallback only (string nonempty)",
@@ -264,7 +264,6 @@ func TestRegistry_get(t *testing.T) {
 			name: "builtin fallback when empty slice present",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				// simulate name present with empty overload slice
 				r.rules["nonempty"] = []Rule{}
 				return r
 			},
@@ -298,10 +297,7 @@ func TestRegistry_get(t *testing.T) {
 			name: "exact preferred over assignable (both registered)",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				r.rules["exactOverAssignable"] = []Rule{
-					testRules["stringerInterfaceRule"],
-					testRules["stringRule"],
-				}
+				r.rules["exactOverAssignable"] = []Rule{testRules["stringerInterfaceRule"], testRules["stringRule"]}
 				return r
 			},
 			ruleName:     "exactOverAssignable",
@@ -312,31 +308,24 @@ func TestRegistry_get(t *testing.T) {
 			name: "no overload for value type -> available types list",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				r.rules["noOverload"] = []Rule{
-					testRules["stringRule"],
-					testRules["intRule"],
-				}
+				r.rules["noOverload"] = []Rule{testRules["stringRule"], testRules["intRule"]}
 				return r
 			},
 			ruleName:              "noOverload",
-			value:                 reflect.ValueOf(3.14), // float64 -> none matches
+			value:                 reflect.ValueOf(3.14),
 			expectedSentinelError: ErrRuleOverloadNotFound,
 			expectedError: errorc.With(
 				ErrRuleOverloadNotFound,
-				errorc.Field("rule_name", "noOverload"),
-				errorc.Field("value_type", "float64"),
-				errorc.Field("available_types", "int, string"),
+				errorc.String(ErrorFieldRuleName, "noOverload"),
+				errorc.String(ErrorFieldValueType, "float64"),
+				errorc.String(ErrorFieldAvailableTypes, "int, string"),
 			),
 		},
 		{
 			name: "ambiguous duplicates (manually inserted unreachable path)",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				// force two exact duplicates bypassing add's guard
-				r.rules["ambiguousDuplicates"] = []Rule{
-					testRules["stringRule"],
-					testRules["stringRule"],
-				}
+				r.rules["ambiguousDuplicates"] = []Rule{testRules["stringRule"], testRules["stringRule"]}
 				return r
 			},
 			ruleName:              "ambiguousDuplicates",
@@ -344,13 +333,13 @@ func TestRegistry_get(t *testing.T) {
 			expectedSentinelError: ErrAmbiguousRule,
 			expectedError: errorc.With(
 				ErrAmbiguousRule,
-				errorc.Field("rule_name", "ambiguousDuplicates"),
-				errorc.Field("value_type", "string"),
+				errorc.String(ErrorFieldRuleName, "ambiguousDuplicates"),
+				errorc.String(ErrorFieldValueType, "string"),
 			),
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tc := range cases {
 		// capture
 		t.Run(tc.name, func(t *testing.T) {
 			r := tc.setupRegistry(t)
