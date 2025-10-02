@@ -34,19 +34,16 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customNonEmpty := Rule[string]{
-		Name: "nonempty",
-		Fn: func(s string, _ ...string) error {
-			if s == "" {
-				return errors.New("custom nonempty")
-			}
-			return nil
-		},
+	customNonempty, err := NewRule[string]("nonempty", func(s string, _ ...string) error {
+		if s == "" {
+			return errors.New("custom nonempty")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
 	}
-	_, err := New(&obj,
-		WithRule[bv, string](customNonEmpty), // register BEFORE WithValidation
-		WithValidation[bv](),
-	)
+	_, err = New(&obj, WithRules[bv](customNonempty), WithValidation[bv]())
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
@@ -57,33 +54,5 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	msgs := ve.ByField()["Name"]
 	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "custom nonempty") {
 		t.Fatalf("expected custom nonempty error, got %+v", msgs)
-	}
-}
-
-func TestWithValidation_CustomRuleAfter_BecomesAmbiguous(t *testing.T) {
-	obj := bv{}
-	customNonEmpty := Rule[string]{
-		Name: "nonempty",
-		Fn: func(s string, _ ...string) error {
-			if s == "" {
-				return errors.New("custom nonempty")
-			}
-			return nil
-		},
-	}
-	_, err := New(&obj,
-		WithValidation[bv](),                 // builtin nonempty for string is registered implicitly
-		WithRule[bv, string](customNonEmpty), // registering AFTER creates two exact overloads
-	)
-	if err == nil {
-		t.Fatalf("expected validation error")
-	}
-	var ve *ValidationError
-	if !errors.As(err, &ve) {
-		t.Fatalf("expected *ValidationError, got %v", err)
-	}
-	msgs := ve.ByField()["Name"]
-	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "ambiguous") {
-		t.Fatalf("expected ambiguity error for Name, got %+v", msgs)
 	}
 }

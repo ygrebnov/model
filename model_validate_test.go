@@ -61,7 +61,7 @@ func TestModel_validate(t *testing.T) {
 				m.obj = &x // *int (Elem != struct)
 				return m.validate(), &m
 			},
-			wantErr: "object must point to a struct",
+			wantErr: "object must be a non-nil pointer to struct",
 		},
 		{
 			name: "no tags -> ok (nil error)",
@@ -76,7 +76,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{validators: make(map[string][]typedAdapter)}
+				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vHasTags{
 					Name: "ok",
 					Wait: time.Second,
@@ -84,8 +84,17 @@ func TestModel_validate(t *testing.T) {
 				obj.Info.Note = "ok"
 				m.obj = &obj
 				// register rules
-				WithRule[vHasTags, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-				WithRule[vHasTags, time.Duration](Rule[time.Duration]{Name: "nonZeroDur", Fn: ruleNonZeroDur})(m)
+				nonempty, err := NewRule("nonempty", ruleNonEmpty)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
+				}
+				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
+				}
+				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
+					t.Fatalf("RegisterRules error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "",
@@ -93,16 +102,25 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{validators: make(map[string][]typedAdapter)}
+				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vHasTags{
-					// Name empty (violates nonempty)
+					// name empty (violates nonempty)
 					// Wait zero (violates nonZeroDur)
 				}
 				// nested struct field also empty (violates nonempty)
 				m.obj = &obj
 				// register rules
-				WithRule[vHasTags, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-				WithRule[vHasTags, time.Duration](Rule[time.Duration]{Name: "nonZeroDur", Fn: ruleNonZeroDur})(m)
+				nonempty, err := NewRule("nonempty", ruleNonEmpty)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
+				}
+				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				if err != nil {
+					t.Fatalf("NewRule error: %v", err)
+				}
+				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
+					t.Fatalf("RegisterRules error: %v", err)
+				}
 				return m.validate(), m
 			},
 			wantErr: "validation", // we’ll assert concrete type & fields in verify
@@ -125,7 +143,7 @@ func TestModel_validate(t *testing.T) {
 				}
 				// check representative messages
 				if es := by["Name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "must not be empty") {
-					t.Errorf("expected nonempty error for Name, got: %+v", es)
+					t.Errorf("expected nonempty error for name, got: %+v", es)
 				}
 				if es := by["Wait"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "non-zero") {
 					t.Errorf("expected nonZeroDur error for Wait, got: %+v", es)
@@ -138,20 +156,20 @@ func TestModel_validate(t *testing.T) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{validators: make(map[string][]typedAdapter)}
+				m := &Model[vUnknown]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
 				obj := vUnknown{}
 				m.obj = &obj
 				// no rules registered on purpose
 				return m.validate(), m
 			},
-			wantErr: "rule \"doesNotExist\" is not registered",
+			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *ValidationError
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if len(ve.ByField()["Alias"]) == 0 {
-					t.Fatalf("expected Alias to have a rule-not-registered error")
+					t.Fatalf("expected Alias to have a rule-not-found error")
 				}
 			},
 		},
@@ -166,6 +184,37 @@ func TestModel_validate(t *testing.T) {
 				tt.verify(t, err, m)
 			}
 		})
+	}
+}
+
+// New test to ensure built-in rules are applied when Validate is called on a fresh Model without any options.
+func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
+	t.Parallel()
+	type Obj struct {
+		S string `validate:"nonempty"`
+	}
+	obj := Obj{}
+	m, err := New(&obj) // no WithValidation, no WithRules
+	if err != nil {
+		// New should not fail just because validation isn't requested yet.
+		t.Fatalf("unexpected error from New: %v", err)
+	}
+	// First validation should pick up built-in nonempty and fail because S is empty.
+	err = m.Validate()
+	if err == nil {
+		t.Fatalf("expected validation error for empty S, got nil")
+	}
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
+	}
+	if _, ok := ve.ByField()["S"]; !ok {
+		t.Fatalf("expected field error for S, got: %+v", ve.ByField())
+	}
+	// Fix the field and validate again; should succeed.
+	obj.S = "x"
+	if err := m.Validate(); err != nil {
+		t.Fatalf("expected no error after fixing S, got: %v", err)
 	}
 }
 

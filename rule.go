@@ -3,118 +3,81 @@ package model
 import (
 	"fmt"
 	"reflect"
-	"strings"
+
+	"github.com/ygrebnov/errorc"
 )
 
-// RuleFunc is the signature for a validation function for a specific type.
-type RuleFunc[T any] func(value T, params ...string) error
+var (
+	ErrRuleTypeMismatch = fmt.Errorf("rule type mismatch")
+	ErrInvalidRule      = fmt.Errorf("rule must have non-empty name and non-nil Fn")
+)
 
-// Rule defines a named validation rule for a specific type.
-type Rule[T any] struct {
-	Name string
-	Fn   RuleFunc[T]
-}
-
-// typedAdapter is an internal struct to hold a type-erased validation function
-// along with the type it applies to.
-type typedAdapter struct {
+// validationRule defines a named validation function for a specific field type.
+type validationRule struct {
+	name      string
 	fieldType reflect.Type
 	fn        func(v reflect.Value, params ...string) error
 }
 
-// wrapRule takes a typed RuleFunc and returns a type-erased adapter.
-// The adapter's func panics if the reflect.Value is not assignable to the rule's type.
-func wrapRule[T any](fn RuleFunc[T]) typedAdapter {
-	// Capture the static type of T even when T is an interface.
-	typ := reflect.TypeOf((*T)(nil)).Elem()
+func newRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (*validationRule, error) {
+	if name == "" || fn == nil {
+		return nil, ErrInvalidRule
+	}
 
-	return typedAdapter{
-		fieldType: typ,
+	// Capture the static type of FieldType even when FieldType is an interface.
+	fieldType := reflect.TypeOf((*FieldType)(nil)).Elem()
+
+	return &validationRule{
+		name:      name,
+		fieldType: fieldType,
+		//fn:        fn,
 		fn: func(v reflect.Value, params ...string) error {
-			// Ensure the reflect.Value `v` is compatible with T.
-			if v.Type() != typ {
-				// Accept assignable values (including types implementing an interface T)
-				if !v.Type().AssignableTo(typ) {
-					// As a fallback for interface T, use Implements for clarity.
-					if !(typ.Kind() == reflect.Interface && v.Type().Implements(typ)) {
-						panic(fmt.Sprintf(
-							"model: rule type mismatch: cannot use %s value with rule for type %s",
-							v.Type(),
-							typ,
-						))
+			// Ensure the reflect.Value `v` is compatible with FieldType.
+			if v.Type() != fieldType {
+				// Accept assignable values (including types implementing an interface FieldType)
+				if !v.Type().AssignableTo(fieldType) {
+					// As a fallback for interface FieldType, use Implements for clarity.
+					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
+						return errorc.With(
+							ErrRuleTypeMismatch,
+							errorc.String(ErrorFieldValueType, v.Type().String()),
+							errorc.String(ErrorFieldFieldType, fieldType.String()),
+						)
 					}
 				}
 			}
-			val := v.Interface().(T)
+			val := v.Interface().(FieldType)
 			return fn(val, params...)
 		},
-	}
+	}, nil
 }
 
-// parsedRule holds the name and parameters of a single validation rule.
-type parsedRule struct {
-	name   string
-	params []string
+func (r validationRule) getName() string {
+	return r.name
 }
 
-// parseRules tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
-// Behavior:
-//   - Splits on top-level commas only (commas inside parentheses do not split tokens).
-//   - Trims whitespace around tokens and parameters.
-//   - Empty tokens (from leading/trailing commas) are skipped.
-//   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
-//   - Does not support quotes or escaping inside parameters.
-func parseRules(tag string) []parsedRule {
-	var rules []parsedRule
-	if tag == "" || tag == "-" {
-		return rules
+func (r validationRule) getFieldTypeName() string {
+	if r.fieldType == nil {
+		return "" // defensive, cannot happen due to constructor check
 	}
+	return r.fieldType.String()
+}
 
-	var tokens []string
-	depth := 0
-	start := 0
-	for i, r := range tag {
-		switch r {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case ',':
-			if depth == 0 {
-				tokens = append(tokens, strings.TrimSpace(tag[start:i]))
-				start = i + 1
-			}
-		}
-	}
-	// Append the last token
-	if start <= len(tag) {
-		tokens = append(tokens, strings.TrimSpace(tag[start:]))
-	}
+func (r validationRule) getFieldType() reflect.Type {
+	return r.fieldType
+}
 
-	for _, tok := range tokens {
-		if tok == "" {
-			continue
-		}
-		name := tok
-		var params []string
-		if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
-			name = strings.TrimSpace(tok[:idx])
-			inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
-			if inner != "" {
-				parts := strings.Split(inner, ",")
-				for _, p := range parts {
-					p = strings.TrimSpace(p)
-					if p != "" {
-						params = append(params, p)
-					}
-				}
-			}
-		}
-		if name != "" {
-			rules = append(rules, parsedRule{name: name, params: params})
-		}
+func (r validationRule) getValidationFn() func(v reflect.Value, params ...string) error {
+	return r.fn
+}
+
+func (r validationRule) isOfType(t reflect.Type) bool {
+	return r.fieldType == t
+}
+
+func (r validationRule) isAssignableTo(t reflect.Type) bool {
+	if r.fieldType == nil {
+		return false // defensive, cannot happen due to constructor check
 	}
-	return rules
+	return t.AssignableTo(r.fieldType)
 }

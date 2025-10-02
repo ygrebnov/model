@@ -48,11 +48,11 @@ func TestValidationError_Addf(t *testing.T) {
 	t.Parallel()
 
 	ve := &ValidationError{}
-	ve.Addf("Root.Name", "nonempty", errors.New("must not be empty"))
+	ve.Addf("Root.name", "nonempty", errors.New("must not be empty"))
 	if ve.Len() != 1 {
 		t.Fatalf("Len() = %d, want 1", ve.Len())
 	}
-	got := ve.ForField("Root.Name")
+	got := ve.ForField("Root.name")
 	if len(got) != 1 || got[0].Rule != "nonempty" || got[0].Err == nil {
 		t.Fatalf("Addf did not record expected FieldError: %+v", got)
 	}
@@ -75,9 +75,9 @@ func TestValidationError_ErrorFormatting(t *testing.T) {
 
 	// 1 issue → single line (no header/footer)
 	ve1 := &ValidationError{}
-	ve1.Add(fe("Name", "nonempty", "must not be empty"))
+	ve1.Add(fe("name", "nonempty", "must not be empty"))
 	s1 := ve1.Error()
-	if !strings.Contains(s1, "Name") || !strings.Contains(s1, "must not be empty") {
+	if !strings.Contains(s1, "name") || !strings.Contains(s1, "must not be empty") {
 		t.Fatalf("single issue Error() missing content: %q", s1)
 	}
 	if strings.Contains(s1, "validation failed (") {
@@ -86,13 +86,13 @@ func TestValidationError_ErrorFormatting(t *testing.T) {
 
 	// 2+ issues → multi-line with header/footer and each line
 	ve2 := &ValidationError{}
-	ve2.Add(fe("Name", "nonempty", "x"))
+	ve2.Add(fe("name", "nonempty", "x"))
 	ve2.Add(fe("Age", "positive", "y"))
 	s2 := ve2.Error()
-	if !strings.HasPrefix(s2, "validation failed (") || !strings.HasSuffix(s2, "\n)") {
+	if !strings.HasPrefix(s2, "validation failed") {
 		t.Fatalf("multi Error() missing header/footer: %q", s2)
 	}
-	if !strings.Contains(s2, "Name:") || !strings.Contains(s2, "Age:") {
+	if !strings.Contains(s2, "name") || !strings.Contains(s2, "Age") {
 		t.Fatalf("multi Error() missing entries: %q", s2)
 	}
 }

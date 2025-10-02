@@ -7,21 +7,23 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/errorc"
 )
 
 // ---- Helpers ----
 
-func mustPanic(t *testing.T, fn func()) (msg string) {
-	t.Helper()
-	defer func() {
-		if r := recover(); r != nil {
-			msg = fmt.Sprint(r)
-		}
-	}()
-	fn()
-	t.Fatalf("expected panic, got none")
-	return ""
-}
+//func mustPanic(t *testing.T, fn func()) (msg string) {
+//	t.Helper()
+//	defer func() {
+//		if r := recover(); r != nil {
+//			msg = fmt.Sprint(r)
+//		}
+//	}()
+//	fn()
+//	t.Fatalf("expected panic, got none")
+//	return ""
+//}
 
 type myStringer interface{ String() string }
 type wrapS struct{ v string }
@@ -53,8 +55,6 @@ type newValidateBad struct {
 // ---- Tests ----
 
 func TestNew(t *testing.T) {
-	t.Parallel()
-
 	t.Run("error: nil object", func(t *testing.T) {
 		m, err := New[*int](nil)
 		if m != nil {
@@ -62,6 +62,9 @@ func TestNew(t *testing.T) {
 		}
 		if !errors.Is(err, ErrNilObject) {
 			t.Fatalf("expected ErrNilObject, got %v", err)
+		}
+		if err.Error() != ErrNilObject.Error() {
+			t.Fatalf("expected ErrNilObject message, got %q", err.Error())
 		}
 	})
 
@@ -73,6 +76,10 @@ func TestNew(t *testing.T) {
 		}
 		if !errors.Is(err, ErrNotStructPtr) {
 			t.Fatalf("expected ErrNotStructPtr, got %v", err)
+		}
+		expectedError := errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, "int"))
+		if err.Error() != expectedError.Error() {
+			t.Fatalf("expected %q message, got %q", expectedError.Error(), err.Error())
 		}
 	})
 
@@ -87,7 +94,7 @@ func TestNew(t *testing.T) {
 		}
 		// top level
 		if obj.Name != "x" {
-			t.Fatalf("default not applied to Name: %q", obj.Name)
+			t.Fatalf("default not applied to name: %q", obj.Name)
 		}
 		// nested dive
 		if obj.In.Msg != "hi" || obj.In.D != 2*time.Second {
@@ -106,14 +113,14 @@ func TestNew(t *testing.T) {
 			// model is returned only if err == nil
 			t.Fatalf("expected nil model on error, got non-nil")
 		}
-		if err == nil || !strings.Contains(err.Error(), "default for In") {
+		if err == nil || !strings.Contains(err.Error(), "cannot set default value") {
 			t.Fatalf("expected error mentioning 'default for In', got: %v", err)
 		}
 	})
 
 	t.Run("WithValidation: success when rules satisfied", func(t *testing.T) {
 		obj := newOK{
-			// Name will be defaulted to "x" ONLY if WithDefaults is provided; here we set good values explicitly
+			// name will be defaulted to "x" ONLY if WithDefaults is provided; here we set good values explicitly
 			Name: "ok",
 			Wait: 1,
 			In: newInner{
@@ -121,12 +128,15 @@ func TestNew(t *testing.T) {
 				D:   time.Second,
 			},
 		}
-		m, err := New(
-			&obj,
-			WithRule[newOK, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
-			WithRule[newOK, time.Duration](Rule[time.Duration]{Name: "nonzero", Fn: ruleNonZeroDur}),
-			WithValidation[newOK](),
-		)
+		nonempty, err := NewRule("nonempty", ruleNonEmpty)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
+		}
+		nonzeroDur, err := NewRule("nonzero", ruleNonZeroDur)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
+		}
+		m, err := New(&obj, WithRules[newOK](nonempty, nonzeroDur))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
@@ -136,10 +146,14 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("WithValidation: returns validation error", func(t *testing.T) {
-		obj := newValidateBad{} // Name empty
+		obj := newValidateBad{} // name empty
+		r, err := NewRule("nonempty", ruleNonEmpty)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
+		}
 		m, err := New(
 			&obj,
-			WithRule[newValidateBad, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty}),
+			WithRules[newValidateBad](r),
 			WithValidation[newValidateBad](),
 		)
 		if m != nil {
@@ -155,18 +169,17 @@ func TestNew(t *testing.T) {
 		// Ensure it contains the expected field error
 		by := ve.ByField()
 		if es := by["Name"]; len(es) == 0 || es[0].Rule != "nonempty" {
-			t.Fatalf("expected nonempty error for Name, got: %+v", es)
+			t.Fatalf("expected nonempty error for name, got: %+v", es)
 		}
 	})
 
 	t.Run("WithRules: registers multiple and dispatch works (exact match)", func(t *testing.T) {
 		obj := struct{ S string }{S: ""}
-		m, err := New(
-			&obj,
-			WithRules[struct{ S string }, string]([]Rule[string]{
-				{Name: "nonempty", Fn: ruleNonEmpty},
-			}),
-		)
+		nonempty, err := NewRule[string]("nonempty", ruleNonEmpty)
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
+		}
+		m, err := New(&obj, WithRules[struct{ S string }](nonempty))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
@@ -176,17 +189,15 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("wrapRule: interface overload is usable (AssignableTo)", func(t *testing.T) {
+	t.Run("newRuleAdapter: interface overload is usable (AssignableTo)", func(t *testing.T) {
 		obj := struct{ W wrapS }{W: wrapS{v: "Z"}}
-		m, err := New(
-			&obj,
-			WithRule[struct{ W wrapS }, myStringer](Rule[myStringer]{
-				Name: "iface",
-				Fn: func(s myStringer, _ ...string) error {
-					return fmt.Errorf("iface:%s", s.String())
-				},
-			}),
-		)
+		iface, err := NewRule[myStringer]("iface", func(s myStringer, _ ...string) error {
+			return fmt.Errorf("iface:%s", s.String())
+		})
+		if err != nil {
+			t.Fatalf("NewRule error: %v", err)
+		}
+		m, err := New(&obj, WithRules[struct{ W wrapS }](iface))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
@@ -197,93 +208,67 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("WithRule error: empty name", func(t *testing.T) {
-		obj := struct{}{}
-		m, err := New(
-			&obj,
-			WithRule[struct{}, string](Rule[string]{Name: "", Fn: ruleNonEmpty}),
-		)
-		if m != nil {
-			t.Fatalf("expected nil model on option error")
-		}
-		if err == nil || !strings.Contains(err.Error(), "non-empty Name") {
-			t.Fatalf("unexpected error: %v", err)
+		_, err := NewRule[string]("", ruleNonEmpty)
+		if err == nil || !strings.Contains(err.Error(), "non-empty name") {
+			t.Fatalf("expected NewRule error for empty name, got: %v", err)
 		}
 	})
 
 	t.Run("WithRule error: nil function", func(t *testing.T) {
-		obj := struct{}{}
-		m, err := New(
-			&obj,
-			WithRule[struct{}, string](Rule[string]{Name: "x", Fn: nil}),
-		)
-		if m != nil {
-			t.Fatalf("expected nil model on option error")
-		}
+		_, err := NewRule[string]("x", nil)
 		if err == nil || !strings.Contains(err.Error(), "non-nil Fn") {
-			t.Fatalf("unexpected error: %v", err)
+			t.Fatalf("expected NewRule error for nil function, got: %v", err)
 		}
 	})
 
-	t.Run("validators map initialized and preserves order on multiple WithRule", func(t *testing.T) {
+	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
-		m, err := New(
-			&obj,
-			WithRule[struct{ S string }, string](Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("one") }}),
-			WithRule[struct{ S string }, string](Rule[string]{Name: "r", Fn: func(string, ...string) error { return fmt.Errorf("two") }}),
-		)
+		r1, err := NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
 		if err != nil {
-			t.Fatalf("New error: %v", err)
+			t.Fatalf("NewRule r1 error: %v", err)
 		}
-		if m.validators == nil {
-			t.Fatalf("validators map not initialized")
+		r2, err := NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("two") })
+		if err != nil {
+			t.Fatalf("NewRule r2 error: %v", err)
 		}
-		ads := m.validators["r"]
-		if len(ads) != 2 {
-			t.Fatalf("expected 2 adapters, got %d", len(ads))
-		}
-		// Verify order by calling adapter fns directly on a reflect.Value.
-		// This bypasses dispatch (which would be ambiguous with 2 exact overloads).
-		if err := ads[0].fn(reflect.ValueOf("x")); err == nil || !strings.Contains(err.Error(), "one") {
-			t.Fatalf("expected first adapter to be 'one', got: %v", err)
-		}
-		if err := ads[1].fn(reflect.ValueOf("x")); err == nil || !strings.Contains(err.Error(), "two") {
-			t.Fatalf("expected second adapter to be 'two', got: %v", err)
-		}
-
-		// And confirm dispatch reports ambiguity for multiple exact overloads.
-		if err := m.applyRule("r", reflect.ValueOf("x")); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-			t.Fatalf("expected ambiguity error from applyRule, got: %v", err)
+		_, err = New(&obj, WithRules[struct{ S string }](r1, r2))
+		if err == nil || !strings.Contains(err.Error(), "duplicate overload rule") {
+			if err == nil {
+				t.Fatalf("expected duplicate overload rule error, got nil")
+			}
+			t.Fatalf("expected duplicate overload rule error, got: %v", err)
 		}
 	})
 
-	t.Run("options: short-circuit on first error; subsequent opts not applied", func(t *testing.T) {
-		type T struct{}
-		obj := T{}
-		called1 := false
-		called2 := false
-
-		failOpt := Option[T](func(m *Model[T]) error {
-			called1 = true
-			return fmt.Errorf("fail-first")
-		})
-		sideOpt := Option[T](func(m *Model[T]) error {
-			called2 = true
-			m.applyDefaultsOnNew = true // visible side-effect if applied
-			return nil
-		})
-
-		m, err := New(&obj, failOpt, sideOpt)
-		if m != nil {
-			t.Fatalf("expected nil model on first option error")
-		}
-		if err == nil || !strings.Contains(err.Error(), "fail-first") {
-			t.Fatalf("expected first option error, got %v", err)
-		}
-		if !called1 {
-			t.Fatalf("expected first option to be called")
-		}
-		if called2 {
-			t.Fatalf("expected second option NOT to be called after first error")
-		}
-	})
+	// returning error has been removed from Option signature
+	//	t.Run("options: short-circuit on first error; subsequent opts not applied", func(t *testing.T) {
+	//		type T struct{}
+	//		obj := T{}
+	//		called1 := false
+	//		called2 := false
+	//
+	//		failOpt := Option[T](func(m *Model[T]) {
+	//			called1 = true
+	//			return fmt.Errorf("fail-first")
+	//		})
+	//		sideOpt := Option[T](func(m *Model[T]) {
+	//			called2 = true
+	//			m.applyDefaultsOnNew = true // visible side-effect if applied
+	//			return nil
+	//		})
+	//
+	//		m, err := New(&obj, failOpt, sideOpt)
+	//		if m != nil {
+	//			t.Fatalf("expected nil model on first option error")
+	//		}
+	//		if err == nil || !strings.Contains(err.Error(), "fail-first") {
+	//			t.Fatalf("expected first option error, got %v", err)
+	//		}
+	//		if !called1 {
+	//			t.Fatalf("expected first option to be called")
+	//		}
+	//		if called2 {
+	//			t.Fatalf("expected second option NOT to be called after first error")
+	//		}
+	//	})
 }

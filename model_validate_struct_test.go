@@ -30,7 +30,7 @@ type vOuter struct {
 
 	// Simple rules
 	Name string `validate:"nonempty"`
-	// Params test (commas inside parens; also followed by another rule)
+	// params test (commas inside parens; also followed by another rule)
 	Note string `validate:"withParams(a, b, c),nonempty"`
 
 	// Unknown rule
@@ -107,24 +107,47 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{validators: make(map[string][]typedAdapter)}
-
-	// Register string rules
-	WithRule[vOuter, string](Rule[string]{Name: "nonempty", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](Rule[string]{Name: "withParams", Fn: ruleWithParams})(m)
-
-	// Register time.Duration rule
-	WithRule[vOuter, time.Duration](Rule[time.Duration]{Name: "nonzeroDuration", Fn: ruleNonzeroDuration})(m)
-
+	m := &Model[vOuter]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+	stringNonEmpty, err := NewRule[string]("nonempty", ruleNonEmpty)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	stringWithParams, err := NewRule[string]("withParams", ruleWithParams)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	durationNonzero, err := NewRule[time.Duration]("nonzeroDuration", ruleNonzeroDuration)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
 	// Register interface-based rule (AssignableTo path)
-	WithRule[vOuter, fmt.Stringer](Rule[fmt.Stringer]{Name: "stringerBad", Fn: ruleStringerBad})(m)
-
-	// Register ambiguous rule (same name & type twice) → exact duplicates trigger ambiguity
-	WithRule[vOuter, string](Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
-	WithRule[vOuter, string](Rule[string]{Name: "dup", Fn: ruleNonEmpty})(m)
-
+	stringerBad, err := NewRule[fmt.Stringer]("stringerBad", ruleStringerBad)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+	// Register single rule for dup (used to be ambiguous with duplicates)
+	stringDup1, err := NewRule[string]("dup", ruleNonEmpty)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
 	// Also a rule for int to demonstrate element rules on int slices if needed
-	WithRule[vOuter, int](Rule[int]{Name: "intErr", Fn: ruleIntAlwaysErr})(m)
+	intSlices, err := NewRule[int]("intErr", ruleIntAlwaysErr)
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+
+	// Apply all to model
+	err = m.RegisterRules(
+		stringNonEmpty,
+		stringWithParams,
+		durationNonzero,
+		stringerBad,
+		stringDup1,
+		intSlices,
+	)
+	if err != nil {
+		t.Fatalf("RegisterRules error: %v", err)
+	}
 
 	t.Run("recursion, params parsing, unknown rule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
 		obj := vOuter{
@@ -211,9 +234,9 @@ func TestModel_validateStruct(t *testing.T) {
 
 		// Simple rules
 		if _, ok := by["Root.Name"]; !ok {
-			t.Errorf("expected nonempty error at Root.Name")
+			t.Errorf("expected nonempty error at Root.name")
 		}
-		// Params parsing (withParams and nonempty applied)
+		// params parsing (withParams and nonempty applied)
 		paramsMsgs := by["Root.Note"]
 		if len(paramsMsgs) == 0 {
 			t.Errorf("expected errors for Root.Note")
@@ -237,14 +260,14 @@ func TestModel_validateStruct(t *testing.T) {
 			}
 		}
 
-		// Unknown rule applied
-		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "is not registered") {
-			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
+		// Ambiguity on dup (no longer ambiguous). Expect a single nonempty error.
+		if es := by["Root.Amb"]; len(es) == 0 || es[0].Rule != "dup" || !strings.Contains(es[0].Err.Error(), "must not be empty") {
+			t.Errorf("expected nonempty error at Root.Amb, got: %+v", es)
 		}
 
-		// Ambiguity on dup
-		if es := by["Root.Amb"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "ambiguous") {
-			t.Errorf("expected ambiguity error at Root.Amb, got: %+v", es)
+		// Unknown rule applied (rule not found)
+		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "rule not found") {
+			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
 		}
 
 		// Assignable interface rule
@@ -260,7 +283,7 @@ func TestModel_validateStruct(t *testing.T) {
 			have := map[string]bool{"tokA": false, "tokB": false}
 			for _, fe := range es {
 				have[fe.Rule] = true
-				if !strings.Contains(fe.Err.Error(), "is not registered") {
+				if !strings.Contains(fe.Err.Error(), "rule not found") {
 					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}
@@ -282,7 +305,7 @@ func TestModel_validateStruct(t *testing.T) {
 			have := map[string]bool{"tokEA": false, "tokEB": false}
 			for _, fe := range es {
 				have[fe.Rule] = true
-				if !strings.Contains(fe.Err.Error(), "is not registered") {
+				if !strings.Contains(fe.Err.Error(), "rule not found") {
 					t.Errorf("expected unknown rule error for %s, got %v", fe.Rule, fe.Err)
 				}
 			}

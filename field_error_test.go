@@ -19,11 +19,11 @@ func TestFieldError_Error(t *testing.T) {
 		{
 			name: "with rule and non-nil error",
 			fe: FieldError{
-				Path: "Root.Name",
+				Path: "Root.name",
 				Rule: "nonempty",
 				Err:  errors.New("must not be empty"),
 			},
-			wantHas: []string{"Root.Name", "must not be empty", "(rule nonempty)"},
+			wantHas: []string{"Field \"Root.name\"", "rule \"nonempty\"", "must not be empty"},
 		},
 		{
 			name: "without rule and non-nil error",
@@ -42,7 +42,7 @@ func TestFieldError_Error(t *testing.T) {
 				Err:  nil,
 			},
 			// Implementation currently formats the nil error; we only assert it contains path and rule marker.
-			wantHas: []string{"X", "(rule some)"},
+			wantHas: []string{"Field \"X\"", "rule \"some\""},
 		},
 		{
 			name: "without rule and nil error (should still include path, no panic)",

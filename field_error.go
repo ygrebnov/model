@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 // FieldError represents a single validation failure for a specific field and rule.
@@ -15,10 +14,16 @@ type FieldError struct {
 }
 
 func (e FieldError) Error() string {
+	path := "- Field \"" + e.Path + "\":"
+	rule := ""
 	if e.Rule != "" {
-		return fmt.Sprintf("%s: %s (rule %s)", e.Path, e.Err, e.Rule)
+		rule = " rule \"" + e.Rule + "\":"
 	}
-	return fmt.Sprintf("%s: %s", e.Path, e.Err)
+	err := ""
+	if e.Err != nil {
+		err = " " + e.Err.Error()
+	}
+	return path + rule + err
 }
 
 func (e FieldError) Unwrap() error { return e.Err }

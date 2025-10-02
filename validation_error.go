@@ -58,7 +58,7 @@ func (ve *ValidationError) Error() string {
 		return ve.issues[0].Error()
 	default:
 		var b strings.Builder
-		b.WriteString("validation failed (\n")
+		b.WriteString("validation failed:\n")
 		for i, fe := range ve.issues {
 			b.WriteString("  ")
 			b.WriteString(fe.Error())
@@ -66,7 +66,7 @@ func (ve *ValidationError) Error() string {
 				b.WriteString("\n")
 			}
 		}
-		b.WriteString("\n)")
+		b.WriteString("\n")
 		return b.String()
 	}
 }
@@ -139,7 +139,7 @@ func (ve *ValidationError) Fields() []string {
 // Example:
 //
 //	{
-//	  "Name": ["must not be empty"],
+//	  "name": ["must not be empty"],
 //	  "Age":  ["must be > 0", "must not be zero"]
 //	}
 func (ve *ValidationError) MarshalJSON() ([]byte, error) {
