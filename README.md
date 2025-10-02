@@ -177,7 +177,7 @@ m, err := model.New(&u,
 
 ### `WithRules[T](rules ...Rule)` — register one or many rules
 
-Create rules with `NewRule` and pass them:
+Create rules with `NewRule` and pass them. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call. Duplicate exact overloads (same rule name & identical field type) are rejected.
 
 ```go
 maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) error {
@@ -187,8 +187,13 @@ maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) er
     return nil
 })
 
+positive64, _ := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
+    if v <= 0 { return fmt.Errorf("must be > 0") }
+    return nil
+})
+
 m, _ := model.New(&u,
-    model.WithRules[User](maxLen),
+    model.WithRules[User](maxLen, positive64), // different names & types allowed
 )
 ```
 
@@ -365,6 +370,7 @@ func handle(u *User) error {
 - `default:"dive"` allocates nil `*struct` pointers before recursing.
 - Duplicate exact rule registrations are blocked early (no runtime ambiguity errors).
 - Built-ins are always available even if you never call `WithRules`.
+- Concurrency: After construction, calling `Validate()` and `SetDefaults()` on the same *Model* instance from multiple goroutines concurrently is safe for reads of cached metadata, but typical usage mutates the underlying struct. For concurrent validation of distinct objects, create one Model per object or guard shared object mutation. Register all custom rules before exposing the Model to multiple goroutines (rule registration is not concurrency-safe once validation begins).
 
 ---
 

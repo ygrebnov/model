@@ -27,7 +27,7 @@ const ErrorFieldNamespace = Namespace
 const (
 	_errorFieldRuleSegment    = ".rule."
 	_errorFieldDefaultSegment = ".default"
-	_errorFieldFieldSegment   = ".field"
+	_errorFieldFieldSegment   = ".field."
 )
 
 // Exported structured error field keys

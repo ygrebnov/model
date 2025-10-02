@@ -187,6 +187,37 @@ func TestModel_validate(t *testing.T) {
 	}
 }
 
+// New test to ensure built-in rules are applied when Validate is called on a fresh Model without any options.
+func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
+	t.Parallel()
+	type Obj struct {
+		S string `validate:"nonempty"`
+	}
+	obj := Obj{}
+	m, err := New(&obj) // no WithValidation, no WithRules
+	if err != nil {
+		// New should not fail just because validation isn't requested yet.
+		t.Fatalf("unexpected error from New: %v", err)
+	}
+	// First validation should pick up built-in nonempty and fail because S is empty.
+	err = m.Validate()
+	if err == nil {
+		t.Fatalf("expected validation error for empty S, got nil")
+	}
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
+	}
+	if _, ok := ve.ByField()["S"]; !ok {
+		t.Fatalf("expected field error for S, got: %+v", ve.ByField())
+	}
+	// Fix the field and validate again; should succeed.
+	obj.S = "x"
+	if err := m.Validate(); err != nil {
+		t.Fatalf("expected no error after fixing S, got: %v", err)
+	}
+}
+
 func checkValidateTopError(t *testing.T, err error, wantSubstr string) {
 	t.Helper()
 	if wantSubstr == "" {
