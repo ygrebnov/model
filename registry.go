@@ -139,9 +139,9 @@ func (r *registry) get(name string, v reflect.Value) (Rule, error) {
 func getFieldTypesNames(rules []Rule) []string {
 	var names []string
 	for _, rule := range rules {
-		filedTypeName := rule.getFieldTypeName()
-		if filedTypeName != "" { // defensive, cannot be empty due to checks in NewRule
-			names = append(names, filedTypeName)
+		fieldTypeName := rule.getFieldTypeName()
+		if fieldTypeName != "" { // defensive, cannot be empty due to checks in NewRule
+			names = append(names, fieldTypeName)
 		}
 	}
 	slices.Sort(names)

@@ -19,7 +19,7 @@ func fe(path, rule, msg string) FieldError {
 func TestValidationError_Add_and_Len_Empty_nilReceiverSafe(t *testing.T) {
 	t.Parallel()
 
-	// nil receiver: add should be a no-op and not panic; Len/Empty should be safe
+	// nil receiver: Add should be a no-op and not panic; Len/Empty should be safe
 	var veNil *ValidationError
 	veNil.Add(fe("A", "r", "x")) // must not panic
 	if veNil.Len() != 0 {
