@@ -18,6 +18,7 @@ It’s designed to be **small, explicit, and type-safe** (uses generics). You re
 - [Why use this?](#why-use-this)
 - [Quick start](#quick-start)
 - [Constructor: `New`](#constructor-new)
+- [Why no MustNew?](#why-no-mustnew)
 - [Functional options](#functional-options)
 - [Model methods](#model-methods)
 - [Struct tags (how it works)](#struct-tags-how-it-works)
@@ -28,6 +29,7 @@ It’s designed to be **small, explicit, and type-safe** (uses generics). You re
   - [Performance tuning tips](#performance-tuning-tips)
 - [Behavior notes](#behavior-notes)
 - [Integration example: validation failure with sorted available types](#integration-example-validation-failure-with-sorted-available-types)
+- [Missing rule vs missing overload](#missing-rule-vs-missing-overload)
 - [Minimal example](#minimal-example)
 - [Examples](#examples)
 - [License](#license)
@@ -135,6 +137,24 @@ if err != nil {
 - Misuse (nil object or pointer to a non-struct) returns an error (`ErrNilObject`, `ErrNotStructPtr`).
 - Built-in rules (string / int / int64 / float64 families) are **auto-available**; no registration required.
 - Register custom or overriding rules (see below) *before* `WithValidation` if you want them to apply during construction.
+
+---
+
+## Why no MustNew?
+
+`MustNew` (a variant that panics on configuration errors) is intentionally omitted:
+
+- Panics hinder graceful startup error reporting in services / CLIs.
+- All failure modes (`nil` object, non-struct pointer, duplicate rule overload, validation failures when requested) are ordinary and recoverable.
+- Returning `error` keeps initialization explicit and test-friendly (you can assert exact sentinel errors or unwrap `*ValidationError`).
+- If you truly want a panic wrapper, you can write a 2‑line helper in your own code:
+  ```go
+  func MustNew[T any](o *T, opts ...model.Option[T]) *model.Model[T] {
+      m, err := model.New(o, opts...); if err != nil { panic(err) }; return m
+  }
+  ```
+
+If enough users request it, a helper can be added later—keeping the core API minimal for now.
 
 ---
 
@@ -419,7 +439,74 @@ func main() {
 Possible line (simplified):
 
 ```
-X: model: rule not found, rule_name: r, value_type: float64, available_types: int, string (rule r)
+X: model: rule overload not found, rule_name: r, value_type: float64, available_types: int, string (rule r)
+```
+
+---
+
+## Missing rule vs missing overload
+
+Two distinct error cases help diagnose configuration issues:
+
+1. ErrRuleNotFound – no rule with that name exists (and no built-in with that name).
+2. ErrRuleOverloadNotFound – at least one overload with that rule name exists, but none matches the field's type.
+
+### 1. Missing rule name entirely
+```go
+package main
+import (
+  "fmt"
+  "errors"
+  "github.com/ygrebnov/model"
+)
+
+type A struct { X int `validate:"unknownRule"` }
+
+func main() {
+  a := A{}
+  m, _ := model.New(&a) // no rules registered
+  if err := m.Validate(); err != nil {
+    var ve *model.ValidationError
+    if errors.As(err, &ve) {
+      fmt.Println("-- ErrRuleNotFound example --")
+      fmt.Println(ve.Error())
+    }
+  }
+}
+```
+Possible fragment (order of fields stable but other context may precede it):
+```
+X: model: rule not found, rule_name: unknownRule (rule unknownRule)
+```
+
+### 2. Rule name exists, but type overload missing
+```go
+package main
+import (
+  "fmt"
+  "errors"
+  "github.com/ygrebnov/model"
+)
+
+type B struct { F float64 `validate:"r"` }
+
+func main() {
+  b := B{F: 1.23}
+  rInt, _ := model.NewRule[int]("r", func(_ int, _ ...string) error { return nil })
+  rString, _ := model.NewRule[string]("r", func(_ string, _ ...string) error { return nil })
+  m, _ := model.New(&b, model.WithRules[B](rInt, rString))
+  if err := m.Validate(); err != nil {
+    var ve *model.ValidationError
+    if errors.As(err, &ve) {
+      fmt.Println("-- ErrRuleOverloadNotFound example --")
+      fmt.Println(ve.Error())
+    }
+  }
+}
+```
+Possible fragment:
+```
+F: model: rule overload not found, rule_name: r, value_type: float64, available_types: int, string (rule r)
 ```
 
 ---
