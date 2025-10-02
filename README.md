@@ -13,6 +13,25 @@
 
 It’s designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior).
 
+## Table of Contents
+- [Install](#install)
+- [Why use this?](#why-use-this)
+- [Quick start](#quick-start)
+- [Constructor: `New`](#constructor-new)
+- [Functional options](#functional-options)
+- [Model methods](#model-methods)
+- [Struct tags (how it works)](#struct-tags-how-it-works)
+- [Built-in rules](#built-in-rules)
+- [Custom rules (with parameters)](#custom-rules-with-parameters)
+- [Error types](#error-types)
+- [Performance & benchmarks](#performance--benchmarks)
+  - [Performance tuning tips](#performance-tuning-tips)
+- [Behavior notes](#behavior-notes)
+- [Integration example: validation failure with sorted available types](#integration-example-validation-failure-with-sorted-available-types)
+- [Minimal example](#minimal-example)
+- [Examples](#examples)
+- [License](#license)
+
 ---
 
 ## Install
@@ -442,12 +461,23 @@ func main() {
 
 ## Examples
 
-An examples program lives under `examples/` demonstrating each option and a validation failure. Run:
+The examples now live directly in the main package (no separate `examples` or `example` package). They are conventional Go example functions named `Example*` so they:
+
+- Render automatically on pkg.go.dev.
+- Run as part of `go test` (ensuring they compile and their output, if any, matches expectations).
+
+### Running the examples
 
 ```bash
-go run ./examples
+go test ./...                 # runs unit tests and example functions
+go test -run Example ./...    # run only examples
 ```
 
+Browse them:
+- On pkg.go.dev: https://pkg.go.dev/github.com/ygrebnov/model
+- In the repository root: search for `Example` functions inside `*.go` files.
+
+If you had previously referenced an `examples/` directory in external docs, update that reference—examples are now inlined in the package itself for better discoverability.
 
 ---
 
