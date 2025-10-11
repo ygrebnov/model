@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -31,8 +32,8 @@ func BenchmarkBuiltinColdStart(b *testing.B) {
 	obj := benchStruct{S: "abc", I: 1, D: int64(time.Second)}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m, _ := New(&obj, WithValidation[benchStruct]())
-		_ = m.Validate()
+		m, _ := New(&obj, WithValidation[benchStruct](context.Background()))
+		_ = m.Validate(context.Background())
 	}
 }
 
@@ -40,11 +41,11 @@ func BenchmarkBuiltinColdStart(b *testing.B) {
 func BenchmarkBuiltinWarm(b *testing.B) {
 	// Force init once
 	obj := benchStruct{S: "abc", I: 1, D: 1}
-	m, _ := New(&obj, WithValidation[benchStruct]())
-	_ = m.Validate()
+	m, _ := New(&obj, WithValidation[benchStruct](context.Background()))
+	_ = m.Validate(context.Background())
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = m.Validate()
+		_ = m.Validate(context.Background())
 	}
 }
 
@@ -55,9 +56,9 @@ func BenchmarkValidateNoBuiltins(b *testing.B) {
 	}
 	cr, _ := NewRule[string]("cRule", func(s string, _ ...string) error { return nil })
 	obj := custom{V: "x"}
-	m, _ := New(&obj, WithRules[custom](cr), WithValidation[custom]())
+	m, _ := New(&obj, WithRules[custom](cr), WithValidation[custom](context.Background()))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = m.Validate()
+		_ = m.Validate(context.Background())
 	}
 }

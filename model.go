@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"reflect"
 	"sync"
 
@@ -32,6 +33,7 @@ type Model[TObject any] struct {
 	obj                *TObject
 	rulesRegistry      rulesRegistry
 	rulesMapping       rulesMapping
+	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
 // New constructs a new Model for the given object pointer, applying any provided options.
@@ -47,7 +49,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 		return nil, errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, elem.Kind().String()))
 	}
 
-	m := &Model[TObject]{obj: obj}
+	m := &Model[TObject]{obj: obj, ctx: context.Background()}
 	for _, opt := range opts {
 		if err := opt(m); err != nil {
 			return nil, err
@@ -66,7 +68,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 
 	// Optionally run validation; return error on failure
 	if m.validateOnNew {
-		if err := m.validate(); err != nil {
+		if err := m.validate(m.ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -81,12 +83,18 @@ func WithDefaults[TObject any]() Option[TObject] {
 	return func(m *Model[TObject]) error { m.applyDefaultsOnNew = true; return nil }
 }
 
-// WithValidation enables running Validate() during New(). If validation fails, New() returns an error.
+// WithValidation enables running Validate(ctx) during New(). If validation fails, New() returns an error.
 // If not specified, validation is NOT run automatically.
 // If no custom rules are registered, built-in rules are used for any `validate` tags present.
-func WithValidation[TObject any]() Option[TObject] {
+// The provided context controls cancellation/deadlines for this New-time validation.
+func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		m.validateOnNew = true
+		if ctx == nil {
+			m.ctx = context.Background()
+		} else {
+			m.ctx = ctx
+		}
 		m.initRules()
 		return nil
 	}
@@ -94,7 +102,7 @@ func WithValidation[TObject any]() Option[TObject] {
 
 // WithRules registers one or many named custom validation rules into the model's validator.
 // Registered validation rules can be executed in New() if WithValidation is also specified,
-// or later by calling Validate().
+// or later by calling Validate(ctx).
 //
 // All rules must be of the same field type (e.g., string, int).
 //

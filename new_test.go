@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -154,7 +155,7 @@ func TestNew(t *testing.T) {
 		m, err := New(
 			&obj,
 			WithRules[newValidateBad](r),
-			WithValidation[newValidateBad](),
+			WithValidation[newValidateBad](context.Background()),
 		)
 		if m != nil {
 			t.Fatalf("expected nil model when validation fails")

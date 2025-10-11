@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 )
@@ -29,23 +30,32 @@ func (m *Model[TObject]) RegisterRules(rules ...Rule) error {
 	return nil
 }
 
-// Validate runs the registered validation rules against the model's bound object.
-// It delegates to the internal validate method which performs the actual work.
-func (m *Model[TObject]) Validate() error {
+// Validate runs the registered validation rules against the model's bound object with the provided context.
+// If the context is canceled or its deadline exceeded, validation stops early and ctx.Err() is returned.
+func (m *Model[TObject]) Validate(ctx context.Context) error {
 	m.initRules()
-	return m.validate()
+	return m.validate(ctx)
 }
 
 // validate is the internal implementation that walks struct fields and applies rules
 // declared in `validate:"..."` tags. It supports rule parameters via the syntax
 // "rule" or "rule(p1,p2)" and multiple rules separated by commas.
-func (m *Model[TObject]) validate() (err error) {
+func (m *Model[TObject]) validate(ctx context.Context) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	var rv reflect.Value
 	if rv, err = m.rootStructValue("Validate"); err != nil {
 		return err
 	}
 	ve := &ValidationError{}
-	m.validateStruct(rv, "", ve)
+	if err := m.validateStruct(ctx, rv, "", ve); err != nil {
+		return err
+	}
 	if ve.Empty() {
 		return nil
 	}
@@ -67,9 +77,15 @@ func (m *Model[TObject]) applyRule(name string, v reflect.Value, params ...strin
 // validateStruct walks a struct value and applies rules on each field according to its `validate` tag.
 // Nested structs and pointers to structs are traversed recursively. The `path` argument tracks the
 // dotted field path for clearer error messages.
-func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *ValidationError) {
+func (m *Model[TObject]) validateStruct(ctx context.Context, rv reflect.Value, path string, ve *ValidationError) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		field := typ.Field(i)
 		if field.PkgPath != "" { // Skip unexported fields
 			continue
@@ -83,12 +99,16 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 
 		// Recurse into pointers to structs
 		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
-			m.validateStruct(fv.Elem(), fpath, ve)
+			if err := m.validateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
+				return err
+			}
 		}
 
 		// Recurse into embedded/inline structs
 		if fv.Kind() == reflect.Struct {
-			m.validateStruct(fv, fpath, ve)
+			if err := m.validateStruct(ctx, fv, fpath, ve); err != nil {
+				return err
+			}
 		}
 
 		// Process `validate` tag
@@ -100,6 +120,9 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 			}
 
 			for _, r := range rules {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if err := m.applyRule(r.name, fv, r.params...); err != nil {
 					ve.Add(FieldError{Path: fpath, Rule: r.name, Params: r.params, Err: err})
 				}
@@ -114,20 +137,26 @@ func (m *Model[TObject]) validateStruct(rv reflect.Value, path string, ve *Valid
 				m.rulesMapping.add(typ, i, tagValidateElem, elemRules)
 			}
 
-			m.validateElements(fv, fpath, elemRules, ve)
+			if err := m.validateElements(ctx, fv, fpath, elemRules, ve); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // validateElements applies validation rules to elements of a slice, array, or map
 // using pre-parsed rules (e.g., retrieved from the cache).
-func (m *Model[TObject]) validateElements(fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) {
+func (m *Model[TObject]) validateElements(ctx context.Context, fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	cont := fv
 	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
 		cont = cont.Elem()
 	}
 	if len(rules) == 0 {
-		return
+		return nil
 	}
 	// Special case: validateElem:"dive" means recurse into element structs
 	isDiveOnly := len(rules) == 1 && rules[0].name == tagDive && len(rules[0].params) == 0
@@ -135,37 +164,54 @@ func (m *Model[TObject]) validateElements(fv reflect.Value, fpath string, rules 
 	switch cont.Kind() {
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < cont.Len(); i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			elem := cont.Index(i)
 			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
-			m.validateSingleElement(elem, pathIdx, rules, isDiveOnly, ve)
+			if err := m.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve); err != nil {
+				return err
+			}
 		}
 	case reflect.Map:
 		for _, key := range cont.MapKeys() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			elem := cont.MapIndex(key)
 			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-			m.validateSingleElement(elem, pathKey, rules, isDiveOnly, ve)
+			if err := m.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // validateSingleElement handles validation for a single item from a collection.
-func (m *Model[TObject]) validateSingleElement(elem reflect.Value, path string, rules []ruleNameParams, isDiveOnly bool, ve *ValidationError) {
+func (m *Model[TObject]) validateSingleElement(ctx context.Context, elem reflect.Value, path string, rules []ruleNameParams, isDiveOnly bool, ve *ValidationError) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if isDiveOnly {
 		dv := elem
 		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
 			dv = dv.Elem()
 		}
 		if dv.Kind() == reflect.Struct {
-			m.validateStruct(dv, path, ve)
-		} else {
-			ve.Add(FieldError{Path: path, Rule: tagDive, Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
+			return m.validateStruct(ctx, dv, path, ve)
 		}
-		return
+		ve.Add(FieldError{Path: path, Rule: tagDive, Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
+		return nil
 	}
 
 	for _, r := range rules {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := m.applyRule(r.name, elem, r.params...); err != nil {
 			ve.Add(FieldError{Path: path, Rule: r.name, Params: r.params, Err: err})
 		}
 	}
+	return nil
 }
