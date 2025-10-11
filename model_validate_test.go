@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,7 +50,7 @@ func TestModel_validate(t *testing.T) {
 			run: func() (error, any) {
 				var m Model[vNoTags]
 				m.obj = nil
-				return m.validate(), &m
+				return m.validate(context.Background()), &m
 			},
 			wantErr: "nil object",
 		},
@@ -59,7 +60,7 @@ func TestModel_validate(t *testing.T) {
 				var m Model[int]
 				x := 42
 				m.obj = &x // *int (Elem != struct)
-				return m.validate(), &m
+				return m.validate(context.Background()), &m
 			},
 			wantErr: "object must be a non-nil pointer to struct",
 		},
@@ -69,7 +70,7 @@ func TestModel_validate(t *testing.T) {
 				var m Model[vNoTags]
 				obj := vNoTags{A: 1, B: "x"}
 				m.obj = &obj
-				return m.validate(), &m
+				return m.validate(context.Background()), &m
 			},
 			wantErr: "",
 		},
@@ -95,7 +96,7 @@ func TestModel_validate(t *testing.T) {
 				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
 					t.Fatalf("RegisterRules error: %v", err)
 				}
-				return m.validate(), m
+				return m.validate(context.Background()), m
 			},
 			wantErr: "",
 		},
@@ -121,7 +122,7 @@ func TestModel_validate(t *testing.T) {
 				if err = m.RegisterRules(nonempty, nonZeroDur); err != nil {
 					t.Fatalf("RegisterRules error: %v", err)
 				}
-				return m.validate(), m
+				return m.validate(context.Background()), m
 			},
 			wantErr: "validation", // we’ll assert concrete type & fields in verify
 			verify: func(t *testing.T, err error, _ any) {
@@ -160,7 +161,7 @@ func TestModel_validate(t *testing.T) {
 				obj := vUnknown{}
 				m.obj = &obj
 				// no rules registered on purpose
-				return m.validate(), m
+				return m.validate(context.Background()), m
 			},
 			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
@@ -200,7 +201,7 @@ func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
 		t.Fatalf("unexpected error from New: %v", err)
 	}
 	// First validation should pick up built-in nonempty and fail because S is empty.
-	err = m.Validate()
+	err = m.Validate(context.Background())
 	if err == nil {
 		t.Fatalf("expected validation error for empty S, got nil")
 	}
@@ -213,7 +214,7 @@ func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
 	}
 	// Fix the field and validate again; should succeed.
 	obj.S = "x"
-	if err := m.Validate(); err != nil {
+	if err := m.Validate(context.Background()); err != nil {
 		t.Fatalf("expected no error after fixing S, got: %v", err)
 	}
 }

@@ -46,7 +46,7 @@ go get github.com/ygrebnov/model
 
 ## Why use this?
 
-- **Simple API**: one constructor and two main methods: `SetDefaults()` and `Validate()`.
+- **Simple API**: one constructor and two main methods: `SetDefaults()` and `Validate(ctx)`.
 - **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
 - **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
 
@@ -58,6 +58,7 @@ go get github.com/ygrebnov/model
 package main
 
 import (
+    "context"
     "encoding/json"
     "errors"
     "fmt"
@@ -85,8 +86,8 @@ func main() {
 
     // Built-in rules (nonempty / numeric checks) are available implicitly.
     m, err := model.New(&u,
-        model.WithDefaults[User](),   // apply defaults during construction
-        model.WithValidation[User](), // run validation during construction
+        model.WithDefaults[User](),                 // apply defaults during construction
+        model.WithValidation[User](context.Background()), // run validation during construction (cancellable)
     )
     if err != nil {
         var ve *model.ValidationError
@@ -102,8 +103,8 @@ func main() {
     fmt.Printf("User after defaults: %+v\n", u)
 
     // You can also call them later:
-    _ = m.SetDefaults() // guarded by sync.Once — no double work
-    _ = m.Validate()    // returns *ValidationError on failure
+    _ = m.SetDefaults()                          // guarded by sync.Once — no double work
+    _ = m.Validate(context.Background())         // returns *ValidationError on failure
 }
 ```
 
@@ -112,9 +113,10 @@ func main() {
 ## Constructor: `New`
 
 ```go
+ctx := context.Background()
 m, err := model.New(&user,
-    model.WithDefaults[User](),    // apply defaults during New()
-    model.WithValidation[User](),  // run validation during New()
+    model.WithDefaults[User](),
+    model.WithValidation[User](ctx),  // run validation during New() with cancellation support
 )
 if err != nil {
     var ve *model.ValidationError
@@ -131,12 +133,7 @@ if err != nil {
 }
 ```
 
-**Notes**
-
-- `New` returns `(*Model[T], error)`.
-- Misuse (nil object or pointer to a non-struct) returns an error (`ErrNilObject`, `ErrNotStructPtr`).
-- Built-in rules (string / int / int64 / float64 families) are **auto-available**; no registration required.
-- Register custom or overriding rules (see below) *before* `WithValidation` if you want them to apply during construction.
+To validate later explicitly, call `m.Validate(ctx)` with a context appropriate for the request.
 
 ---
 
@@ -171,16 +168,18 @@ m, err := model.New(&u, model.WithDefaults[User]())
 - Runs once per `Model` (guarded by `sync.Once`).
 - Writes only zero values.
 
-### `WithValidation[T]()` — run validation during construction
+### `WithValidation[T](ctx context.Context)` — run validation during construction
 
 ```go
+ctx := context.Background()
 m, err := model.New(&u,
-    model.WithValidation[User](),
+    model.WithValidation[User](ctx),
 )
 ```
 
 - Gathers **all** field errors; returns a `*ValidationError` on failure.
 - Built-ins are always considered first for matching types.
+- Cancellation/deadlines follow the provided context.
 - To override a built-in rule, register a custom rule *before* `WithValidation`:
 
 ```go
@@ -191,7 +190,7 @@ nonemptyCustom, _ := model.NewRule[string]("nonempty", func(s string, _ ...strin
 
 m, err := model.New(&u,
     model.WithRules[User](nonemptyCustom), // override
-    model.WithValidation[User](),
+    model.WithValidation[User](ctx),
 )
 ```
 
@@ -227,9 +226,11 @@ Duplicate exact overloads (same rule name & identical field type) are **rejected
 
 Apply `default:"…"` / `defaultElem:"…"` recursively. Safe to call multiple times (subsequent calls no-op).
 
-### `Validate() error`
+### `Validate(ctx context.Context) error`
 
 Walk fields and apply rules from `validate:"…"` / `validateElem:"…"` tags. Returns `*ValidationError` on failure.
+
+- Returns `ctx.Err()` immediately if the context is canceled or its deadline is exceeded.
 
 ---
 
@@ -281,7 +282,7 @@ type Payload struct { Body string `validate:"minLen(3)"` }
 
 p := Payload{Body: "xy"}
 m, _ := model.New(&p, model.WithRules[Payload](minLen))
-if err := m.Validate(); err != nil {
+if err := m.Validate(context.Background()); err != nil {
     fmt.Println(err) // Body: must be at least 3 chars (rule minLen)
 }
 ```
@@ -336,7 +337,7 @@ A few micro-benchmarks (run on Go 1.22, macOS, Apple M-series; numbers are illus
 Key points:
 - The one-time lazy init cost (~3µs) is amortized quickly; warm validations drop below 1µs for this simple struct.
 - Memory allocations drop significantly after warm-up (primarily slice/map allocations for rule lookups and error structures when no failures occur).
-- You can reduce allocs further by reusing the same Model instance; `Validate()` does not mutate cached rule parsing state.
+- You can reduce allocs further by reusing the same Model instance; `Validate(ctx)` does not mutate cached rule parsing state.
 
 Run benchmarks locally:
 
@@ -350,8 +351,8 @@ For real workloads, overall cost will scale with number of exported fields trave
 
 Practical ways to minimize overhead in hot paths:
 
-1. Reuse Model instances: construct a single `Model[T]` per long‑lived object (or pool of objects) and call `Validate()` repeatedly. Tag parsing and rule registry lookups are cached; re-validation avoids re-parsing tags.
-2. Separate construction from the hot loop: do `model.New(&obj, WithValidation[T]())` outside tight request loops so the one‑time lazy built‑in initialization cost is amortized.
+1. Reuse Model instances: construct a single `Model[T]` per long‑lived object (or pool of objects) and call `Validate(ctx)` repeatedly. Tag parsing and rule registry lookups are cached; re-validation avoids re-parsing tags.
+2. Separate construction from the hot loop: do `model.New(&obj, WithValidation[T](context.Background()))` outside tight request loops so the one‑time lazy built‑in initialization cost is amortized.
 3. Prefer exact type rules over interface rules when possible: exact matches are resolved faster than walking assignable interface candidates.
 4. Avoid unnecessary rule duplication: register each custom rule once up front. Re-registering (or creating rules every call) allocates and defeats caching.
 5. Aggregate small validations: if you have many tiny structs, consider grouping related fields into a single struct to reduce reflective traversal overhead.
@@ -368,13 +369,11 @@ var userModel *model.Model[User]
 func init() {
     u := User{} // template instance if you only validate (or allocate per request below)
     // Register overrides & built-ins once.
-    userModel, _ = model.New(&u, model.WithValidation[User]())
+    userModel, _ = model.New(&u, model.WithValidation[User](context.Background()))
 }
 
-func handle(u *User) error {
-    // Apply defaults only the first time for each concrete instance if needed:
-    // (You can wrap this logic if you manage a pool of *User objects.)
-    if err := userModel.Validate(); err != nil { // reuses cached tag parsing
+func handle(ctx context.Context, u *User) error {
+    if err := userModel.Validate(ctx); err != nil { // reuses cached tag parsing
         return err
     }
     return nil
@@ -390,7 +389,8 @@ func handle(u *User) error {
 - `default:"dive"` allocates nil `*struct` pointers before recursing.
 - Duplicate exact rule registrations are blocked early (no runtime ambiguity errors).
 - Built-ins are always available even if you never call `WithRules`.
-- Concurrency: After construction, calling `Validate()` and `SetDefaults()` on the same *Model* instance from multiple goroutines concurrently is safe for reads of cached metadata, but typical usage mutates the underlying struct. For concurrent validation of distinct objects, create one Model per object or guard shared object mutation. Register all custom rules before exposing the Model to multiple goroutines (rule registration is not concurrency-safe once validation begins).
+- Concurrency: After construction, calling `Validate(ctx)` and `SetDefaults()` on the same *Model* instance from multiple goroutines concurrently is safe for reads of cached metadata, but typical usage mutates the underlying struct. For concurrent validation of distinct objects, create one Model per object or guard shared object mutation. Register all custom rules before exposing the Model to multiple goroutines (rule registration is not concurrency-safe once validation begins).
+- Cancellation: `Validate(ctx)` checks context at top-level and between field iterations, and returns `ctx.Err()` early when canceled or timed out. If you want cancellation when running validation during construction, pass `WithValidation(ctx)` to `New(...)`.
 
 ---
 
@@ -400,6 +400,7 @@ func handle(u *User) error {
 package main
 
 import (
+    "context"
     "errors"
     "fmt"
     "github.com/ygrebnov/model"
@@ -416,7 +417,7 @@ func main() {
 
     m, err := model.New(&ex,
         model.WithRules[Ex](rStr, rInt),
-        model.WithValidation[Ex](),
+        model.WithValidation[Ex](context.Background()),
     )
     if err != nil {
         var ve *model.ValidationError
@@ -455,6 +456,7 @@ Two distinct error cases help diagnose configuration issues:
 ```go
 package main
 import (
+  "context"
   "fmt"
   "errors"
   "github.com/ygrebnov/model"
@@ -465,7 +467,7 @@ type A struct { X int `validate:"unknownRule"` }
 func main() {
   a := A{}
   m, _ := model.New(&a) // no rules registered
-  if err := m.Validate(); err != nil {
+  if err := m.Validate(context.Background()); err != nil {
     var ve *model.ValidationError
     if errors.As(err, &ve) {
       fmt.Println("-- ErrRuleNotFound example --")
@@ -483,6 +485,7 @@ X: model: rule not found, rule_name: unknownRule (rule unknownRule)
 ```go
 package main
 import (
+  "context"
   "fmt"
   "errors"
   "github.com/ygrebnov/model"
@@ -495,7 +498,7 @@ func main() {
   rInt, _ := model.NewRule[int]("r", func(_ int, _ ...string) error { return nil })
   rString, _ := model.NewRule[string]("r", func(_ string, _ ...string) error { return nil })
   m, _ := model.New(&b, model.WithRules[B](rInt, rString))
-  if err := m.Validate(); err != nil {
+  if err := m.Validate(context.Background()); err != nil {
     var ve *model.ValidationError
     if errors.As(err, &ve) {
       fmt.Println("-- ErrRuleOverloadNotFound example --")
@@ -533,7 +536,7 @@ func main() {
     cfg := Cfg{}
     m, err := model.New(&cfg,
         model.WithDefaults[Cfg](),
-        model.WithValidation[Cfg](), // built-ins supply nonempty automatically
+        model.WithValidation[Cfg](context.Background()), // built-ins supply nonempty automatically
     )
     if err != nil {
         var ve *model.ValidationError

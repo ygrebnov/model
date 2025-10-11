@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ type bv struct {
 
 func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 	obj := bv{}
-	_, err := New(&obj, WithValidation[bv]())
+	_, err := New(&obj, WithValidation[bv](context.Background()))
 	if err == nil {
 		t.Fatalf("expected validation error due to implicit builtin rules")
 	}
@@ -43,7 +44,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	_, err = New(&obj, WithRules[bv](customNonempty), WithValidation[bv]())
+	_, err = New(&obj, WithRules[bv](customNonempty), WithValidation[bv](context.Background()))
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
