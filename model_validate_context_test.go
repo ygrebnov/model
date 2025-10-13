@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,5 +41,45 @@ func TestNew_WithValidationContext_ValidateDuringNewCanceled(t *testing.T) {
 	)
 	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context deadline/cancel error, got %v", err)
+	}
+}
+
+// Test that long-running per-element validation is canceled mid-way when the context is canceled.
+func TestValidate_LongRunning_CanceledMidway(t *testing.T) {
+	t.Parallel()
+	// Object with many elements validated via validateElem
+	type LR struct {
+		Items []string `validateElem:"slow"`
+	}
+
+	var processed int32
+	slowRule, err := NewRule[string]("slow", func(s string, _ ...string) error {
+		time.Sleep(5 * time.Millisecond) // simulate work per element
+		atomic.AddInt32(&processed, 1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("NewRule error: %v", err)
+	}
+
+	obj := LR{Items: make([]string, 200)} // many elements
+	m, err := New(&obj, WithRules[LR](slowRule))
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel shortly after starting validation
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+
+	err = m.Validate(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if atomic.LoadInt32(&processed) >= int32(len(obj.Items)) {
+		t.Fatalf("expected to cancel before processing all elements; processed=%d total=%d", processed, len(obj.Items))
 	}
 }
