@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -46,7 +47,7 @@ func ExampleNew_withWithRuleAndValidation() {
 	m, err := New(
 		&in,
 		WithRules[Input](nonZeroDurationRule), // register custom rule.
-		WithValidation[Input](),               // run validation in New().
+		WithValidation[Input](context.Background()), // run validation in New().
 	)
 	if err != nil {
 		var ve *ValidationError
@@ -94,7 +95,7 @@ func ExampleNew_withRuleAndLaterValidation() {
 		fmt.Println("error:", err)
 		return
 	}
-	if err = m.Validate(); err != nil {
+	if err = m.Validate(context.Background()); err != nil {
 		fmt.Println("WithRule: validation error:")
 		fmt.Println(err)
 		return
@@ -133,8 +134,8 @@ func ExampleNew_withMultipleRules() {
 
 	r := Rec{Age: 0}
 	m, err := New(&r,
-		WithRules[Rec](positive, nonzero), // batch register
-		WithValidation[Rec](),             // run validation
+		WithRules[Rec](positive, nonzero),         // batch register
+		WithValidation[Rec](context.Background()), // run validation
 	)
 	if err != nil {
 		var ve *ValidationError

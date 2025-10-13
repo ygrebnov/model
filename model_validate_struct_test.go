@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -201,7 +202,7 @@ func TestModel_validateStruct(t *testing.T) {
 
 		ve := &ValidationError{}
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(rv, "Root", ve) // use non-empty path prefix to test dotted paths
+		m.validateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
@@ -437,7 +438,7 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 		ve := &ValidationError{}
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(rv, "Root", ve)
+		m.validateStruct(context.Background(), rv, "Root", ve)
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
