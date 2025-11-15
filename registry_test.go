@@ -254,22 +254,22 @@ func TestRegistry_get(t *testing.T) {
 			expectedError:         errorc.With(ErrRuleNotFound, errorc.String(ErrorFieldRuleName, "doesNotExist")),
 		},
 		{
-			name:          "builtin fallback only (string nonempty)",
+			name:          "builtin fallback only (string email)",
 			setupRegistry: defaultRegistry,
-			ruleName:      "nonempty",
+			ruleName:      "email",
 			value:         reflect.ValueOf(""),
-			expectedRule:  builtinRuleForTest(t, "nonempty", reflect.TypeOf("")),
+			expectedRule:  builtinRuleForTest(t, "email", reflect.TypeOf("")),
 		},
 		{
 			name: "builtin fallback when empty slice present",
 			setupRegistry: func(t *testing.T) *registry {
 				r := newRegistry()
-				r.rules["nonempty"] = []Rule{}
+				r.rules["email"] = []Rule{}
 				return r
 			},
-			ruleName:     "nonempty",
+			ruleName:     "email",
 			value:        reflect.ValueOf(""),
-			expectedRule: builtinRuleForTest(t, "nonempty", reflect.TypeOf("")),
+			expectedRule: builtinRuleForTest(t, "email", reflect.TypeOf("")),
 		},
 		{
 			name: "exact match single overload",

@@ -9,7 +9,7 @@ import (
 
 // Benchmark helper struct
 type benchStruct struct {
-	S string `validate:"nonempty"`
+	S string `validate:"min(1)"`
 	I int    `validate:"positive,nonzero"`
 	D int64  `validate:"nonzero"`
 }

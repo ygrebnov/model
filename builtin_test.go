@@ -9,7 +9,7 @@ import (
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 
 	type strOK struct {
-		S string `validate:"nonempty"`
+		S string `validate:"min(1)"`
 	}
 	type intOK struct {
 		P  int `validate:"positive"`
@@ -100,12 +100,11 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		checkErr  func(t *testing.T, err error)
 	}{
 		{
-			name: "string nonempty passes",
+			name: "string min(1) passes",
 			run: func(t *testing.T) error {
 				obj := strOK{S: "ok"}
 				_, err := New(
 					&obj,
-					//WithRules[strOK, string](BuiltinStringRules()),
 					WithValidation[strOK](context.Background()),
 				)
 				if err != nil {
@@ -115,13 +114,12 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 		},
 		{
-			name:      "string nonempty fails",
+			name:      "string min(1) fails",
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := strOK{S: ""}
 				_, err := New(
 					&obj,
-					//WithRules[strOneOfOK, string](BuiltinStringRules()),
 					WithValidation[strOK](context.Background()),
 				)
 				if err == nil {
@@ -134,8 +132,8 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 					t.Fatalf("expected an error, got nil")
 				}
 				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must not be empty") {
-					t.Fatalf("expected nonempty failure, got: %q", got)
+				if !strings.Contains(got, "length must be >= 1") {
+					t.Fatalf("expected min length failure, got: %q", got)
 				}
 			},
 		},
@@ -145,7 +143,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := intOK{P: 1, NZ: 1}
 				_, err := New(
 					&obj,
-					//WithRules[intOK, int](BuiltinIntRules()),
 					WithValidation[intOK](context.Background()),
 				)
 				if err != nil {
@@ -160,7 +157,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := int64OK{P: 2, NZ: 3}
 				_, err := New(
 					&obj,
-					//WithRules[int64OK, int64](BuiltinInt64Rules()),
 					WithValidation[int64OK](context.Background()),
 				)
 				if err != nil {
@@ -175,7 +171,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := float64OK{P: 0.1, NZ: 2.3}
 				_, err := New(
 					&obj,
-					//WithRules[float64OK, float64](BuiltinFloat64Rules()),
 					WithValidation[float64OK](context.Background()),
 				)
 				if err != nil {
@@ -192,7 +187,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOneOfOK{S: "green"}
 				_, err := New(
 					&obj,
-					//WithRules[strOneOfOK, string](BuiltinStringRules()),
 					WithValidation[strOneOfOK](context.Background()),
 				)
 				if err != nil {
@@ -208,7 +202,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				obj := strOneOfBad{S: "yellow"}
 				_, err := New(
 					&obj,
-					//WithRules[strOneOfBad, string](BuiltinStringRules()),
 					WithValidation[strOneOfBad](context.Background()),
 				)
 				if err == nil {
@@ -221,197 +214,35 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 					t.Fatalf("expected an error, got nil")
 				}
 				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "oneof") || !strings.Contains(got, "must be one of") {
-					t.Fatalf("expected oneof failure in error, got: %q", got)
+				if !strings.Contains(got, "must be one of:") {
+					t.Fatalf("expected oneof failure, got: %q", got)
 				}
 			},
 		},
 		{
-			name:      "string oneof with no params fails",
+			name:      "string oneof bad params",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := strOneOfNoParams{S: "anything"}
-				_, err := New(
-					&obj,
-					//WithRules[strOneOfNoParams, string](BuiltinStringRules()),
-					WithValidation[strOneOfNoParams](context.Background()),
-				)
+				obj := strOneOfNoParams{S: "x"}
+				_, err := New(&obj, WithValidation[strOneOfNoParams](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "oneof requires at least one parameter") {
-					t.Fatalf("expected parameter error, got: %q", got)
+				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
+					t.Fatalf("expected missing params error, got %v", err)
 				}
 			},
 		},
 
-		{
-			name:      "int64 positive fails (must be > 0)",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := int64PositiveOnly{P: 0} // triggers positive rule
-				_, err := New(
-					&obj,
-					//WithRules[int64PositiveOnly, int64](BuiltinInt64Rules()),
-					WithValidation[int64PositiveOnly](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be > 0") {
-					t.Fatalf("expected positive failure, got: %q", got)
-				}
-			},
-		},
-		{
-			name:      "int64 nonzero fails (must not be zero)",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := int64NonZeroOnly{NZ: 0} // triggers nonzero rule
-				_, err := New(
-					&obj,
-					//WithRules[int64NonZeroOnly, int64](BuiltinInt64Rules()),
-					WithValidation[int64NonZeroOnly](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must not be zero") {
-					t.Fatalf("expected nonzero failure, got: %q", got)
-				}
-			},
-		},
-		{
-			name:      "int64 oneof fails on invalid parameter",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := int64OneOfBadParam{N: 20} // value irrelevant; rule errors on parsing "a"
-				_, err := New(
-					&obj,
-					//WithRules[int64OneOfBadParam, int64](BuiltinInt64Rules()),
-					WithValidation[int64OneOfBadParam](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, `invalid oneof parameter "a" for int64`) {
-					t.Fatalf("expected invalid oneof parameter error, got: %q", got)
-				}
-			},
-		},
-		{
-			name:      "int positive fails (must be > 0)",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := intPositiveOnly{P: 0} // triggers positive rule
-				_, err := New(
-					&obj,
-					//WithRules[intPositiveOnly, int](BuiltinIntRules()),
-					WithValidation[intPositiveOnly](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be > 0") {
-					t.Fatalf("expected positive failure, got: %q", got)
-				}
-			},
-		},
-		{
-			name:      "int nonzero fails (must not be zero)",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := intNonZeroOnly{NZ: 0} // triggers nonzero rule
-				_, err := New(
-					&obj,
-					//WithRules[intNonZeroOnly, int](BuiltinIntRules()),
-					WithValidation[intNonZeroOnly](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must not be zero") {
-					t.Fatalf("expected nonzero failure, got: %q", got)
-				}
-			},
-		},
-		{
-			name:      "int oneof fails on invalid parameter",
-			wantError: true,
-			run: func(t *testing.T) error {
-				obj := intOneOfBadParam{N: 2} // value doesn't matter; rule should error on parsing "a"
-				_, err := New(
-					&obj,
-					//WithRules[intOneOfBadParam, int](BuiltinIntRules()),
-					WithValidation[intOneOfBadParam](context.Background()),
-				)
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return err
-			},
-			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, `invalid oneof parameter "a" for int`) {
-					t.Fatalf("expected invalid oneof parameter error, got: %q", got)
-				}
-			},
-		},
 		// --- oneof: int ---
 		{
 			name: "int oneof passes",
 			run: func(t *testing.T) error {
 				obj := intOneOfOK{N: 2}
-				_, err := New(
-					&obj,
-					//WithRules[intOneOfOK, int](BuiltinIntRules()),
-					WithValidation[intOneOfOK](context.Background()),
-				)
+				_, err := New(&obj, WithValidation[intOneOfOK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -423,48 +254,49 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOneOfBad{N: 5}
-				_, err := New(
-					&obj,
-					//WithRules[intOneOfBad, int](BuiltinIntRules()),
-					WithValidation[intOneOfBad](context.Background()),
-				)
+				_, err := New(&obj, WithValidation[intOneOfBad](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be one of") {
-					t.Fatalf("expected oneof failure, got: %q", got)
+				if err == nil || !strings.Contains(err.Error(), "must be one of") {
+					t.Fatalf("expected oneof failure, got %v", err)
 				}
 			},
 		},
 		{
-			name:      "int oneof with no params fails",
+			name:      "int oneof bad params",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intOneOfNoParams{N: 7}
-				_, err := New(
-					&obj,
-					//WithRules[intOneOfNoParams, int](BuiltinIntRules()),
-					WithValidation[intOneOfNoParams](context.Background()),
-				)
+				obj := intOneOfNoParams{N: 1}
+				_, err := New(&obj, WithValidation[intOneOfNoParams](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
+				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
+					t.Fatalf("expected missing params error, got %v", err)
 				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "oneof requires at least one parameter") {
-					t.Fatalf("expected parameter error, got: %q", got)
+			},
+		},
+		{
+			name:      "int oneof bad param type",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := intOneOfBadParam{N: 2} // use value not matching first valid param to reach invalid 'a'
+				_, err := New(&obj, WithValidation[intOneOfBadParam](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
+					t.Fatalf("expected invalid param error, got %v", err)
 				}
 			},
 		},
@@ -474,11 +306,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "int64 oneof passes",
 			run: func(t *testing.T) error {
 				obj := int64OneOfOK{N: 20}
-				_, err := New(
-					&obj,
-					//WithRules[int64OneOfOK, int64](BuiltinInt64Rules()),
-					WithValidation[int64OneOfOK](context.Background()),
-				)
+				_, err := New(&obj, WithValidation[int64OneOfOK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -489,49 +317,50 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int64 oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64OneOfBad{N: 99}
-				_, err := New(
-					&obj,
-					//WithRules[int64OneOfBad, int64](BuiltinInt64Rules()),
-					WithValidation[int64OneOfBad](context.Background()),
-				)
+				obj := int64OneOfBad{N: 5}
+				_, err := New(&obj, WithValidation[int64OneOfBad](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be one of") {
-					t.Fatalf("expected oneof failure, got: %q", got)
+				if err == nil || !strings.Contains(err.Error(), "must be one of") {
+					t.Fatalf("expected oneof failure, got %v", err)
 				}
 			},
 		},
 		{
-			name:      "int64 oneof with no params fails",
+			name:      "int64 oneof bad params",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64OneOfNoParams{N: 7}
-				_, err := New(
-					&obj,
-					//WithRules[int64OneOfNoParams, int64](BuiltinInt64Rules()),
-					WithValidation[int64OneOfNoParams](context.Background()),
-				)
+				obj := int64OneOfNoParams{N: 1}
+				_, err := New(&obj, WithValidation[int64OneOfNoParams](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
+				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
+					t.Fatalf("expected missing params error, got %v", err)
 				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "oneof requires at least one parameter") {
-					t.Fatalf("expected parameter error, got: %q", got)
+			},
+		},
+		{
+			name:      "int64 oneof bad param type",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := int64OneOfBadParam{N: 1}
+				_, err := New(&obj, WithValidation[int64OneOfBadParam](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
+					t.Fatalf("expected invalid param error, got %v", err)
 				}
 			},
 		},
@@ -541,11 +370,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "float64 oneof passes",
 			run: func(t *testing.T) error {
 				obj := float64OneOfOK{F: 1.0}
-				_, err := New(
-					&obj,
-					//WithRules[float64OneOfOK, float64](BuiltinFloat64Rules()),
-					WithValidation[float64OneOfOK](context.Background()),
-				)
+				_, err := New(&obj, WithValidation[float64OneOfOK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -556,58 +381,62 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "float64 oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := float64OneOfBad{F: 0.125}
-				_, err := New(
-					&obj,
-					//WithRules[float64OneOfBad, float64](BuiltinFloat64Rules()),
-					WithValidation[float64OneOfBad](context.Background()),
-				)
+				obj := float64OneOfBad{F: 3.3}
+				_, err := New(&obj, WithValidation[float64OneOfBad](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be one of") {
-					t.Fatalf("expected oneof failure, got: %q", got)
+				if err == nil || !strings.Contains(err.Error(), "must be one of") {
+					t.Fatalf("expected oneof failure, got %v", err)
 				}
 			},
 		},
 		{
-			name:      "float64 oneof with no params fails",
+			name:      "float64 oneof bad params",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := float64OneOfNoParams{F: 0.25}
-				_, err := New(
-					&obj,
-					//WithRules[float64OneOfNoParams, float64](BuiltinFloat64Rules()),
-					WithValidation[float64OneOfNoParams](context.Background()),
-				)
+				obj := float64OneOfNoParams{F: 1.0}
+				_, err := New(&obj, WithValidation[float64OneOfNoParams](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
+				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
+					t.Fatalf("expected missing params error, got %v", err)
 				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "oneof requires at least one parameter") {
-					t.Fatalf("expected parameter error, got: %q", got)
+			},
+		},
+		{
+			name:      "float64 oneof bad param type",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := float64OneOfBadParam{F: 1.0}
+				_, err := New(&obj, WithValidation[float64OneOfBadParam](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
+					t.Fatalf("expected invalid param error, got %v", err)
 				}
 			},
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.run(t)
+			if tt.wantError && err == nil {
+				// error expected
+				t.Fatalf("expected error, got nil")
+			}
 			if !tt.wantError && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

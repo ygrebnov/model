@@ -23,8 +23,8 @@ func TestParseTag(t *testing.T) {
 		},
 		{
 			name: "leading and trailing commas are skipped",
-			in:   ",nonempty,",
-			want: []ruleNameParams{{name: "nonempty"}},
+			in:   ",email,",
+			want: []ruleNameParams{{name: "email"}},
 		},
 		{
 			name: "whitespace around tokens and params is trimmed",

@@ -68,23 +68,23 @@ import (
 )
 
 type Address struct {
-    City    string `default:"Paris"  validate:"nonempty"`
-    Country string `default:"France" validate:"nonempty"`
+    City    string `default:"Paris"  validate:"min(3)"`
+    Country string `default:"France" validate:"min(3)"`
 }
 
 type User struct {
-    Name     string        `default:"Anonymous" validate:"nonempty"`
+    Name     string        `default:"Anonymous" validate:"min(3)"`
     Age      int           `default:"18"        validate:"positive,nonzero"`
     Timeout  time.Duration `default:"1s"`
     Home     Address       `default:"dive"`          // recurse into nested struct
-    Aliases  []string      `validateElem:"nonempty"` // validate each element
+    Aliases  []string      `validateElem:"min(3)"` // validate each element
     Profiles map[string]Address `default:"alloc" defaultElem:"dive"`
 }
 
 func main() {
     u := User{Aliases: []string{"", "ok"}} // index 0 will fail validation
 
-    // Built-in rules (nonempty / numeric checks) are available implicitly.
+    // Built-in rules (min / numeric checks) are available implicitly.
     m, err := model.New(&u,
         model.WithDefaults[User](),                 // apply defaults during construction
         model.WithValidation[User](context.Background()), // run validation during construction (cancellable)
@@ -183,13 +183,13 @@ m, err := model.New(&u,
 - To override a built-in rule, register a custom rule *before* `WithValidation`:
 
 ```go
-nonemptyCustom, _ := model.NewRule[string]("nonempty", func(s string, _ ...string) error {
+minCustom, _ := model.NewRule[string]("min", func(s string, _ ...string) error {
     if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
     return nil
 })
 
 m, err := model.New(&u,
-    model.WithRules[User](nonemptyCustom), // override
+    model.WithRules[User](minCustom), // override
     model.WithValidation[User](ctx),
 )
 ```
@@ -249,7 +249,7 @@ Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal 
 
 - Comma-separated top-level rules.
 - Parameters in parentheses: `rule(p1,p2)`.
-- Empty tokens skipped (`,nonempty,` → `nonempty`).
+- Empty tokens skipped (`,email,` → `email`).
 - `validateElem:"dive"` recurses into struct elements; non-struct or nil pointer elements produce a misuse error under rule name `dive`.
 
 ---
@@ -258,7 +258,7 @@ Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal 
 
 Built-in rules are always implicitly available (you do **not** need to register or import anything for them):
 
-- String: `nonempty`, `oneof(...)`
+- String: `min()`, `oneof(...)`, `email`
 - Int / Int64 / Float64: `positive`, `nonzero`, `oneof(...)`
 
 Overriding: if you register a custom rule with the same name and exact type **before** validation runs, your rule is chosen (duplicate exact registrations for the same name & type are rejected). Interface-based rules still participate via assignable matching when no exact rule exists.
@@ -306,8 +306,8 @@ m, _ := model.New(&obj, model.WithRules[YourType](stringerRule))
 ### FieldError
 
 ```go
-fe := model.FieldError{Path: "User.Name", Rule: "nonempty", Err: fmt.Errorf("must not be empty")}
-fmt.Println(fe.Error()) // "User.Name: must not be empty (rule nonempty)"
+fe := model.FieldError{Path: "User.Name", Rule: "min", Err: fmt.Errorf("must not be empty")}
+fmt.Println(fe.Error()) // "User.Name: must not be empty (rule min)"
 ```
 
 ### ValidationError
@@ -528,7 +528,7 @@ import (
 )
 
 type Cfg struct {
-    Name string        `default:"svc" validate:"nonempty"`
+    Name string        `default:"svc" validate:"min(3)"`
     Wait time.Duration `default:"500ms"`
 }
 
@@ -536,7 +536,7 @@ func main() {
     cfg := Cfg{}
     m, err := model.New(&cfg,
         model.WithDefaults[Cfg](),
-        model.WithValidation[Cfg](context.Background()), // built-ins supply nonempty automatically
+        model.WithValidation[Cfg](context.Background()), // built-ins supply min automatically
     )
     if err != nil {
         var ve *model.ValidationError
