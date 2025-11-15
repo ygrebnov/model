@@ -10,15 +10,15 @@ import (
 
 // simple type with repeating fields to ensure traversal loops would run if not canceled
 type ctxObj struct {
-	A string `validate:"nonempty"`
-	B string `validate:"nonempty"`
-	C string `validate:"nonempty"`
+	A string `validate:"min(1)"`
+	B string `validate:"min(1)"`
+	C string `validate:"min(1)"`
 }
 
 func TestValidate_ContextCanceled_ReturnsEarly(t *testing.T) {
 	t.Parallel()
 	obj := ctxObj{A: "", B: "", C: ""}
-	m, err := New(&obj) // rely on built-in nonempty rules at Validate time
+	m, err := New(&obj) // rely on built-in min rules at Validate time
 	if err != nil {
 		t.Fatalf("New error: %v", err)
 	}

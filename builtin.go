@@ -16,13 +16,6 @@ type key struct {
 	fieldType reflect.Type
 }
 
-var (
-	stringType  = reflect.TypeOf("")
-	intType     = reflect.TypeOf(int(0))
-	int64Type   = reflect.TypeOf(int64(0))
-	float64Type = reflect.TypeOf(float64(0))
-)
-
 // Lazy built-in rule storage.
 var (
 	builtInsOnce        sync.Once
@@ -39,9 +32,41 @@ func ensureBuiltIns() {
 		builtInMap = make(map[key]Rule)
 
 		// string rules
-		nonemptyStr, _ := NewRule[string]("nonempty", func(s string, _ ...string) error {
-			if s == "" {
-				return fmt.Errorf("must not be empty")
+		// min(length): requires one integer parameter. If missing -> error. If <1 -> noop.
+		minStr, _ := NewRule[string]("min", func(s string, params ...string) error {
+			if len(params) == 0 {
+				return fmt.Errorf(`min requires a length parameter, e.g. validate:"min(1)"`)
+			}
+			v, err := strconv.ParseInt(strings.TrimSpace(params[0]), 10, 0)
+			if err != nil {
+				return fmt.Errorf("invalid min length parameter %q: %v", params[0], err)
+			}
+			if v < 1 { // noop as requested
+				return nil
+			}
+			if int(v) > len(s) { // length too small
+				return fmt.Errorf("length must be >= %d (got %d)", v, len(s))
+			}
+			return nil
+		})
+		// email rule: deliberately simple; not RFC 5322 exhaustive. Provides lightweight validation.
+		emailStr, _ := NewRule[string]("email", func(s string, _ ...string) error {
+			if s == "" { // treat empty as error, keeping semantics similar to prior nonempty
+				return fmt.Errorf("must be a valid email address")
+			}
+			if strings.Count(s, "@") != 1 {
+				return fmt.Errorf("must contain exactly one @")
+			}
+			parts := strings.Split(s, "@")
+			local, domain := parts[0], parts[1]
+			if local == "" || domain == "" {
+				return fmt.Errorf("local and domain parts must be non-empty")
+			}
+			if strings.ContainsAny(s, " \t\n\r") {
+				return fmt.Errorf("must not contain whitespace")
+			}
+			if !strings.Contains(domain, ".") { // simple domain heuristic
+				return fmt.Errorf("domain must contain a dot")
 			}
 			return nil
 		})
@@ -56,7 +81,7 @@ func ensureBuiltIns() {
 			}
 			return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
 		})
-		builtinStringRules = []Rule{nonemptyStr, oneofStr}
+		builtinStringRules = []Rule{emailStr, minStr, oneofStr}
 
 		// int rules
 		positiveInt, _ := NewRule[int]("positive", func(n int, _ ...string) error {

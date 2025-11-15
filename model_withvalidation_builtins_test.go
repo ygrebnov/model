@@ -8,7 +8,7 @@ import (
 )
 
 type bv struct {
-	Name  string  `validate:"nonempty"`
+	Name  string  `validate:"email"`
 	Age   int     `validate:"positive"`
 	Score float64 `validate:"nonzero"`
 	ID    int64   `validate:"nonzero"`
@@ -35,16 +35,16 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customNonempty, err := NewRule[string]("nonempty", func(s string, _ ...string) error {
+	customEmail, err := NewRule[string]("email", func(s string, _ ...string) error {
 		if s == "" {
-			return errors.New("custom nonempty")
+			return errors.New("custom email empty")
 		}
-		return nil
+		return errors.New("custom email invalid")
 	})
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	_, err = New(&obj, WithRules[bv](customNonempty), WithValidation[bv](context.Background()))
+	_, err = New(&obj, WithRules[bv](customEmail), WithValidation[bv](context.Background()))
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
@@ -53,7 +53,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
 	msgs := ve.ByField()["Name"]
-	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "custom nonempty") {
-		t.Fatalf("expected custom nonempty error, got %+v", msgs)
+	if len(msgs) == 0 || !strings.Contains(msgs[0].Err.Error(), "custom email") {
+		t.Fatalf("expected custom email error, got %+v", msgs)
 	}
 }
