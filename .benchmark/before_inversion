@@ -1,0 +1,6 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ygrebnov/model
+BenchmarkMediumValidate-8   	    8466	    141561 ns/op	  349058 B/op	     269 allocs/op
+PASS
+ok  	github.com/ygrebnov/model	2.875s
