@@ -14,7 +14,7 @@ import (
 
 // ---- Helpers ----
 
-//func mustPanic(t *testing.T, fn func()) (msg string) {
+// func mustPanic(t *testing.T, fn func()) (msg string) {
 //	t.Helper()
 //	defer func() {
 //		if r := recover(); r != nil {
@@ -24,7 +24,7 @@ import (
 //	fn()
 //	t.Fatalf("expected panic, got none")
 //	return ""
-//}
+// }
 
 type myStringer interface{ String() string }
 type wrapS struct{ v string }
@@ -175,22 +175,28 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("WithRules: registers multiple and dispatch works (exact match)", func(t *testing.T) {
-		obj := struct{ S string }{S: ""}
+		// Use a struct with an explicit validate tag so Validate triggers the custom rule.
+		type Obj struct {
+			S string `validate:"nonempty"`
+		}
+		obj := Obj{S: ""}
 		nonempty, err := NewRule[string]("nonempty", ruleNonEmpty)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		m, err := New(&obj, WithRules[struct{ S string }](nonempty))
+		m, err := New(&obj, WithRules[Obj](nonempty))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
-		// Dispatch to prove adapter is wired; expect rule error (we pass empty string)
-		if err := m.applyRule("nonempty", reflect.ValueOf(obj.S)); err == nil || !strings.Contains(err.Error(), "must not be empty") {
-			t.Fatalf("applyRule expected rule error, got: %v", err)
+		// Dispatch via public Validate; expect validation error for empty S.
+		if err := m.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+			t.Fatalf("Validate expected rule error, got: %v", err)
 		}
 	})
 
 	t.Run("newRuleAdapter: interface overload is usable (AssignableTo)", func(t *testing.T) {
+		// This test is specifically about AssignableTo dispatch, so we
+		// exercise the registry + rule directly instead of relying on tags.
 		obj := struct{ W wrapS }{W: wrapS{v: "Z"}}
 		iface, err := NewRule[myStringer]("iface", func(s myStringer, _ ...string) error {
 			return fmt.Errorf("iface:%s", s.String())
@@ -198,12 +204,17 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		m, err := New(&obj, WithRules[struct{ W wrapS }](iface))
-		if err != nil {
-			t.Fatalf("New error: %v", err)
+		// Build a lightweight registry and call the rule directly to verify AssignableTo behavior.
+		reg := newRulesRegistry()
+		if err = reg.add(iface); err != nil {
+			t.Fatalf("registry.add error: %v", err)
 		}
-		// Call through applyRule with a concrete type implementing the interface
-		if err := m.applyRule("iface", reflect.ValueOf(obj.W)); err == nil || !strings.Contains(err.Error(), "iface:Z") {
+		// Simulate dispatch by resolving the rule for the concrete type wrapS.
+		r, err := reg.get("iface", reflect.ValueOf(obj.W))
+		if err != nil {
+			t.Fatalf("registry.get error: %v", err)
+		}
+		if err = r.getValidationFn()(reflect.ValueOf(obj.W), nil...); err == nil || !strings.Contains(err.Error(), "iface:Z") {
 			t.Fatalf("expected interface overload to run, got: %v", err)
 		}
 	})

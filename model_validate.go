@@ -70,6 +70,7 @@ func (m *Model[TObject]) validate(ctx context.Context) (err error) {
 		return err
 	}
 	ve := &ValidationError{}
+	// Delegate traversal to typeBinding to keep logic centralized.
 	if err := m.binding.validateStruct(ctx, rv, "", ve); err != nil {
 		return err
 	}
