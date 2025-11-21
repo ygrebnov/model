@@ -32,140 +32,47 @@ func (m *Model[TObject]) applyDefaults() error {
 	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
 		return err
 	} else {
-		// Step 1: this will be routed through Model.ensureBinding in the next step.
-		return m.setDefaultsStruct(rv)
+		if err := m.ensureBinding(); err != nil {
+			return err
+		}
+		return m.binding.setDefaultsStruct(rv)
 	}
 }
 
-// setDefaultsStruct is now a thin wrapper that will be refactored in Step 2 to
-// delegate to the model's typeBinding. For Step 1 we keep the original
-// behavior here so tests remain green.
+// setDefaultsStruct is retained for compatibility; it now delegates to the
+// model's typeBinding so that all traversal logic is centralized there.
 func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
-	typ := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
-		field := typ.Field(i)
-		// Skip unexported fields
-		if field.PkgPath != "" {
-			continue
-		}
-		fv := rv.Field(i)
-
-		// Handle default tag
-		if dtag := field.Tag.Get(tagDefault); dtag != "" && dtag != "-" {
-			if err := m.applyDefaultTag(fv, dtag, field.Name); err != nil {
-				return err
-			}
-		}
-		// Element defaults for collections
-		if etag := field.Tag.Get(tagDefaultElem); etag != "" && etag != "-" {
-			if err := m.applyDefaultElemTag(fv, etag); err != nil {
-				return err
-			}
-		}
+	if err := m.ensureBinding(); err != nil {
+		return err
 	}
-	return nil
+	return m.binding.setDefaultsStruct(rv)
 }
 
 // applyDefaultTag applies the `default` tag semantics to a single field value.
 // Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
 func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
-	switch tag {
-	case tagDive:
-		return m.diveDefaultsIntoValue(fv)
-	case tagAlloc:
-		// Allocate empty slice/map if nil
-		if fv.Kind() == reflect.Slice && fv.IsNil() {
-			fv.Set(reflect.MakeSlice(fv.Type(), 0, 0))
-		} else if fv.Kind() == reflect.Map && fv.IsNil() {
-			fv.Set(reflect.MakeMap(fv.Type()))
-		}
-		return nil
-	default:
-		if err := setLiteralDefault(fv, tag); err != nil {
-			return errorc.With(
-				ErrSetDefault,
-				errorc.String(ErrorFieldFieldName, fieldName),
-				errorc.Error(ErrorFieldCause, err),
-			)
-		}
-		return nil
+	if err := m.ensureBinding(); err != nil {
+		return err
 	}
+	return m.binding.applyDefaultTag(fv, tag, fieldName)
 }
 
 // diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
 // For nil *struct, it allocates the struct before diving. Non-structs are ignored.
 func (m *Model[TObject]) diveDefaultsIntoValue(fv reflect.Value) error {
-	switch fv.Kind() {
-	case reflect.Ptr:
-		if fv.IsNil() {
-			if fv.Type().Elem().Kind() == reflect.Struct {
-				fv.Set(reflect.New(fv.Type().Elem()))
-			} else {
-				return nil // ignore dive for non-struct pointers
-			}
-		}
-		if fv.Elem().Kind() == reflect.Struct {
-			return m.setDefaultsStruct(fv.Elem())
-		}
-		return nil
-	case reflect.Struct:
-		return m.setDefaultsStruct(fv)
-	default:
-		return nil
+	if err := m.ensureBinding(); err != nil {
+		return err
 	}
+	return m.binding.diveDefaultsIntoValue(fv)
 }
 
 // applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
 // Currently supports: defaultElem:"dive".
 func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error {
-	if tag != tagDive {
-		return nil
+	if err := m.ensureBinding(); err != nil {
+		return err
 	}
-	cont := fv
-	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-		cont = cont.Elem()
-	}
-	switch cont.Kind() {
-	case reflect.Slice, reflect.Array:
-		l := cont.Len()
-		for j := 0; j < l; j++ {
-			ev := cont.Index(j)
-			dv := ev
-			if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-				dv = dv.Elem()
-			}
-			if dv.Kind() == reflect.Struct {
-				if err := m.setDefaultsStruct(dv); err != nil {
-					return err
-				}
-			}
-		}
-	case reflect.Map:
-		for _, key := range cont.MapKeys() {
-			val := cont.MapIndex(key)
-			// Pointer-to-struct map values: mutate in place
-			if val.Kind() == reflect.Ptr {
-				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-					if err := m.setDefaultsStruct(val.Elem()); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			// Value-typed struct map values: copy-modify-write-back
-			if val.Kind() == reflect.Struct {
-				copyVal := reflect.New(val.Type()).Elem()
-				copyVal.Set(val)
-				if err := m.setDefaultsStruct(copyVal); err != nil {
-					return err
-				}
-				cont.SetMapIndex(key, copyVal)
-			}
-		}
-	default:
-		// ignore for non-collections
-	}
-	return nil
+	return m.binding.applyDefaultElemTag(fv, tag)
 }
 
 var durationType = reflect.TypeOf(time.Duration(0))

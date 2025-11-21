@@ -83,7 +83,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+				m := &Model[vHasTags]{}
 				obj := vHasTags{Name: "ok", Wait: time.Second}
 				obj.Info.Note = "ok"
 				m.obj = &obj
@@ -106,7 +106,7 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+				m := &Model[vHasTags]{}
 				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
 				m.obj = &obj
 				min1, err := NewRule("min(1)", ruleMin1)
@@ -151,7 +151,7 @@ func TestModel_validate(t *testing.T) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+				m := &Model[vUnknown]{}
 				obj := vUnknown{}
 				m.obj = &obj
 				return m.validate(context.Background()), m

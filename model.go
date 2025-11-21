@@ -31,8 +31,7 @@ type Model[TObject any] struct {
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 	obj                *TObject
-	rulesRegistry      rulesRegistry
-	rulesMapping       rulesMapping
+	binding            *typeBinding
 	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
@@ -95,7 +94,6 @@ func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 		} else {
 			m.ctx = ctx
 		}
-		m.initRules()
 		return nil
 	}
 }

@@ -38,12 +38,23 @@ func ruleInt(v int, _ ...string) error {
 
 type dummy struct{}
 
+func newTestModelDummy(t *testing.T) *Model[dummy] {
+	m := &Model[dummy]{}
+	// attach a dummy object so ensureBinding can derive the struct type
+	obj := dummy{}
+	m.obj = &obj
+	if err := m.ensureBinding(); err != nil {
+		t.Fatalf("ensureBinding error: %v", err)
+	}
+	return m
+}
+
 func TestModel_applyRule(t *testing.T) {
 	// NOTE: ambiguity case removed because registry now rejects duplicate exact overloads.
 
 	// Unregistered rule -> ErrRuleNotFound
 	t.Run("unregistered rule -> error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		err := m.applyRule("nope", reflect.ValueOf("x"))
 		if err == nil || !strings.Contains(err.Error(), "rule not found") {
 			t.Fatalf("expected unregistered-rule error, got: %v", err)
@@ -51,7 +62,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("invalid reflect.Value -> error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		var invalid reflect.Value // zero Value is invalid
 		err := m.applyRule("r", invalid)
 		if err == nil || !strings.Contains(err.Error(), "invalid value") {
@@ -60,7 +71,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("exact match -> calls exact overload", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		pick, err := NewRule[string]("pick", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
@@ -75,7 +86,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("exact preferred over assignable (interface) -> picks exact", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		interfaceOverload, err := NewRule[stringer]("pick", ruleIfaceStringer)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
@@ -94,7 +105,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("assignable (interface) match -> calls interface overload", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		iface, err := NewRule[stringer]("iface", ruleIfaceStringer)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
@@ -110,7 +121,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("duplicate exact overloads -> registration error", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		exactString1, err := NewRule[string]("dup", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
@@ -126,7 +137,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("no matching overload -> error lists available types", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		stringOverload, err := NewRule[string]("r", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
@@ -149,7 +160,7 @@ func TestModel_applyRule(t *testing.T) {
 	})
 
 	t.Run("available types list is sorted deterministically", func(t *testing.T) {
-		m := &Model[dummy]{rulesRegistry: newRulesRegistry()}
+		m := newTestModelDummy(t)
 		stringOverload, err := NewRule[string]("sorted", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)

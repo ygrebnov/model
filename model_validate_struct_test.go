@@ -108,7 +108,13 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+	m := &Model[vOuter]{}
+	// attach a dummy object so ensureBinding can derive the struct type
+	objZero := vOuter{}
+	m.obj = &objZero
+	if err := m.ensureBinding(); err != nil {
+		t.Fatalf("ensureBinding error: %v", err)
+	}
 	stringNonEmpty, err := NewRule[string]("nonempty", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
@@ -201,6 +207,7 @@ func TestModel_validateStruct(t *testing.T) {
 		obj.FixedP[1] = &vInner{}
 
 		ve := &ValidationError{}
+		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
 		m.validateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
 
@@ -437,6 +444,7 @@ func TestModel_validateStruct(t *testing.T) {
 			PIn: &vInner{S: "", D: 0}, // both violate rules in vInner
 		}
 		ve := &ValidationError{}
+		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
 		m.validateStruct(context.Background(), rv, "Root", ve)
 

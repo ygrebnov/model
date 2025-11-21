@@ -70,8 +70,8 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		}
 		// Fix ArrPt second element to a real pointer
 		o.ArrPt[1] = &defInner{}
+		m.obj = &o
 
-		// We need to call the unexported method with a reflect.Value of the struct.
 		err := m.setDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatal("expected error due to BadStruct literal, got nil")
@@ -125,6 +125,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 				"p2": nil, // nil value: dive will skip (no allocation happens in defaults)
 			},
 		}
+		m.obj = &o
 
 		if err := m.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -216,6 +217,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		}
 		var m Model[allocOuter]
 		o := allocOuter{}
+		m.obj = &o
 		if err := m.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
@@ -241,6 +243,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		}
 		var m Model[ptrScalars]
 		o := ptrScalars{}
+		m.obj = &o
 		if err := m.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
@@ -268,6 +271,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		}
 		var m Model[bad]
 		o := bad{}
+		m.obj = &o
 		err := m.setDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatalf("expected error")
