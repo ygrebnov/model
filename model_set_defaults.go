@@ -32,10 +32,14 @@ func (m *Model[TObject]) applyDefaults() error {
 	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
 		return err
 	} else {
+		// Step 1: this will be routed through Model.ensureBinding in the next step.
 		return m.setDefaultsStruct(rv)
 	}
 }
 
+// setDefaultsStruct is now a thin wrapper that will be refactored in Step 2 to
+// delegate to the model's typeBinding. For Step 1 we keep the original
+// behavior here so tests remain green.
 func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
