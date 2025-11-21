@@ -139,3 +139,107 @@ func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	}
 	return rv, nil
 }
+
+// SetDefaults applies default values based on `default:"..."` tags to the model's object.
+// It is safe to call multiple times; only zero-valued fields are set.
+func (m *Model[TObject]) SetDefaults() error {
+	var err error
+	m.once.Do(func() { err = m.applyDefaults() })
+	return err
+}
+
+// applyDefaults walks the object and applies defaults according to `default` and `defaultElem` tags.
+// Supported forms:
+//   - `default:"<literal>"` sets the field if it is zero
+//   - `default:"dive"` on a struct or pointer-to-struct recurses into its fields
+//   - `default:"alloc"` allocates an empty map/slice when the field is nil
+//   - `defaultElem:"dive"` recurses into slice/array elements or map values that are structs
+//
+// Notes:
+//   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
+//   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
+func (m *Model[TObject]) applyDefaults() error {
+	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
+		return err
+	} else {
+		if err := m.ensureBinding(); err != nil {
+			return err
+		}
+		return m.binding.setDefaultsStruct(rv)
+	}
+}
+
+// ensureBinding initializes the model's typeBinding, rulesRegistry, and rulesMapping lazily.
+func (m *Model[TObject]) ensureBinding() error {
+	if m.binding != nil {
+		return nil
+	}
+	// Derive the concrete struct type from the bound object.
+	rv, err := m.rootStructValue("initBinding")
+	if err != nil {
+		return err
+	}
+	typ := rv.Type()
+	reg := newRulesRegistry()
+	mapping := newRulesMapping()
+	tb, err := buildTypeBinding(typ, reg, mapping)
+	if err != nil {
+		return err
+	}
+	m.binding = tb
+	return nil
+}
+
+// RegisterRules registers one or many named custom validation rules of the same field type
+// into the model's validator rulesRegistry.
+//
+// See the Rule type and NewRule function for details on creating rules.
+func (m *Model[TObject]) RegisterRules(rules ...Rule) error {
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if err := m.binding.rulesRegistry.add(rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate runs the registered validation rules against the model's bound object with the provided context.
+// If the context is canceled or its deadline exceeded, validation stops early and ctx.Err() is returned.
+func (m *Model[TObject]) Validate(ctx context.Context) error {
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+	return m.validate(ctx)
+}
+
+// validate is the internal implementation that walks struct fields and applies rules
+// declared in `validate:"..."` tags. It supports rule parameters via the syntax
+// "rule" or "rule(p1,p2)" and multiple rules separated by commas.
+func (m *Model[TObject]) validate(ctx context.Context) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+
+	var rv reflect.Value
+	if rv, err = m.rootStructValue("Validate"); err != nil {
+		return err
+	}
+	ve := &ValidationError{}
+	// Delegate traversal to typeBinding to keep logic centralized.
+	if err := m.binding.validateStruct(ctx, rv, "", ve); err != nil {
+		return err
+	}
+	if ve.Empty() {
+		return nil
+	}
+	return ve
+}

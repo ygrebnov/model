@@ -43,7 +43,9 @@ func TestApplyDefaultTag(t *testing.T) {
 				fv := rv.FieldByName("Inner")
 				return obj, fv
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "dive", "Inner") },
+			act: func(m *Model[outerDef], fv reflect.Value) error {
+				return m.binding.applyDefaultTag(fv, "dive", "Inner")
+			},
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.Inner.S != "x" || obj.Inner.N != 42 {
 					t.Fatalf("expected inner defaults applied, got %+v", obj.Inner)
@@ -58,7 +60,9 @@ func TestApplyDefaultTag(t *testing.T) {
 				fv := rv.FieldByName("PInner")
 				return obj, fv
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "dive", "PInner") },
+			act: func(m *Model[outerDef], fv reflect.Value) error {
+				return m.binding.applyDefaultTag(fv, "dive", "PInner")
+			},
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.PInner == nil || obj.PInner.S != "x" || obj.PInner.N != 42 {
 					t.Fatalf("expected allocated PInner with defaults, got %+v", obj.PInner)
@@ -72,7 +76,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "dive", "N") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "dive", "N") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.N != 0 {
 					t.Fatalf("expected N unchanged, got %d", obj.N)
@@ -86,7 +90,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("S")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "alloc", "S") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "alloc", "S") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.S == nil || len(obj.S) != 0 {
 					t.Fatalf("expected allocated empty slice, got %#v", obj.S)
@@ -100,7 +104,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("M")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "alloc", "M") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "alloc", "M") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.M == nil || len(obj.M) != 0 {
 					t.Fatalf("expected allocated empty map, got %#v", obj.M)
@@ -114,7 +118,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("PInt")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "7", "PInt") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "7", "PInt") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.PInt == nil || *obj.PInt != 7 {
 					t.Fatalf("expected allocated *int==7, got %#v", obj.PInt)
@@ -128,7 +132,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "9", "N") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "9", "N") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.N != 5 {
 					t.Fatalf("expected N to remain 5, got %d", obj.N)
@@ -142,7 +146,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(m *Model[outerDef], fv reflect.Value) error { return m.applyDefaultTag(fv, "9", "N") },
+			act: func(m *Model[outerDef], fv reflect.Value) error { return m.binding.applyDefaultTag(fv, "9", "N") },
 			verify: func(t *testing.T, obj *outerDef) {
 				if obj.N != 9 {
 					t.Fatalf("expected N to be 9, got %d", obj.N)
@@ -294,7 +298,7 @@ func TestApplyDefaultElemTag(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			obj, fv := tc.prep()
 			m := newElemDefaultsModel(t, obj)
-			if err := m.applyDefaultElemTag(fv, tagDive); err != nil {
+			if err := m.binding.applyDefaultElemTag(fv, tagDive); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			tc.verify(t, obj)

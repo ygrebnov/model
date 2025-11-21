@@ -209,7 +209,7 @@ func TestModel_validateStruct(t *testing.T) {
 		ve := &ValidationError{}
 		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
+		m.binding.validateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
@@ -446,7 +446,7 @@ func TestModel_validateStruct(t *testing.T) {
 		ve := &ValidationError{}
 		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(context.Background(), rv, "Root", ve)
+		m.binding.validateStruct(context.Background(), rv, "Root", ve)
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
