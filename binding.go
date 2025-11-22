@@ -3,6 +3,10 @@ package model
 import (
 	"context"
 	"reflect"
+
+	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/errors"
+	"github.com/ygrebnov/model/internal/rules"
 )
 
 // Binding is a reusable, precompiled view for a specific struct type T.
@@ -10,7 +14,31 @@ import (
 // Model without requiring a Model instance per object.
 type Binding[T any] struct {
 	// tb holds the type-level metadata for T.
-	tb *typeBinding
+	tb typeBinding
+}
+
+type typeBinding interface {
+	SetDefaultsStruct(v reflect.Value) error
+	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *ValidationError) error
+}
+
+func newTypeBinding(typ reflect.Type, rr rulesRegistry, rm rulesMapping) (typeBinding, error) {
+	return core.NewTypeBinding(typ, rr, rm)
+}
+
+type rulesRegistry interface {
+	Add(r rules.Rule) error
+	Get(name string, v reflect.Value) (rules.Rule, error)
+}
+
+func newRulesRegistry() rulesRegistry {
+	return core.NewRulesRegistry()
+}
+
+type rulesMapping interface{}
+
+func newRulesMapping() rulesMapping {
+	return core.NewRulesMapping()
 }
 
 // NewBinding constructs a Binding for the type parameter T using the default
@@ -21,10 +49,10 @@ func NewBinding[T any]() (*Binding[T], error) {
 	typ := reflect.TypeOf(zero).Elem()
 	if typ.Kind() != reflect.Struct {
 		// Mirror New's constraint that only struct types are supported.
-		return nil, ErrNotStructPtr
+		return nil, errors.ErrNotStructPtr
 	}
 
-	tb, err := buildTypeBinding(typ, newRulesRegistry(), newRulesMapping())
+	tb, err := newTypeBinding(typ, newRulesRegistry(), newRulesMapping())
 	if err != nil {
 		return nil, err
 	}
@@ -35,17 +63,17 @@ func NewBinding[T any]() (*Binding[T], error) {
 // its `default` / `defaultElem` tags. It is safe to call multiple times.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	if obj == nil {
-		return ErrNilObject
+		return errors.ErrNilObject
 	}
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return ErrNotStructPtr
+		return errors.ErrNotStructPtr
 	}
 	elem := v.Elem()
 	if elem.Kind() != reflect.Struct {
-		return ErrNotStructPtr
+		return errors.ErrNotStructPtr
 	}
-	return b.tb.setDefaultsStruct(elem)
+	return b.tb.SetDefaultsStruct(elem)
 }
 
 // Validate runs validation rules declared via `validate` / `validateElem`
@@ -54,21 +82,21 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 // returned.
 func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	if obj == nil {
-		return ErrNilObject
+		return errors.ErrNilObject
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return ErrNotStructPtr
+		return errors.ErrNotStructPtr
 	}
 	elem := v.Elem()
 	if elem.Kind() != reflect.Struct {
-		return ErrNotStructPtr
+		return errors.ErrNotStructPtr
 	}
 	ve := &ValidationError{}
-	if err := b.tb.validateStruct(ctx, elem, "", ve); err != nil {
+	if err := b.tb.ValidateStruct(ctx, elem, "", ve); err != nil {
 		return err
 	}
 	if ve.Empty() {

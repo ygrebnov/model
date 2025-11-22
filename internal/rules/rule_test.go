@@ -1,4 +1,4 @@
-package model
+package rules
 
 import (
 	"errors"
@@ -21,13 +21,13 @@ func TestNewRule(t *testing.T) {
 		name     string
 		ruleName string
 		fn       any // provided to newRule via type assertion inside test
-		assert   func(r *validationRule, err error)
+		assert   func(r *Rule, err error)
 	}{
 		{
 			name:     "empty name returns error",
 			ruleName: "",
 			fn:       func(int, ...string) error { return nil },
-			assert: func(r *validationRule, err error) {
+			assert: func(r *Rule, err error) {
 				if !errors.Is(err, ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
@@ -40,7 +40,7 @@ func TestNewRule(t *testing.T) {
 			name:     "nil function returns error",
 			ruleName: "r1",
 			fn:       nil,
-			assert: func(r *validationRule, err error) {
+			assert: func(r *Rule, err error) {
 				if !errors.Is(err, ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
@@ -53,7 +53,7 @@ func TestNewRule(t *testing.T) {
 			name:     "primitive int rule",
 			ruleName: "intRule",
 			fn:       func(int, ...string) error { return nil },
-			assert: func(r *validationRule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -69,7 +69,7 @@ func TestNewRule(t *testing.T) {
 			name:     "interface rule fmt.Stringer",
 			ruleName: "stringer",
 			fn:       func(fmt.Stringer, ...string) error { return nil },
-			assert: func(r *validationRule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -82,7 +82,7 @@ func TestNewRule(t *testing.T) {
 			name:     "pointer type rule",
 			ruleName: "ptrInt",
 			fn:       func(*int, ...string) error { return nil },
-			assert: func(r *validationRule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -98,19 +98,19 @@ func TestNewRule(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// build rule according to fn's inferred generic parameter
 			var (
-				rule *validationRule
+				rule *Rule
 				err  error
 			)
 			switch f := tt.fn.(type) {
 			case func(int, ...string) error:
-				rule, err = newRule[int](tt.ruleName, f)
+				rule, err = NewRule[int](tt.ruleName, f)
 			case func(fmt.Stringer, ...string) error:
-				rule, err = newRule[fmt.Stringer](tt.ruleName, f)
+				rule, err = NewRule[fmt.Stringer](tt.ruleName, f)
 			case func(*int, ...string) error:
-				rule, err = newRule[*int](tt.ruleName, f)
+				rule, err = NewRule[*int](tt.ruleName, f)
 			case nil:
 				// simulate nil fn path
-				rule, err = newRule[int](tt.ruleName, nil)
+				rule, err = NewRule[int](tt.ruleName, nil)
 			default:
 				panic("unsupported fn type in test")
 			}
@@ -124,18 +124,18 @@ func TestValidationRuleFn(t *testing.T) {
 	userErr := errors.New("user error")
 
 	// build rules needed for runtime tests
-	intRule, _ := newRule[int]("int", func(v int, _ ...string) error { return nil })
-	intRuleError, _ := newRule[int]("intErr", func(v int, _ ...string) error { return userErr })
-	stringerRule, _ := newRule[fmt.Stringer]("stringer", func(s fmt.Stringer, _ ...string) error { return nil })
-	stringerRuleErrMismatch, _ := newRule[fmt.Stringer]("stringerMismatch", func(s fmt.Stringer, _ ...string) error { return nil })
-	ifaceRule, _ := newRule[interface{}]("any", func(v interface{}, _ ...string) error { return nil })
-	structRule, _ := newRule[structSimple]("struct", func(s structSimple, _ ...string) error { return nil })
-	ptrRule, _ := newRule[*int]("ptrInt", func(p *int, _ ...string) error { return nil })
+	intRule, _ := NewRule[int]("int", func(v int, _ ...string) error { return nil })
+	intRuleError, _ := NewRule[int]("intErr", func(v int, _ ...string) error { return userErr })
+	stringerRule, _ := NewRule[fmt.Stringer]("stringer", func(s fmt.Stringer, _ ...string) error { return nil })
+	stringerRuleErrMismatch, _ := NewRule[fmt.Stringer]("stringerMismatch", func(s fmt.Stringer, _ ...string) error { return nil })
+	ifaceRule, _ := NewRule[interface{}]("any", func(v interface{}, _ ...string) error { return nil })
+	structRule, _ := NewRule[structSimple]("struct", func(s structSimple, _ ...string) error { return nil })
+	ptrRule, _ := NewRule[*int]("ptrInt", func(p *int, _ ...string) error { return nil })
 
 	// Cases for runtime invocation of wrapped fn.
 	tests := []struct {
 		name             string
-		rule             *validationRule
+		rule             *Rule
 		value            any
 		expectedErr      error
 		sentinel         error

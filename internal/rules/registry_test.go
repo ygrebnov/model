@@ -1,4 +1,4 @@
-package model
+package rules
 
 import (
 	"errors"
@@ -164,7 +164,7 @@ func TestRegistry_add(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reg := newRegistry()
+			reg := NewRegistry()
 			var err error
 			for _, r := range test.rulesToAdd {
 				err = reg.add(r)
@@ -188,14 +188,14 @@ func TestRegistry_add(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// Validate internal registry state
+			// Validate internal Registry state
 			if len(reg.rules) != len(test.expectedRules) {
 				t.Fatalf("expected %d rule entries, got %d", len(test.expectedRules), len(reg.rules))
 			}
 			for name, expectedOverloads := range test.expectedRules {
 				actualOverloads, exists := reg.rules[name]
 				if !exists {
-					t.Fatalf("expected rule name %s not found in registry", name)
+					t.Fatalf("expected rule name %s not found in Registry", name)
 				}
 				if len(actualOverloads) != len(expectedOverloads) {
 					t.Fatalf("for rule %s, expected %d overloads, got %d", name, len(expectedOverloads), len(actualOverloads))
@@ -226,11 +226,11 @@ func TestRegistry_add(t *testing.T) {
 func TestRegistry_get(t *testing.T) {
 	testRules := getTestRules(t)
 
-	defaultRegistry := func(t *testing.T) *registry { return newRegistry() }
+	defaultRegistry := func(t *testing.T) *Registry { return NewRegistry() }
 
 	cases := []struct { // rename internal for clarity
 		name                  string
-		setupRegistry         func(t *testing.T) *registry
+		setupRegistry         func(t *testing.T) *Registry
 		ruleName              string
 		value                 reflect.Value
 		expectedSentinelError error
@@ -262,8 +262,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "builtin fallback when empty slice present",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["email"] = []Rule{}
 				return r
 			},
@@ -273,8 +273,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "exact match single overload",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["singleOverload"] = []Rule{testRules["stringRule"]}
 				return r
 			},
@@ -284,8 +284,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "assignable interface match (no exact)",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["assignableInterface"] = []Rule{testRules["stringerInterfaceRule"]}
 				return r
 			},
@@ -295,8 +295,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "exact preferred over assignable (both registered)",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["exactOverAssignable"] = []Rule{testRules["stringerInterfaceRule"], testRules["stringRule"]}
 				return r
 			},
@@ -306,8 +306,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "no overload for value type -> available types list",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["noOverload"] = []Rule{testRules["stringRule"], testRules["intRule"]}
 				return r
 			},
@@ -323,8 +323,8 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "ambiguous duplicates (manually inserted unreachable path)",
-			setupRegistry: func(t *testing.T) *registry {
-				r := newRegistry()
+			setupRegistry: func(t *testing.T) *Registry {
+				r := NewRegistry()
 				r.rules["ambiguousDuplicates"] = []Rule{testRules["stringRule"], testRules["stringRule"]}
 				return r
 			},

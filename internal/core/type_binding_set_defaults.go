@@ -1,4 +1,4 @@
-package model
+package core
 
 import (
 	"fmt"
@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+
+	"github.com/ygrebnov/model/internal/errors"
 )
 
-// setDefaultsStruct walks the struct value and applies defaults according to
+// SetDefaultsStruct walks the struct value and applies defaults according to
 // `default` and `defaultElem` tags. This is the type-level equivalent of the
-// previous Model.setDefaultsStruct.
-func (tb *typeBinding) setDefaultsStruct(rv reflect.Value) error {
+// previous Model.SetDefaultsStruct.
+func (tb *TypeBinding) SetDefaultsStruct(rv reflect.Value) error {
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		field := typ.Field(i)
@@ -41,7 +43,7 @@ func (tb *typeBinding) setDefaultsStruct(rv reflect.Value) error {
 
 // applyDefaultTag applies the `default` tag semantics to a single field value.
 // Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
-func (tb *typeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
+func (tb *TypeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
 	switch tag {
 	case tagDive:
 		return tb.diveDefaultsIntoValue(fv)
@@ -56,9 +58,9 @@ func (tb *typeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) 
 	default:
 		if err := setLiteralDefault(fv, tag); err != nil {
 			return errorc.With(
-				ErrSetDefault,
-				errorc.String(ErrorFieldFieldName, fieldName),
-				errorc.Error(ErrorFieldCause, err),
+				errors.ErrSetDefault,
+				errorc.String(errors.ErrorFieldFieldName, fieldName),
+				errorc.Error(errors.ErrorFieldCause, err),
 			)
 		}
 		return nil
@@ -67,7 +69,7 @@ func (tb *typeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) 
 
 // diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
 // For nil *struct, it allocates the struct before diving. Non-structs are ignored.
-func (tb *typeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
+func (tb *TypeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
 	switch fv.Kind() {
 	case reflect.Ptr:
 		if fv.IsNil() {
@@ -78,11 +80,11 @@ func (tb *typeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
 			}
 		}
 		if fv.Elem().Kind() == reflect.Struct {
-			return tb.setDefaultsStruct(fv.Elem())
+			return tb.SetDefaultsStruct(fv.Elem())
 		}
 		return nil
 	case reflect.Struct:
-		return tb.setDefaultsStruct(fv)
+		return tb.SetDefaultsStruct(fv)
 	default:
 		return nil
 	}
@@ -90,7 +92,7 @@ func (tb *typeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
 
 // applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
 // Currently supports: defaultElem:"dive".
-func (tb *typeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
+func (tb *TypeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 	if tag != tagDive {
 		return nil
 	}
@@ -108,7 +110,7 @@ func (tb *typeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 				dv = dv.Elem()
 			}
 			if dv.Kind() == reflect.Struct {
-				if err := tb.setDefaultsStruct(dv); err != nil {
+				if err := tb.SetDefaultsStruct(dv); err != nil {
 					return err
 				}
 			}
@@ -119,7 +121,7 @@ func (tb *typeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 			// Pointer-to-struct map values: mutate in place
 			if val.Kind() == reflect.Ptr {
 				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-					if err := tb.setDefaultsStruct(val.Elem()); err != nil {
+					if err := tb.SetDefaultsStruct(val.Elem()); err != nil {
 						return err
 					}
 				}
@@ -129,7 +131,7 @@ func (tb *typeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 			if val.Kind() == reflect.Struct {
 				copyVal := reflect.New(val.Type()).Elem()
 				copyVal.Set(val)
-				if err := tb.setDefaultsStruct(copyVal); err != nil {
+				if err := tb.SetDefaultsStruct(copyVal); err != nil {
 					return err
 				}
 				cont.SetMapIndex(key, copyVal)
@@ -212,8 +214,8 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 		target.SetFloat(fv)
 	default:
 		return errorc.With(
-			ErrDefaultLiteralUnsupportedKind,
-			errorc.String(ErrorFieldDefaultLiteralKind, target.Kind().String()),
+			errors.ErrDefaultLiteralUnsupportedKind,
+			errorc.String(errors.ErrorFieldDefaultLiteralKind, target.Kind().String()),
 		)
 	}
 	return nil

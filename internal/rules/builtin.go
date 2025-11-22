@@ -1,4 +1,4 @@
-package model
+package rules
 
 import (
 	"fmt"
@@ -19,17 +19,17 @@ type key struct {
 // Lazy built-in rule storage.
 var (
 	builtInsOnce        sync.Once
-	builtInMap          map[key]Rule
-	builtinStringRules  []Rule
-	builtinIntRules     []Rule
-	builtinInt64Rules   []Rule
-	builtinFloat64Rules []Rule
+	builtInMap          map[key]*Rule
+	builtinStringRules  []*Rule
+	builtinIntRules     []*Rule
+	builtinInt64Rules   []*Rule
+	builtinFloat64Rules []*Rule
 )
 
 // ensureBuiltIns initializes built-in rules exactly once.
 func ensureBuiltIns() {
 	builtInsOnce.Do(func() {
-		builtInMap = make(map[key]Rule)
+		builtInMap = make(map[key]*Rule)
 
 		// string rules
 		// min(length): requires one integer parameter. If missing -> error. If <1 -> noop.
@@ -81,7 +81,7 @@ func ensureBuiltIns() {
 			}
 			return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
 		})
-		builtinStringRules = []Rule{emailStr, minStr, oneofStr}
+		builtinStringRules = []*Rule{emailStr, minStr, oneofStr}
 
 		// int rules
 		positiveInt, _ := NewRule[int]("positive", func(n int, _ ...string) error {
@@ -111,7 +111,7 @@ func ensureBuiltIns() {
 			}
 			return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
 		})
-		builtinIntRules = []Rule{positiveInt, nonzeroInt, oneofInt}
+		builtinIntRules = []*Rule{positiveInt, nonzeroInt, oneofInt}
 
 		// int64 rules
 		positiveInt64, _ := NewRule[int64]("positive", func(n int64, _ ...string) error {
@@ -141,7 +141,7 @@ func ensureBuiltIns() {
 			}
 			return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
 		})
-		builtinInt64Rules = []Rule{positiveInt64, nonzeroInt64, oneofInt64}
+		builtinInt64Rules = []*Rule{positiveInt64, nonzeroInt64, oneofInt64}
 
 		// float64 rules
 		positiveFloat64, _ := NewRule[float64]("positive", func(n float64, _ ...string) error {
@@ -171,10 +171,10 @@ func ensureBuiltIns() {
 			}
 			return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
 		})
-		builtinFloat64Rules = []Rule{positiveFloat64, nonzeroFloat64, oneofFloat64}
+		builtinFloat64Rules = []*Rule{positiveFloat64, nonzeroFloat64, oneofFloat64}
 
 		// fill map
-		register := func(rs []Rule) {
+		register := func(rs []*Rule) {
 			for _, r := range rs {
 				builtInMap[key{r.getName(), r.getFieldType()}] = r
 			}
@@ -187,7 +187,7 @@ func ensureBuiltIns() {
 }
 
 // lookupBuiltin returns a built-in rule by (name,type) if present.
-func lookupBuiltin(name string, t reflect.Type) (Rule, bool) {
+func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 	ensureBuiltIns()
 	r, ok := builtInMap[key{name, t}]
 	return r, ok

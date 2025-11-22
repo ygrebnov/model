@@ -6,32 +6,17 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
+
+	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/rule"
 )
-
-type rulesRegistry interface {
-	add(r Rule) error
-	get(name string, v reflect.Value) (Rule, error)
-}
-
-type rulesMapping interface {
-	add(parent reflect.Type, fieldIndex int, tagName string, rules []ruleNameParams)
-	get(parent reflect.Type, fieldIndex int, tagName string) ([]ruleNameParams, bool)
-}
-
-func newRulesRegistry() rulesRegistry {
-	return newRegistry()
-}
-
-func newRulesMapping() rulesMapping {
-	return newMapping()
-}
 
 type Model[TObject any] struct {
 	once               sync.Once
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 	obj                *TObject
-	binding            *typeBinding
+	binding            typeBinding
 	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
@@ -167,7 +152,7 @@ func (m *Model[TObject]) applyDefaults() error {
 	if err = m.ensureBinding(); err != nil {
 		return err
 	}
-	return m.binding.setDefaultsStruct(rv)
+	return m.binding.SetDefaultsStruct(rv)
 }
 
 // ensureBinding initializes the model's typeBinding, rulesRegistry, and rulesMapping lazily.
@@ -181,7 +166,7 @@ func (m *Model[TObject]) ensureBinding() error {
 		return err
 	}
 	typ := rv.Type()
-	reg := newRulesRegistry()
+	reg := rules.NewRegistry()
 	mapping := newRulesMapping()
 	tb, err := buildTypeBinding(typ, reg, mapping)
 	if err != nil {
@@ -199,8 +184,8 @@ func (m *Model[TObject]) RegisterRules(rules ...Rule) error {
 	if err := m.ensureBinding(); err != nil {
 		return err
 	}
-	for _, rule := range rules {
-		if err := m.binding.rulesRegistry.add(rule); err != nil {
+	for _, r := range rules {
+		if err := m.binding.rulesRegistry.add(r); err != nil {
 			return err
 		}
 	}

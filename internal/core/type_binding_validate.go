@@ -1,4 +1,4 @@
-package model
+package core
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"reflect"
 )
 
-// validateStruct walks a struct value and applies rules on each field according to its `validate` tag.
+// ValidateStruct walks a struct value and applies rules on each field according to its `validate` tag.
 // Nested structs and pointers to structs are traversed recursively. The `path` argument tracks the
 // dotted field path for clearer error messages.
-func (tb *typeBinding) validateStruct(ctx context.Context, rv reflect.Value, path string, ve *ValidationError) error {
+func (tb *TypeBinding) ValidateStruct(ctx context.Context, rv reflect.Value, path string, ve *ValidationError) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -31,14 +31,14 @@ func (tb *typeBinding) validateStruct(ctx context.Context, rv reflect.Value, pat
 
 		// Recurse into pointers to structs
 		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
-			if err := tb.validateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
+			if err := tb.ValidateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
 				return err
 			}
 		}
 
 		// Recurse into embedded/inline structs
 		if fv.Kind() == reflect.Struct {
-			if err := tb.validateStruct(ctx, fv, fpath, ve); err != nil {
+			if err := tb.ValidateStruct(ctx, fv, fpath, ve); err != nil {
 				return err
 			}
 		}
@@ -79,7 +79,7 @@ func (tb *typeBinding) validateStruct(ctx context.Context, rv reflect.Value, pat
 
 // validateElements applies validation rules to elements of a slice, array, or map
 // using pre-parsed rules (e.g., retrieved from the cache).
-func (tb *typeBinding) validateElements(ctx context.Context, fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) error {
+func (tb *TypeBinding) validateElements(ctx context.Context, fv reflect.Value, fpath string, rules []ruleNameParams, ve *ValidationError) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (tb *typeBinding) validateElements(ctx context.Context, fv reflect.Value, f
 }
 
 // validateSingleElement handles validation for a single item from a collection.
-func (tb *typeBinding) validateSingleElement(ctx context.Context, elem reflect.Value, path string, rules []ruleNameParams, isDiveOnly bool, ve *ValidationError) error {
+func (tb *TypeBinding) validateSingleElement(ctx context.Context, elem reflect.Value, path string, rules []ruleNameParams, isDiveOnly bool, ve *ValidationError) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (tb *typeBinding) validateSingleElement(ctx context.Context, elem reflect.V
 			dv = dv.Elem()
 		}
 		if dv.Kind() == reflect.Struct {
-			return tb.validateStruct(ctx, dv, path, ve)
+			return tb.ValidateStruct(ctx, dv, path, ve)
 		}
 		ve.Add(FieldError{Path: path, Rule: tagDive, Err: fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind())})
 		return nil
@@ -151,7 +151,7 @@ func (tb *typeBinding) validateSingleElement(ctx context.Context, elem reflect.V
 // applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
 // passing any additional string parameters.
 // If the rule is not found or fails, an error is returned.
-func (tb *typeBinding) applyRule(name string, v reflect.Value, params ...string) error {
+func (tb *TypeBinding) applyRule(name string, v reflect.Value, params ...string) error {
 	r, err := tb.rulesRegistry.get(name, v)
 	if err != nil {
 		return err
