@@ -52,9 +52,7 @@ func newTestBindingDummy(t *testing.T) (*typeBinding, rulesRegistry) {
 	return tb, reg
 }
 
-func TestModel_applyRule(t *testing.T) {
-	// NOTE: ambiguity case removed because registry now rejects duplicate exact overloads.
-
+func TestTypeBinding_applyRule(t *testing.T) {
 	// Unregistered rule -> ErrRuleNotFound
 	t.Run("unregistered rule -> error", func(t *testing.T) {
 		tb, _ := newTestBindingDummy(t)

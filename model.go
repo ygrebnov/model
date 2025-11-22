@@ -159,14 +159,15 @@ func (m *Model[TObject]) SetDefaults() error {
 //   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
 //   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
 func (m *Model[TObject]) applyDefaults() error {
-	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
+	rv, err := m.rootStructValue("SetDefaults")
+	if err != nil {
 		return err
-	} else {
-		if err := m.ensureBinding(); err != nil {
-			return err
-		}
-		return m.binding.setDefaultsStruct(rv)
 	}
+
+	if err = m.ensureBinding(); err != nil {
+		return err
+	}
+	return m.binding.setDefaultsStruct(rv)
 }
 
 // ensureBinding initializes the model's typeBinding, rulesRegistry, and rulesMapping lazily.

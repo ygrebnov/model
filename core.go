@@ -20,14 +20,3 @@ func buildTypeBinding(typ reflect.Type, reg rulesRegistry, mapping rulesMapping)
 		rulesMapping:  mapping,
 	}, nil
 }
-
-// applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
-// passing any additional string parameters.
-// If the rule is not found or fails, an error is returned.
-func (tb *typeBinding) applyRule(name string, v reflect.Value, params ...string) error {
-	r, err := tb.rulesRegistry.get(name, v)
-	if err != nil {
-		return err
-	}
-	return r.getValidationFn()(v, params...)
-}
