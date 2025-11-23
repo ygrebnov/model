@@ -72,6 +72,10 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		o.ArrPt[1] = &defInner{}
 		m.obj = &o
 
+		if err := m.ensureBinding(); err != nil {
+			t.Fatalf("unexpected error in ensureBinding: %v", err)
+		}
+
 		err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatal("expected error due to BadStruct literal, got nil")
@@ -126,6 +130,10 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 			},
 		}
 		m.obj = &o
+
+		if err := m.ensureBinding(); err != nil {
+			t.Fatalf("unexpected error in ensureBinding: %v", err)
+		}
 
 		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -218,6 +226,11 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[allocOuter]
 		o := allocOuter{}
 		m.obj = &o
+
+		if err := m.ensureBinding(); err != nil {
+			t.Fatalf("unexpected error in ensureBinding: %v", err)
+		}
+
 		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
@@ -244,6 +257,11 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[ptrScalars]
 		o := ptrScalars{}
 		m.obj = &o
+
+		if err := m.ensureBinding(); err != nil {
+			t.Fatalf("unexpected error in ensureBinding: %v", err)
+		}
+
 		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
@@ -272,6 +290,11 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[bad]
 		o := bad{}
 		m.obj = &o
+
+		if err := m.ensureBinding(); err != nil {
+			t.Fatalf("unexpected error in ensureBinding: %v", err)
+		}
+		
 		err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatalf("expected error")

@@ -57,9 +57,9 @@ func TestGetFieldTypesNames(t *testing.T) {
 				"float64",
 				"int",
 				"interface {}",
-				"model.a",
 				"string",
 				"struct {}",
+				"validation.a",
 			},
 		},
 		{

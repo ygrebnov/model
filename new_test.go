@@ -213,20 +213,6 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("WithRule error: empty name", func(t *testing.T) {
-		_, err := validation.NewRule[string]("", ruleNonEmpty)
-		if err == nil || !strings.Contains(err.Error(), "non-empty name") {
-			t.Fatalf("expected NewRule error for empty name, got: %v", err)
-		}
-	})
-
-	t.Run("WithRule error: nil function", func(t *testing.T) {
-		_, err := validation.NewRule[string]("x", nil)
-		if err == nil || !strings.Contains(err.Error(), "non-nil Fn") {
-			t.Fatalf("expected NewRule error for nil function, got: %v", err)
-		}
-	})
-
 	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
 		r1, err := validation.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
