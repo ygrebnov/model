@@ -1,4 +1,4 @@
-package model
+package validation
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ func TestValidationError_Add_and_Len_Empty_nilReceiverSafe(t *testing.T) {
 	t.Parallel()
 
 	// nil receiver: Add should be a no-op and not panic; Len/Empty should be safe
-	var veNil *ValidationError
+	var veNil *Error
 	veNil.Add(fe("A", "r", "x")) // must not panic
 	if veNil.Len() != 0 {
 		t.Fatalf("nil receiver Len() = %d, want 0", veNil.Len())
@@ -30,7 +30,7 @@ func TestValidationError_Add_and_Len_Empty_nilReceiverSafe(t *testing.T) {
 	}
 
 	// non-nil receiver
-	ve := &ValidationError{}
+	ve := &Error{}
 	if ve.Len() != 0 || !ve.Empty() {
 		t.Fatalf("initial Len/Empty wrong: Len=%d Empty=%v", ve.Len(), ve.Empty())
 	}
@@ -47,12 +47,12 @@ func TestValidationError_Add_and_Len_Empty_nilReceiverSafe(t *testing.T) {
 func TestValidationError_Addf(t *testing.T) {
 	t.Parallel()
 
-	ve := &ValidationError{}
-	ve.Addf("Root.name", "nonempty", errors.New("must not be empty"))
+	ve := &Error{}
+	ve.Addf("Root.Name", "nonempty", errors.New("must not be empty"))
 	if ve.Len() != 1 {
 		t.Fatalf("Len() = %d, want 1", ve.Len())
 	}
-	got := ve.ForField("Root.name")
+	got := ve.ForField("Root.Name")
 	if len(got) != 1 || got[0].Rule != "nonempty" || got[0].Err == nil {
 		t.Fatalf("Addf did not record expected FieldError: %+v", got)
 	}
@@ -62,22 +62,22 @@ func TestValidationError_ErrorFormatting(t *testing.T) {
 	t.Parallel()
 
 	// nil receiver → empty string
-	var veNil *ValidationError
+	var veNil *Error
 	if s := veNil.Error(); s != "" {
 		t.Fatalf("nil receiver Error() = %q, want empty", s)
 	}
 
 	// 0 issues → empty
-	ve0 := &ValidationError{}
+	ve0 := &Error{}
 	if s := ve0.Error(); s != "" {
 		t.Fatalf("0 issues Error() = %q, want empty", s)
 	}
 
 	// 1 issue → single line (no header/footer)
-	ve1 := &ValidationError{}
-	ve1.Add(fe("name", "nonempty", "must not be empty"))
+	ve1 := &Error{}
+	ve1.Add(fe("Name", "nonempty", "must not be empty"))
 	s1 := ve1.Error()
-	if !strings.Contains(s1, "name") || !strings.Contains(s1, "must not be empty") {
+	if !strings.Contains(s1, "Name") || !strings.Contains(s1, "must not be empty") {
 		t.Fatalf("single issue Error() missing content: %q", s1)
 	}
 	if strings.Contains(s1, "validation failed (") {
@@ -85,14 +85,14 @@ func TestValidationError_ErrorFormatting(t *testing.T) {
 	}
 
 	// 2+ issues → multi-line with header/footer and each line
-	ve2 := &ValidationError{}
-	ve2.Add(fe("name", "nonempty", "x"))
+	ve2 := &Error{}
+	ve2.Add(fe("Name", "nonempty", "x"))
 	ve2.Add(fe("Age", "positive", "y"))
 	s2 := ve2.Error()
 	if !strings.HasPrefix(s2, "validation failed") {
 		t.Fatalf("multi Error() missing header/footer: %q", s2)
 	}
-	if !strings.Contains(s2, "name") || !strings.Contains(s2, "Age") {
+	if !strings.Contains(s2, "Name") || !strings.Contains(s2, "Age") {
 		t.Fatalf("multi Error() missing entries: %q", s2)
 	}
 }
@@ -101,13 +101,13 @@ func TestValidationError_Unwrap(t *testing.T) {
 	t.Parallel()
 
 	// nil receiver -> nil
-	var veNil *ValidationError
+	var veNil *Error
 	if err := veNil.Unwrap(); err != nil {
 		t.Fatalf("nil receiver Unwrap() = %v, want nil", err)
 	}
 
 	// no underlying errs -> Join(nil...) => nil
-	ve0 := &ValidationError{}
+	ve0 := &Error{}
 	if err := ve0.Unwrap(); err != nil {
 		t.Fatalf("empty Unwrap() = %v, want nil", err)
 	}
@@ -115,7 +115,7 @@ func TestValidationError_Unwrap(t *testing.T) {
 	// with underlying errs (including one nil) -> Is works
 	e1 := errors.New("e1")
 	var eNil error
-	ve := &ValidationError{}
+	ve := &Error{}
 	ve.Add(FieldError{Path: "A", Err: e1})
 	ve.Add(FieldError{Path: "B", Err: eNil})
 	u := ve.Unwrap()
@@ -128,7 +128,7 @@ func TestValidationError_ForField_and_ByField_and_Fields(t *testing.T) {
 	t.Parallel()
 
 	// nil receiver
-	var veNil *ValidationError
+	var veNil *Error
 	if got := veNil.ForField("X"); got != nil {
 		t.Fatalf("nil ve ForField returned %v, want nil", got)
 	}
@@ -140,7 +140,7 @@ func TestValidationError_ForField_and_ByField_and_Fields(t *testing.T) {
 	}
 
 	// non-nil: add multiple issues, including duplicates and multiple fields
-	ve := &ValidationError{}
+	ve := &Error{}
 	ve.Add(fe("A", "r1", "x"))
 	ve.Add(fe("B", "r2", "y1"))
 	ve.Add(fe("B", "r3", "y2"))
@@ -174,7 +174,7 @@ func TestValidationError_MarshalJSON(t *testing.T) {
 	t.Parallel()
 
 	// nil receiver -> "null"
-	var veNil *ValidationError
+	var veNil *Error
 	b, err := veNil.MarshalJSON()
 	if err != nil {
 		t.Fatalf("nil ve MarshalJSON error: %v", err)
@@ -184,7 +184,7 @@ func TestValidationError_MarshalJSON(t *testing.T) {
 	}
 
 	// non-nil with multiple fields and nil Err message handling
-	ve := &ValidationError{}
+	ve := &Error{}
 	ve.Add(fe("A", "r1", "x"))
 	ve.Add(fe("B", "r2", "")) // nil underlying Err → empty message
 	ve.Add(fe("B", "r3", "y"))
@@ -220,11 +220,11 @@ func TestFieldError_Error(t *testing.T) {
 		{
 			name: "with rule and non-nil error",
 			fe: FieldError{
-				Path: "Root.name",
+				Path: "Root.Name",
 				Rule: "nonempty",
 				Err:  errors.New("must not be empty"),
 			},
-			wantHas: []string{"Field \"Root.name\"", "rule \"nonempty\"", "must not be empty"},
+			wantHas: []string{"Field \"Root.Name\"", "rule \"nonempty\"", "must not be empty"},
 		},
 		{
 			name: "without rule and non-nil error",
@@ -299,25 +299,25 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 		wantNotHas []string // substrings that must not appear
 	}{
 		{
-			name: "full fields with params and message",
+			name: "full fields with Params and message",
 			fe: FieldError{
 				Path:   "User.Email",
 				Rule:   "nonempty",
 				Params: []string{"p1", "p2"},
 				Err:    errors.New("must not be empty"),
 			},
-			wantHas:    []string{`"path":"User.Email"`, `"rule":"nonempty"`, `"params":["p1","p2"]`, `"message":"must not be empty"`},
+			wantHas:    []string{`"path":"User.Email"`, `"rule":"nonempty"`, `"Params":["p1","p2"]`, `"message":"must not be empty"`},
 			wantNotHas: []string{}, // all present
 		},
 		{
-			name: "no params should omit params field",
+			name: "no Params should omit Params field",
 			fe: FieldError{
 				Path: "A",
 				Rule: "r",
 				Err:  errors.New("x"),
 			},
 			wantHas:    []string{`"path":"A"`, `"rule":"r"`, `"message":"x"`},
-			wantNotHas: []string{`"params"`},
+			wantNotHas: []string{`"Params"`},
 		},
 		{
 			name: "nil error produces empty message string",
@@ -327,7 +327,7 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 				Params: []string{"k"},
 				Err:    nil,
 			},
-			wantHas:    []string{`"path":"B"`, `"rule":"r2"`, `"params":["k"]`, `"message":""`},
+			wantHas:    []string{`"path":"B"`, `"rule":"r2"`, `"Params":["k"]`, `"message":""`},
 			wantNotHas: []string{},
 		},
 		{

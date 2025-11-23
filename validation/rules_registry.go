@@ -1,4 +1,4 @@
-package rules
+package validation
 
 import (
 	"reflect"
@@ -8,22 +8,27 @@ import (
 
 	"github.com/ygrebnov/errorc"
 
-	"github.com/ygrebnov/model/internal/errors"
+	"github.com/ygrebnov/model/errors"
 )
 
-// Registry is a registry of validation rules.
-type Registry struct {
-	mu    sync.RWMutex
-	rules map[string][]Rule // rule name -> overloads by type
+type Registry interface {
+	Add(r Rule) error
+	Get(name string, v reflect.Value) (Rule, error)
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
+// registry is a registry of validation rules.
+type registry struct {
+	mu    sync.RWMutex
+	rules map[string][]Rule // rule Name -> overloads by type
+}
+
+func NewRegistry() Registry {
+	return &registry{
 		rules: make(map[string][]Rule),
 	}
 }
 
-func (r *Registry) Add(rule Rule) error {
+func (r *registry) Add(rule Rule) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -31,16 +36,16 @@ func (r *Registry) Add(rule Rule) error {
 		return nil
 	}
 
-	name := rule.getName()
+	name := rule.GetName()
 	existing, exists := r.rules[name]
 	if exists {
 		// Prevent duplicate overloads for the same field type.
 		for _, er := range existing {
-			if er.isOfType(rule.getFieldType()) {
+			if er.IsOfType(rule.GetFieldType()) {
 				return errorc.With(
 					errors.ErrDuplicateOverloadRule,
 					errorc.String(errors.ErrorFieldRuleName, name),
-					errorc.String(errors.ErrorFieldFieldType, rule.getFieldTypeName()),
+					errorc.String(errors.ErrorFieldFieldType, rule.GetFieldTypeName()),
 				)
 			}
 		}
@@ -50,14 +55,14 @@ func (r *Registry) Add(rule Rule) error {
 	return nil
 }
 
-// get returns the best-matching overload of rule `name` for the given field value.
+// Get returns the best-matching overload of rule `Name` for the given field value.
 // Selection strategy:
 //  1. Prefer exact type match (v.Type() == fieldType).
 //  2. Otherwise accept AssignableTo matches (interfaces, named types), preferring the first declared.
 //  3. Otherwise, if no matches, fetch a built-in rule if available.
 //  4. If no matches, return a descriptive error listing available overload types.
 //  5. If multiple exact matches (shouldn't happen), return an ambiguity error.
-func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
+func (r *registry) Get(name string, v reflect.Value) (Rule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -74,14 +79,14 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 		assigns []Rule
 	)
 	for _, rule := range rules {
-		if rule.getFieldType() == nil || rule.getValidationFn() == nil {
+		if rule.GetFieldType() == nil || rule.GetValidationFn() == nil {
 			continue // defensive, should not happen due to checks in NewRule
 		}
-		if rule.isOfType(valueType) {
+		if rule.IsOfType(valueType) {
 			exacts = append(exacts, rule)
 			continue
 		}
-		if rule.isAssignableTo(valueType) {
+		if rule.IsAssignableTo(valueType) {
 			assigns = append(assigns, rule)
 		}
 	}
@@ -106,12 +111,12 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 		}
 
 		if len(rules) == 0 {
-			// No rules by the given name neither in Registry no from in built-ins.
+			// No rules by the given Name neither in registry no from in built-ins.
 			return nil,
 				errorc.With(errors.ErrRuleNotFound, errorc.String(errors.ErrorFieldRuleName, name))
 		}
 
-		// Some rules exist by the given name, but none match the value type.
+		// Some rules exist by the given Name, but none match the value type.
 		// Construct helpful message of available overload types.
 		return nil, errorc.With(
 			errors.ErrRuleOverloadNotFound,
@@ -125,7 +130,7 @@ func (r *Registry) Get(name string, v reflect.Value) (Rule, error) {
 func getFieldTypesNames(rules []Rule) []string {
 	var names []string
 	for _, rule := range rules {
-		fieldTypeName := rule.getFieldTypeName()
+		fieldTypeName := rule.GetFieldTypeName()
 		if fieldTypeName != "" { // defensive, cannot be empty due to checks in NewRule
 			names = append(names, fieldTypeName)
 		}

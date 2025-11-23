@@ -1,4 +1,4 @@
-package model
+package validation
 
 import (
 	"encoding/json"
@@ -7,16 +7,16 @@ import (
 	"sync"
 )
 
-// ValidationError accumulates multiple FieldError entries.
+// Error accumulates multiple FieldError entries.
 // It implements error and unwraps to errors.Join of underlying causes so
 // errors.Is/As continue to work for callers.
-type ValidationError struct {
+type Error struct {
 	mu     sync.Mutex
 	issues []FieldError
 }
 
 // Add appends a FieldError.
-func (ve *ValidationError) Add(fe FieldError) {
+func (ve *Error) Add(fe FieldError) {
 	if ve == nil {
 		return
 	}
@@ -26,12 +26,12 @@ func (ve *ValidationError) Add(fe FieldError) {
 }
 
 // Addf is a convenience to add from parts.
-func (ve *ValidationError) Addf(path, rule string, err error) {
+func (ve *Error) Addf(path, rule string, err error) {
 	ve.Add(FieldError{Path: path, Rule: rule, Err: err})
 }
 
 // Len returns the number of accumulated issues.
-func (ve *ValidationError) Len() int {
+func (ve *Error) Len() int {
 	if ve == nil {
 		return 0
 	}
@@ -42,10 +42,10 @@ func (ve *ValidationError) Len() int {
 }
 
 // Empty reports whether there are no issues.
-func (ve *ValidationError) Empty() bool { return ve.Len() == 0 }
+func (ve *Error) Empty() bool { return ve.Len() == 0 }
 
 // Error returns a human-readable, multi-line description of all issues.
-func (ve *ValidationError) Error() string {
+func (ve *Error) Error() string {
 	if ve == nil {
 		return ""
 	}
@@ -72,7 +72,7 @@ func (ve *ValidationError) Error() string {
 }
 
 // Unwrap joins underlying causes so errors.Is/As keep working on the combined error.
-func (ve *ValidationError) Unwrap() error {
+func (ve *Error) Unwrap() error {
 	if ve == nil {
 		return nil
 	}
@@ -88,7 +88,7 @@ func (ve *ValidationError) Unwrap() error {
 }
 
 // ForField returns all issues for a given dotted field path.
-func (ve *ValidationError) ForField(path string) []FieldError {
+func (ve *Error) ForField(path string) []FieldError {
 	if ve == nil {
 		return nil
 	}
@@ -104,7 +104,7 @@ func (ve *ValidationError) ForField(path string) []FieldError {
 }
 
 // ByField groups issues by dotted field path.
-func (ve *ValidationError) ByField() map[string][]FieldError {
+func (ve *Error) ByField() map[string][]FieldError {
 	m := make(map[string][]FieldError)
 	if ve == nil {
 		return m
@@ -118,7 +118,7 @@ func (ve *ValidationError) ByField() map[string][]FieldError {
 }
 
 // Fields returns the list of field paths that have issues (unique, order preserved by first occurrence).
-func (ve *ValidationError) Fields() []string {
+func (ve *Error) Fields() []string {
 	if ve == nil {
 		return nil
 	}
@@ -135,14 +135,14 @@ func (ve *ValidationError) Fields() []string {
 	return out
 }
 
-// MarshalJSON exports ValidationError as a map of field path -> list of error messages.
+// MarshalJSON exports Error as a map of field path -> list of error messages.
 // Example:
 //
 //	{
-//	  "name": ["must not be empty"],
+//	  "Name": ["must not be empty"],
 //	  "Age":  ["must be > 0", "must not be zero"]
 //	}
-func (ve *ValidationError) MarshalJSON() ([]byte, error) {
+func (ve *Error) MarshalJSON() ([]byte, error) {
 	if ve == nil {
 		return []byte("null"), nil
 	}
@@ -163,7 +163,7 @@ func (ve *ValidationError) MarshalJSON() ([]byte, error) {
 // It implements error and unwraps to the underlying cause so callers can use errors.Is/As.
 type FieldError struct {
 	Path   string   // dotted path to the field (e.g., Address.Street)
-	Rule   string   // rule name that failed
+	Rule   string   // rule Name that failed
 	Params []string // parameters provided to the rule via validate tag
 	Err    error    // underlying error from the rule
 }
@@ -192,7 +192,7 @@ func (e FieldError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Path    string   `json:"path"`
 		Rule    string   `json:"rule"`
-		Params  []string `json:"params,omitempty"`
+		Params  []string `json:"Params,omitempty"`
 		Message string   `json:"message"`
 	}{
 		Path:    e.Path,

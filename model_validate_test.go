@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 // --- helpers & sample rules used in tests ---
@@ -88,11 +90,11 @@ func TestModel_validate(t *testing.T) {
 				obj.Info.Note = "ok"
 				m.obj = &obj
 				// register rules
-				min1, err := NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
+				min1, err := validation.NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
 				if err != nil {
 					return err, m
 				}
-				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
 					return err, m
 				}
@@ -109,11 +111,11 @@ func TestModel_validate(t *testing.T) {
 				m := &Model[vHasTags]{}
 				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
 				m.obj = &obj
-				min1, err := NewRule("min(1)", ruleMin1)
+				min1, err := validation.NewRule("min(1)", ruleMin1)
 				if err != nil {
 					return err, m
 				}
-				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
 					return err, m
 				}
@@ -124,7 +126,7 @@ func TestModel_validate(t *testing.T) {
 			},
 			wantErr: "validation",
 			verify: func(t *testing.T, err error, _ any) {
-				var ve *ValidationError
+				var ve *validation.Error
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
@@ -158,7 +160,7 @@ func TestModel_validate(t *testing.T) {
 			},
 			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
-				var ve *ValidationError
+				var ve *validation.Error
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
@@ -197,7 +199,7 @@ func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected validation error for empty S, got nil")
 	}
-	var ve *ValidationError
+	var ve *validation.Error
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 	}

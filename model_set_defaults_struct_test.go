@@ -72,7 +72,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		o.ArrPt[1] = &defInner{}
 		m.obj = &o
 
-		err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem())
+		err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatal("expected error due to BadStruct literal, got nil")
 		}
@@ -127,7 +127,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		}
 		m.obj = &o
 
-		if err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
+		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -218,7 +218,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[allocOuter]
 		o := allocOuter{}
 		m.obj = &o
-		if err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
+		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
 		if o.SS == nil || len(o.SS) != 0 {
@@ -228,7 +228,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 			t.Fatalf("M should be allocated empty map")
 		}
 		// run again (idempotent)
-		if err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
+		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err on second run: %v", err)
 		}
 		if o.SS == nil || o.M == nil {
@@ -244,7 +244,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[ptrScalars]
 		o := ptrScalars{}
 		m.obj = &o
-		if err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
+		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
 		if o.PI == nil || *o.PI != 9 {
@@ -256,7 +256,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		// Non-zero should not be overwritten
 		*o.PI = 5
 		*o.PD = time.Second
-		if err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
+		if err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem()); err != nil {
 			t.Fatalf("unexpected err on second run: %v", err)
 		}
 		if *o.PI != 5 || *o.PD != time.Second {
@@ -272,7 +272,7 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 		var m Model[bad]
 		o := bad{}
 		m.obj = &o
-		err := m.binding.setDefaultsStruct(reflect.ValueOf(&o).Elem())
+		err := m.binding.SetDefaultsStruct(reflect.ValueOf(&o).Elem())
 		if err == nil {
 			t.Fatalf("expected error")
 		}

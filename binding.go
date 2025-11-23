@@ -4,9 +4,9 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/internal/core"
-	"github.com/ygrebnov/model/internal/errors"
-	"github.com/ygrebnov/model/internal/rules"
+	"github.com/ygrebnov/model/validation"
 )
 
 // Binding is a reusable, precompiled view for a specific struct type T.
@@ -19,26 +19,12 @@ type Binding[T any] struct {
 
 type typeBinding interface {
 	SetDefaultsStruct(v reflect.Value) error
-	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *ValidationError) error
+	AddRule(r validation.Rule) error
+	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
 
-func newTypeBinding(typ reflect.Type, rr rulesRegistry, rm rulesMapping) (typeBinding, error) {
+func newTypeBinding(typ reflect.Type, rr validation.Registry, rm validation.Mapping) (typeBinding, error) {
 	return core.NewTypeBinding(typ, rr, rm)
-}
-
-type rulesRegistry interface {
-	Add(r rules.Rule) error
-	Get(name string, v reflect.Value) (rules.Rule, error)
-}
-
-func newRulesRegistry() rulesRegistry {
-	return core.NewRulesRegistry()
-}
-
-type rulesMapping interface{}
-
-func newRulesMapping() rulesMapping {
-	return core.NewRulesMapping()
 }
 
 // NewBinding constructs a Binding for the type parameter T using the default
@@ -52,7 +38,10 @@ func NewBinding[T any]() (*Binding[T], error) {
 		return nil, errors.ErrNotStructPtr
 	}
 
-	tb, err := newTypeBinding(typ, newRulesRegistry(), newRulesMapping())
+	rulesRegistry := validation.NewRegistry()
+	rulesMapping := validation.NewMapping()
+
+	tb, err := newTypeBinding(typ, rulesRegistry, rulesMapping)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +67,7 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 
 // Validate runs validation rules declared via `validate` / `validateElem`
 // tags on obj with the provided context. If validation fails, a
-// *ValidationError is returned; if the context is canceled, ctx.Err() is
+// *Error is returned; if the context is canceled, ctx.Err() is
 // returned.
 func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	if obj == nil {
@@ -95,7 +84,7 @@ func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	if elem.Kind() != reflect.Struct {
 		return errors.ErrNotStructPtr
 	}
-	ve := &ValidationError{}
+	ve := &validation.Error{}
 	if err := b.tb.ValidateStruct(ctx, elem, "", ve); err != nil {
 		return err
 	}

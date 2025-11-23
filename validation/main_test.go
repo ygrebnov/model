@@ -1,4 +1,4 @@
-package rules
+package validation
 
 import (
 	"errors"

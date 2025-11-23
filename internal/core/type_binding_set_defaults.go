@@ -9,7 +9,7 @@ import (
 
 	"github.com/ygrebnov/errorc"
 
-	"github.com/ygrebnov/model/internal/errors"
+	"github.com/ygrebnov/model/errors"
 )
 
 // SetDefaultsStruct walks the struct value and applies defaults according to

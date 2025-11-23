@@ -7,8 +7,9 @@ import (
 
 	"github.com/ygrebnov/errorc"
 
+	"github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/internal/core"
-	"github.com/ygrebnov/model/internal/rule"
+	"github.com/ygrebnov/model/validation"
 )
 
 type Model[TObject any] struct {
@@ -26,11 +27,14 @@ type Model[TObject any] struct {
 func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], error) {
 	// Validate: obj must be a non-nil pointer to a struct
 	if obj == nil {
-		return nil, ErrNilObject
+		return nil, errors.ErrNilObject
 	}
 	elem := reflect.TypeOf(obj).Elem()
 	if elem.Kind() != reflect.Struct {
-		return nil, errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, elem.Kind().String()))
+		return nil, errorc.With(
+			errors.ErrNotStructPtr,
+			errorc.String(errors.ErrorFieldObjectType, elem.Kind().String()),
+		)
 	}
 
 	m := &Model[TObject]{obj: obj, ctx: context.Background()}
@@ -90,7 +94,7 @@ func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 // All rules must be of the same field type (e.g., string, int).
 //
 // See the Rule type and NewRule function for details on creating rules.
-func WithRules[TObject any](rules ...Rule) Option[TObject] {
+func WithRules[TObject any](rules ...validation.Rule) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		return m.RegisterRules(rules...)
 	}
@@ -101,25 +105,26 @@ func WithRules[TObject any](rules ...Rule) Option[TObject] {
 func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	if m.obj == nil {
 		// defensive, cannot happen due to New() checks
-		return reflect.Value{}, errorc.With(ErrNilObject, errorc.String(ErrorFieldPhase, phase))
+		return reflect.Value{},
+			errorc.With(errors.ErrNilObject, errorc.String(errors.ErrorFieldPhase, phase))
 	}
 	rv := reflect.ValueOf(m.obj)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		// defensive: unreachable under normal generic use
 		return reflect.Value{},
 			errorc.With(
-				ErrNotStructPtr,
-				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(ErrorFieldPhase, phase),
+				errors.ErrNotStructPtr,
+				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(errors.ErrorFieldPhase, phase),
 			)
 	}
 	rv = rv.Elem()
 	if rv.Kind() != reflect.Struct {
 		return reflect.Value{},
 			errorc.With(
-				ErrNotStructPtr,
-				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(ErrorFieldPhase, phase),
+				errors.ErrNotStructPtr,
+				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(errors.ErrorFieldPhase, phase),
 			)
 	}
 	return rv, nil
@@ -166,9 +171,9 @@ func (m *Model[TObject]) ensureBinding() error {
 		return err
 	}
 	typ := rv.Type()
-	reg := rules.NewRegistry()
-	mapping := newRulesMapping()
-	tb, err := buildTypeBinding(typ, reg, mapping)
+	reg := validation.NewRegistry()
+	mapping := validation.NewMapping()
+	tb, err := core.NewTypeBinding(typ, reg, mapping)
 	if err != nil {
 		return err
 	}
@@ -180,12 +185,12 @@ func (m *Model[TObject]) ensureBinding() error {
 // into the model's validator rulesRegistry.
 //
 // See the Rule type and NewRule function for details on creating rules.
-func (m *Model[TObject]) RegisterRules(rules ...Rule) error {
+func (m *Model[TObject]) RegisterRules(rules ...validation.Rule) error {
 	if err := m.ensureBinding(); err != nil {
 		return err
 	}
 	for _, r := range rules {
-		if err := m.binding.rulesRegistry.add(r); err != nil {
+		if err := m.binding.AddRule(r); err != nil {
 			return err
 		}
 	}
@@ -219,9 +224,9 @@ func (m *Model[TObject]) validate(ctx context.Context) (err error) {
 	if rv, err = m.rootStructValue("Validate"); err != nil {
 		return err
 	}
-	ve := &ValidationError{}
+	ve := &validation.Error{}
 	// Delegate traversal to typeBinding to keep logic centralized.
-	if err := m.binding.validateStruct(ctx, rv, "", ve); err != nil {
+	if err := m.binding.ValidateStruct(ctx, rv, "", ve); err != nil {
 		return err
 	}
 	if ve.Empty() {

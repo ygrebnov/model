@@ -1,4 +1,4 @@
-package rules
+package validation
 
 import (
 	"fmt"
@@ -6,21 +6,21 @@ import (
 
 	"github.com/ygrebnov/errorc"
 
-	"github.com/ygrebnov/model/internal/errors"
+	"github.com/ygrebnov/model/errors"
 )
 
 var (
 	ErrRuleTypeMismatch = fmt.Errorf("rule type mismatch")
-	ErrInvalidRule      = fmt.Errorf("rule must have non-empty name and non-nil Fn")
+	ErrInvalidRule      = fmt.Errorf("rule must have non-empty Name and non-nil Fn")
 )
 
 type Rule interface {
-	getName() string
-	getFieldTypeName() string
-	getFieldType() reflect.Type
-	getValidationFn() func(v reflect.Value, params ...string) error
-	isOfType(t reflect.Type) bool
-	isAssignableTo(t reflect.Type) bool
+	GetName() string
+	GetFieldTypeName() string
+	GetFieldType() reflect.Type
+	GetValidationFn() func(v reflect.Value, params ...string) error
+	IsOfType(t reflect.Type) bool
+	IsAssignableTo(t reflect.Type) bool
 }
 
 // rule defines a named validation function for a specific field type.
@@ -63,30 +63,30 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 	}, nil
 }
 
-func (r *rule) getName() string {
+func (r *rule) GetName() string {
 	return r.name
 }
 
-func (r *rule) getFieldTypeName() string {
+func (r *rule) GetFieldTypeName() string {
 	if r.fieldType == nil {
 		return "" // defensive, cannot happen due to constructor check
 	}
 	return r.fieldType.String()
 }
 
-func (r *rule) getFieldType() reflect.Type {
+func (r *rule) GetFieldType() reflect.Type {
 	return r.fieldType
 }
 
-func (r *rule) getValidationFn() func(v reflect.Value, params ...string) error {
+func (r *rule) GetValidationFn() func(v reflect.Value, params ...string) error {
 	return r.fn
 }
 
-func (r *rule) isOfType(t reflect.Type) bool {
+func (r *rule) IsOfType(t reflect.Type) bool {
 	return r.fieldType == t
 }
 
-func (r *rule) isAssignableTo(t reflect.Type) bool {
+func (r *rule) IsAssignableTo(t reflect.Type) bool {
 	if r.fieldType == nil {
 		return false // defensive, cannot happen due to constructor check
 	}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 func ExampleNew_withDefaults() {
@@ -32,7 +34,7 @@ func ExampleNew_withWithRuleAndValidation() {
 	}
 
 	in := Input{} // D is zero -> should fail validation
-	nonZeroDurationRule, err := NewRule[time.Duration]("nonzeroDur",
+	nonZeroDurationRule, err := validation.NewRule[time.Duration]("nonzeroDur",
 		func(d time.Duration, _ ...string) error {
 			if d == 0 {
 				return fmt.Errorf("duration must be non-zero")
@@ -50,7 +52,7 @@ func ExampleNew_withWithRuleAndValidation() {
 		WithValidation[Input](context.Background()), // run validation in New().
 	)
 	if err != nil {
-		var ve *ValidationError
+		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("WithValidation+WithRule -> validation error:")
 			fmt.Println(ve.Error())
@@ -76,7 +78,7 @@ func ExampleNew_withRuleAndLaterValidation() {
 	// Note: if you register a rule with the same name as a built-in rule, your custom rule
 	// will override the built-in one.
 	d := Doc{}
-	nonEmptyRule, err := NewRule[string]("nonempty",
+	nonEmptyRule, err := validation.NewRule[string]("nonempty",
 		func(s string, _ ...string) error {
 			if s == "" {
 				return fmt.Errorf("must not be empty")
@@ -111,7 +113,7 @@ func ExampleNew_withMultipleRules() {
 		Age int `validate:"positive,nonzero"`
 	}
 
-	positive, err := NewRule[int]("positive", func(n int, _ ...string) error {
+	positive, err := validation.NewRule[int]("positive", func(n int, _ ...string) error {
 		if n <= 0 {
 			return fmt.Errorf("must be > 0")
 		}
@@ -121,7 +123,7 @@ func ExampleNew_withMultipleRules() {
 		fmt.Println("error creating positive rule:", err)
 		return
 	}
-	nonzero, err := NewRule[int]("nonzero", func(n int, _ ...string) error {
+	nonzero, err := validation.NewRule[int]("nonzero", func(n int, _ ...string) error {
 		if n == 0 {
 			return fmt.Errorf("must not be zero")
 		}
@@ -138,7 +140,7 @@ func ExampleNew_withMultipleRules() {
 		WithValidation[Rec](context.Background()), // run validation
 	)
 	if err != nil {
-		var ve *ValidationError
+		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("WithRules:", ve.Error())
 			return

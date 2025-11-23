@@ -1,10 +1,12 @@
-package model
+package core
 
 import (
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 // a concrete type implementing fmt.Stringer-like behavior (we won't import fmt here)
@@ -40,12 +42,12 @@ type dummy struct{}
 
 // newTestBindingDummy constructs a typeBinding and its backing registry/mapping
 // for a dummy type, used to test applyRule behavior via the registry/get logic.
-func newTestBindingDummy(t *testing.T) (*typeBinding, rulesRegistry) {
+func newTestBindingDummy(t *testing.T) (*TypeBinding, validation.Registry) {
 	t.Helper()
-	reg := newRulesRegistry()
-	mapping := newRulesMapping()
+	reg := validation.NewRegistry()
+	mapping := validation.NewMapping()
 	// typ is not used by applyRule itself, but required by typeBinding.
-	tb, err := buildTypeBinding(reflect.TypeOf(dummy{}), reg, mapping)
+	tb, err := NewTypeBinding(reflect.TypeOf(dummy{}), reg, mapping)
 	if err != nil {
 		t.Fatalf("buildTypeBinding error: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 		// invalid reflect.Value is handled by registry.get; construct a registry and call directly.
 		_, reg := newTestBindingDummy(t)
 		var invalid reflect.Value // zero Value is invalid
-		_, err := reg.get("r", invalid)
+		_, err := reg.Get("r", invalid)
 		if err == nil || !strings.Contains(err.Error(), "invalid value") {
 			t.Fatalf("expected invalid-value error, got: %v", err)
 		}
@@ -75,11 +77,11 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("exact match -> calls exact overload", func(t *testing.T) {
 		tb, reg := newTestBindingDummy(t)
-		pick, err := NewRule[string]("pick", ruleExactString)
+		pick, err := validation.NewRule[string]("pick", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(pick); err != nil {
+		if err = reg.Add(pick); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		err = tb.applyRule("pick", reflect.ValueOf("hi"))
@@ -90,18 +92,18 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("exact preferred over assignable (interface) -> picks exact", func(t *testing.T) {
 		tb, reg := newTestBindingDummy(t)
-		interfaceOverload, err := NewRule[stringer]("pick", ruleIfaceStringer)
+		interfaceOverload, err := validation.NewRule[stringer]("pick", ruleIfaceStringer)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		exactOverload, err := NewRule[string]("pick", ruleExactString)
+		exactOverload, err := validation.NewRule[string]("pick", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(interfaceOverload); err != nil {
+		if err = reg.Add(interfaceOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		if err = reg.add(exactOverload); err != nil {
+		if err = reg.Add(exactOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		err = tb.applyRule("pick", reflect.ValueOf("yo"))
@@ -112,11 +114,11 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("assignable (interface) match -> calls interface overload", func(t *testing.T) {
 		tb, reg := newTestBindingDummy(t)
-		iface, err := NewRule[stringer]("iface", ruleIfaceStringer)
+		iface, err := validation.NewRule[stringer]("iface", ruleIfaceStringer)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(iface); err != nil {
+		if err = reg.Add(iface); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		v := sw{s: "wrapped"}
@@ -128,18 +130,18 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("duplicate exact overloads -> registration error", func(t *testing.T) {
 		_, reg := newTestBindingDummy(t)
-		exactString1, err := NewRule[string]("dup", ruleExactString)
+		exactString1, err := validation.NewRule[string]("dup", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		exactString2, err := NewRule[string]("dup", ruleExactString2)
+		exactString2, err := validation.NewRule[string]("dup", ruleExactString2)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(exactString1); err != nil {
+		if err = reg.Add(exactString1); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		err = reg.add(exactString2)
+		err = reg.Add(exactString2)
 		if err == nil || !strings.Contains(err.Error(), "duplicate overload rule") {
 			t.Fatalf("expected duplicate overload error, got: %v", err)
 		}
@@ -147,18 +149,18 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("no matching overload -> error lists available types", func(t *testing.T) {
 		tb, reg := newTestBindingDummy(t)
-		stringOverload, err := NewRule[string]("r", ruleExactString)
+		stringOverload, err := validation.NewRule[string]("r", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		intOverload, err := NewRule[int]("r", ruleInt)
+		intOverload, err := validation.NewRule[int]("r", ruleInt)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(stringOverload); err != nil {
+		if err = reg.Add(stringOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		if err = reg.add(intOverload); err != nil {
+		if err = reg.Add(intOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		// Trigger no-overload with a float
@@ -173,18 +175,18 @@ func TestTypeBinding_applyRule(t *testing.T) {
 
 	t.Run("available types list is sorted deterministically", func(t *testing.T) {
 		tb, reg := newTestBindingDummy(t)
-		stringOverload, err := NewRule[string]("sorted", ruleExactString)
+		stringOverload, err := validation.NewRule[string]("sorted", ruleExactString)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		intOverload, err := NewRule[int]("sorted", ruleInt)
+		intOverload, err := validation.NewRule[int]("sorted", ruleInt)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		if err = reg.add(stringOverload); err != nil {
+		if err = reg.Add(stringOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		if err = reg.add(intOverload); err != nil {
+		if err = reg.Add(intOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		err = tb.applyRule("sorted", reflect.ValueOf(1.23))
