@@ -21,6 +21,15 @@ var (
 	ErrAmbiguousRule                 = namespace.NewError("ambiguous rule")
 	ErrSetDefault                    = namespace.NewError("cannot set default value")
 	ErrDefaultLiteralUnsupportedKind = namespace.NewError("default literal unsupported kind")
+
+	// Validation rule argument and parameter errors
+	ErrRuleMissingParameter   = namespace.NewError("rule parameter is required")
+	ErrRuleInvalidParameter   = namespace.NewError("rule parameter is invalid")
+	ErrRuleConstraintViolated = namespace.NewError("rule constraint violated")
+
+	// Test-only/sample rule errors (used in model_validate_test)
+	ErrRuleMin1Failed       = namespace.NewError("min(1) rule failed")
+	ErrRuleNonZeroDurFailed = namespace.NewError("nonZeroDur rule failed")
 )
 
 var newKey = errorc.KeyFactory(constants.ErrorFieldNamespace)
@@ -39,6 +48,10 @@ var (
 	ErrorFieldValueType      = newKey("value_type", keySegmentRule)      // model.rule.value_type
 	ErrorFieldAvailableTypes = newKey("available_types", keySegmentRule) // model.rule.available_types
 	ErrorFieldExactTypes     = newKey("exact_types", keySegmentRule)     // model.rule.exact_types (reserved)
+
+	// Parameters/arguments for a rule invocation
+	ErrorFieldRuleParamName  = newKey("param_name", keySegmentRule)  // model.rule.param_name
+	ErrorFieldRuleParamValue = newKey("param_value", keySegmentRule) // model.rule.param_value
 )
 
 var (

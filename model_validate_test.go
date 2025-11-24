@@ -3,18 +3,23 @@ package model
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ygrebnov/errorc"
+
+	modelerrors "github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/validation"
 )
 
 // --- helpers & sample rules used in tests ---
 func ruleNonZeroDur(d time.Duration, _ ...string) error {
 	if d == 0 {
-		return fmt.Errorf("duration must be non-zero")
+		return errorc.With(
+			modelerrors.ErrRuleNonZeroDurFailed,
+			errorc.String(modelerrors.ErrorFieldRuleName, "nonZeroDur"),
+		)
 	}
 	return nil
 }
@@ -22,7 +27,10 @@ func ruleNonZeroDur(d time.Duration, _ ...string) error {
 // custom rule implementing min(1) semantics for tests replaced nonempty
 func ruleMin1(s string, _ ...string) error {
 	if len(s) < 1 {
-		return fmt.Errorf("length must be >= 1 (got %d)", len(s))
+		return errorc.With(
+			modelerrors.ErrRuleMin1Failed,
+			errorc.String(modelerrors.ErrorFieldRuleName, "min(1)"),
+		)
 	}
 	return nil
 }
@@ -139,11 +147,31 @@ func TestModel_validate(t *testing.T) {
 						t.Errorf("missing error for field path %q", p)
 					}
 				}
-				if es := by["Name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "length must be >= 1") {
-					t.Errorf("expected min(1) error for name, got: %+v", es)
+				if es := by["Name"]; len(es) == 0 {
+					t.Fatalf("expected error for Name")
+				} else {
+					// Name uses builtin string min rule; assert on builtin sentinel and metadata.
+					if !errors.Is(es[0].Err, modelerrors.ErrRuleConstraintViolated) {
+						t.Fatalf("expected ErrRuleConstraintViolated for Name, got %v", es[0].Err)
+					}
+					msg := es[0].Err.Error()
+					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": min") {
+						t.Errorf("expected builtin min rule name metadata for Name, got: %q", msg)
+					}
+					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamName)+": length") ||
+						!strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamValue)+": 1") {
+						t.Errorf("expected min length metadata for Name, got: %q", msg)
+					}
 				}
-				if es := by["Wait"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "non-zero") {
-					t.Errorf("expected nonZeroDur error for Wait, got: %+v", es)
+				if es := by["Wait"]; len(es) == 0 {
+					t.Fatalf("expected error for Wait")
+				} else {
+					if !errors.Is(es[0].Err, modelerrors.ErrRuleNonZeroDurFailed) {
+						t.Fatalf("expected ErrRuleNonZeroDurFailed for Wait, got %v", es[0].Err)
+					}
+					if msg := es[0].Err.Error(); !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": nonZeroDur") {
+						t.Errorf("expected rule name metadata for nonZeroDur in Wait error, got: %q", msg)
+					}
 				}
 			},
 		},

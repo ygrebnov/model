@@ -2,9 +2,37 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/errorc"
+
+	modelerrors "github.com/ygrebnov/model/errors"
 )
+
+func assertRuleErrorHas(t *testing.T, err error, wantSentinel error, wantRule string, kv map[errorc.Key]string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !errors.Is(err, wantSentinel) {
+		t.Fatalf("expected sentinel %v, got %v", wantSentinel, err)
+	}
+	msg := err.Error()
+	if wantRule != "" {
+		needle := string(modelerrors.ErrorFieldRuleName) + ": " + wantRule
+		if !strings.Contains(msg, needle) {
+			t.Fatalf("expected rule name %q in error, got %q", wantRule, msg)
+		}
+	}
+	for k, v := range kv {
+		needle := string(k) + ": " + v
+		if !strings.Contains(msg, needle) {
+			t.Fatalf("expected %q in error, got %q", needle, msg)
+		}
+	}
+}
 
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 
@@ -128,13 +156,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "length must be >= 1") {
-					t.Fatalf("expected min length failure, got: %q", got)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "length",
+					modelerrors.ErrorFieldRuleParamValue: "1",
+				})
 			},
 		},
 		{
@@ -210,13 +235,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected an error, got nil")
-				}
-				got := strings.TrimSpace(err.Error())
-				if !strings.Contains(got, "must be one of:") {
-					t.Fatalf("expected oneof failure, got: %q", got)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "allowed",
+					modelerrors.ErrorFieldRuleParamValue: "red,green,blue",
+				})
 			},
 		},
 		{
@@ -231,9 +253,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
-					t.Fatalf("expected missing params error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
 			},
 		},
 
@@ -261,9 +281,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "must be one of") {
-					t.Fatalf("expected oneof failure, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "allowed",
+					modelerrors.ErrorFieldRuleParamValue: "1,2,3",
+				})
 			},
 		},
 		{
@@ -278,9 +299,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
-					t.Fatalf("expected missing params error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
 			},
 		},
 		{
@@ -295,9 +314,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
-					t.Fatalf("expected invalid param error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "a",
+				})
 			},
 		},
 
@@ -325,9 +345,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "must be one of") {
-					t.Fatalf("expected oneof failure, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "allowed",
+					modelerrors.ErrorFieldRuleParamValue: "10,20,30",
+				})
 			},
 		},
 		{
@@ -342,9 +363,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
-					t.Fatalf("expected missing params error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
 			},
 		},
 		{
@@ -359,9 +378,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
-					t.Fatalf("expected invalid param error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "a",
+				})
 			},
 		},
 
@@ -389,9 +409,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "must be one of") {
-					t.Fatalf("expected oneof failure, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "allowed",
+					modelerrors.ErrorFieldRuleParamValue: "0.5,1.0,2.5",
+				})
 			},
 		},
 		{
@@ -406,9 +427,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "requires at least one parameter") {
-					t.Fatalf("expected missing params error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
 			},
 		},
 		{
@@ -423,9 +442,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				if err == nil || !strings.Contains(err.Error(), "invalid oneof parameter") {
-					t.Fatalf("expected invalid param error, got %v", err)
-				}
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "a",
+				})
 			},
 		},
 	}

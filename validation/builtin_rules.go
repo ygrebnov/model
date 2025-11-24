@@ -1,11 +1,14 @@
 package validation
 
 import (
-	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/ygrebnov/errorc"
+
+	modelerrors "github.com/ygrebnov/model/errors"
 )
 
 // Built-ins are always implicitly available.
@@ -31,17 +34,32 @@ var (
 func getStrMinRule() (Rule, error) {
 	return NewRule[string]("min", func(s string, params ...string) error {
 		if len(params) == 0 {
-			return fmt.Errorf(`min requires a length parameter, e.g. validate:"min(1)"`)
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+			)
 		}
-		v, err := strconv.ParseInt(strings.TrimSpace(params[0]), 10, 0)
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 0)
 		if err != nil {
-			return fmt.Errorf("invalid min length parameter %q: %v", params[0], err)
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
 		}
 		if v < 1 { // noop as requested
 			return nil
 		}
 		if int(v) > len(s) { // length too small
-			return fmt.Errorf("length must be >= %d (got %d)", v, len(s))
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
 		}
 		return nil
 	})
@@ -51,21 +69,41 @@ func getStrMinRule() (Rule, error) {
 func getStrEmailRule() (Rule, error) {
 	return NewRule[string]("email", func(s string, _ ...string) error {
 		if s == "" { // treat empty as error, keeping semantics similar to prior nonempty
-			return fmt.Errorf("must be a valid email address")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+			)
 		}
 		if strings.Count(s, "@") != 1 {
-			return fmt.Errorf("must contain exactly one @")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "at_count"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, "1"),
+			)
 		}
 		parts := strings.Split(s, "@")
 		local, domain := parts[0], parts[1]
 		if local == "" || domain == "" {
-			return fmt.Errorf("local and domain parts must be non-empty")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "local_domain_nonempty"),
+			)
 		}
 		if strings.ContainsAny(s, " \t\n\r") {
-			return fmt.Errorf("must not contain whitespace")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "no_whitespace"),
+			)
 		}
 		if !strings.Contains(domain, ".") { // simple domain heuristic
-			return fmt.Errorf("domain must contain a dot")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "domain_has_dot"),
+			)
 		}
 		return nil
 	})
@@ -75,14 +113,23 @@ func getStrEmailRule() (Rule, error) {
 func getStrOneofRule() (Rule, error) {
 	return NewRule[string]("oneof", func(s string, params ...string) error {
 		if len(params) == 0 {
-			return fmt.Errorf(`oneof requires at least one parameter, e.g. validate:"oneof(red,green,blue)"`)
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
 		}
 		for _, p := range params {
 			if s == p {
 				return nil
 			}
 		}
-		return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			// we expose the allowed set as the param value for debugging/inspection
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
 	})
 }
 
@@ -91,7 +138,10 @@ func getStrOneofRule() (Rule, error) {
 func getIntPositiveRule() (Rule, error) {
 	return NewRule[int]("positive", func(n int, _ ...string) error {
 		if n <= 0 {
-			return fmt.Errorf("must be > 0")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+			)
 		}
 		return nil
 	})
@@ -101,7 +151,10 @@ func getIntPositiveRule() (Rule, error) {
 func getIntNonzeroRule() (Rule, error) {
 	return NewRule[int]("nonzero", func(n int, _ ...string) error {
 		if n == 0 {
-			return fmt.Errorf("must not be zero")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
 		}
 		return nil
 	})
@@ -111,18 +164,33 @@ func getIntNonzeroRule() (Rule, error) {
 func getIntOneofRule() (Rule, error) {
 	return NewRule[int]("oneof", func(n int, params ...string) error {
 		if len(params) == 0 {
-			return fmt.Errorf(`oneof requires at least one parameter, e.g. validate:"oneof(1,2,3)"`)
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
 		}
 		for _, p := range params {
-			v, err := strconv.ParseInt(strings.TrimSpace(p), 10, 0)
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseInt(raw, 10, 0)
 			if err != nil {
-				return fmt.Errorf("invalid oneof parameter %q for int: %v", p, err)
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
 			}
 			if int(v) == n {
 				return nil
 			}
 		}
-		return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
 	})
 }
 
@@ -130,7 +198,10 @@ func getIntOneofRule() (Rule, error) {
 func getInt64PositiveRule() (Rule, error) {
 	return NewRule[int64]("positive", func(n int64, _ ...string) error {
 		if n <= 0 {
-			return fmt.Errorf("must be > 0")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+			)
 		}
 		return nil
 	})
@@ -139,7 +210,10 @@ func getInt64PositiveRule() (Rule, error) {
 func getInt64NonzeroRule() (Rule, error) {
 	return NewRule[int64]("nonzero", func(n int64, _ ...string) error {
 		if n == 0 {
-			return fmt.Errorf("must not be zero")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
 		}
 		return nil
 	})
@@ -148,18 +222,33 @@ func getInt64NonzeroRule() (Rule, error) {
 func getInt64OneofRule() (Rule, error) {
 	return NewRule[int64]("oneof", func(n int64, params ...string) error {
 		if len(params) == 0 {
-			return fmt.Errorf(`oneof requires at least one parameter, e.g. validate:"oneof(10,20,30)"`)
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
 		}
 		for _, p := range params {
-			v, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil {
-				return fmt.Errorf("invalid oneof parameter %q for int64: %v", p, err)
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
 			}
 			if v == n {
 				return nil
 			}
 		}
-		return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
 	})
 }
 
@@ -167,7 +256,10 @@ func getInt64OneofRule() (Rule, error) {
 func getFloat64PositiveRule() (Rule, error) {
 	return NewRule[float64]("positive", func(n float64, _ ...string) error {
 		if !(n > 0) {
-			return fmt.Errorf("must be > 0")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+			)
 		}
 		return nil
 	})
@@ -176,7 +268,10 @@ func getFloat64PositiveRule() (Rule, error) {
 func getFloat64NonzeroRule() (Rule, error) {
 	return NewRule[float64]("nonzero", func(n float64, _ ...string) error {
 		if n == 0 {
-			return fmt.Errorf("must not be zero")
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
 		}
 		return nil
 	})
@@ -185,18 +280,33 @@ func getFloat64NonzeroRule() (Rule, error) {
 func getFloat64OneofRule() (Rule, error) {
 	return NewRule[float64]("oneof", func(n float64, params ...string) error {
 		if len(params) == 0 {
-			return fmt.Errorf(`oneof requires at least one parameter, e.g. validate:"oneof(1.5,2.0)"`)
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
 		}
 		for _, p := range params {
-			v, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseFloat(raw, 64)
 			if err != nil {
-				return fmt.Errorf("invalid oneof parameter %q for float64: %v", p, err)
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
 			}
 			if v == n {
 				return nil
 			}
 		}
-		return fmt.Errorf("must be one of: %s", strings.Join(params, ", "))
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
 	})
 }
 
