@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
-
 	modelerrors "github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/validation"
 )
@@ -53,7 +52,7 @@ type vHasTags struct {
 func TestModel_validate(t *testing.T) {
 	t.Parallel()
 
-	type runFn func() (error, any)
+	type runFn func() (any, error)
 
 	tests := []struct {
 		name    string
@@ -63,36 +62,36 @@ func TestModel_validate(t *testing.T) {
 	}{
 		{
 			name: "nil object -> error",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[vNoTags]
 				m.obj = nil
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "nil object",
 		},
 		{
 			name: "non-struct object -> error",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[int]
 				x := 42
 				m.obj = &x // *int (Elem != struct)
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "object must be a non-nil pointer to struct",
 		},
 		{
 			name: "no tags -> ok (nil error)",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[vNoTags]
 				obj := vNoTags{A: 1, B: "x"}
 				m.obj = &obj
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "",
 		},
 		{
 			name: "rules satisfied -> ok (nil error)",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				m := &Model[vHasTags]{}
 				obj := vHasTags{Name: "ok", Wait: time.Second}
 				obj.Info.Note = "ok"
@@ -100,37 +99,39 @@ func TestModel_validate(t *testing.T) {
 				// register rules
 				min1, err := validation.NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
 				if err != nil {
-					return err, m
+					return m, err
 				}
 				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				if err = m.RegisterRules(min1, nonZeroDur); err != nil {
-					return err, m
+				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
+					return m, err
 				}
-				return m.validate(context.Background()), m
+				validationErr := m.validate(context.Background())
+				return m, validationErr
 			},
 			wantErr: "",
 		},
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				m := &Model[vHasTags]{}
 				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
 				m.obj = &obj
 				min1, err := validation.NewRule("min(1)", ruleMin1)
 				if err != nil {
-					return err, m
+					return m, err
 				}
 				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				if err = m.RegisterRules(min1, nonZeroDur); err != nil {
-					return err, m
+				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
+					return m, err
 				}
-				return m.validate(context.Background()), m
+				validationErr := m.validate(context.Background())
+				return m, validationErr
 			},
 			wantErr: "validation",
 			verify: func(t *testing.T, err error, _ any) {
@@ -177,14 +178,15 @@ func TestModel_validate(t *testing.T) {
 		},
 		{
 			name: "unknown rule -> ValidationError with rule-not-registered message",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
 				m := &Model[vUnknown]{}
 				obj := vUnknown{}
 				m.obj = &obj
-				return m.validate(context.Background()), m
+				err := m.validate(context.Background())
+				return m, err
 			},
 			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
@@ -201,7 +203,9 @@ func TestModel_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err, m := tt.run()
+			t.Parallel()
+
+			m, err := tt.run()
 			checkValidateTopError(t, err, tt.wantErr)
 			if tt.verify != nil {
 				tt.verify(t, err, m)

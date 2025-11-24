@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/errors"
 )
 
@@ -100,40 +99,12 @@ func (s *Service) applyDefaultElemTag(fv reflect.Value, tag string) error {
 	}
 	switch cont.Kind() {
 	case reflect.Slice, reflect.Array:
-		l := cont.Len()
-		for j := 0; j < l; j++ {
-			ev := cont.Index(j)
-			dv := ev
-			if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-				dv = dv.Elem()
-			}
-			if dv.Kind() == reflect.Struct {
-				if err := s.SetDefaultsStruct(dv); err != nil {
-					return err
-				}
-			}
+		if err := s.setSliceArrayElementsDefaultValues(cont); err != nil {
+			return err
 		}
 	case reflect.Map:
-		for _, key := range cont.MapKeys() {
-			val := cont.MapIndex(key)
-			// Pointer-to-struct map values: mutate in place
-			if val.Kind() == reflect.Ptr {
-				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-					if err := s.SetDefaultsStruct(val.Elem()); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			// Value-typed struct map values: copy-modify-write-back
-			if val.Kind() == reflect.Struct {
-				copyVal := reflect.New(val.Type()).Elem()
-				copyVal.Set(val)
-				if err := s.SetDefaultsStruct(copyVal); err != nil {
-					return err
-				}
-				cont.SetMapIndex(key, copyVal)
-			}
+		if err := s.setMapElementsDefaultValues(cont); err != nil {
+			return err
 		}
 	default:
 		// ignore for non-collections
@@ -141,10 +112,60 @@ func (s *Service) applyDefaultElemTag(fv reflect.Value, tag string) error {
 	return nil
 }
 
+func (s *Service) setSliceArrayElementsDefaultValues(value reflect.Value) error {
+	l := value.Len()
+	for j := 0; j < l; j++ {
+		ev := value.Index(j)
+		dv := ev
+
+		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
+			dv = dv.Elem()
+		}
+
+		if dv.Kind() == reflect.Struct {
+			if err := s.SetDefaultsStruct(dv); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
+	for _, key := range mapValue.MapKeys() {
+		mapElemValue := mapValue.MapIndex(key)
+
+		// Pointer-to-struct map values: mutate in place
+		if mapElemValue.Kind() == reflect.Ptr {
+			if !mapElemValue.IsNil() && mapElemValue.Elem().Kind() == reflect.Struct {
+				if err := s.SetDefaultsStruct(mapElemValue.Elem()); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		// Value-typed struct map values: copy-modify-write-back
+		if mapElemValue.Kind() == reflect.Struct {
+			structValue := reflect.New(mapElemValue.Type()).Elem()
+			structValue.Set(mapElemValue)
+			if err := s.SetDefaultsStruct(structValue); err != nil {
+				return err
+			}
+			mapValue.SetMapIndex(key, structValue)
+		}
+	}
+
+	return nil
+}
+
 var durationType = reflect.TypeOf(time.Duration(0))
 
 // setLiteralDefault sets a literal default value into fv if it is zero.
 // For pointer-to-scalar fields, it allocates and sets the pointed value.
+//
+//nolint:gocyclo,funlen // cyclomatic complexity is acceptable here
 func setLiteralDefault(fv reflect.Value, lit string) error {
 	target := fv
 	// Allocate for pointer-to-scalar when nil

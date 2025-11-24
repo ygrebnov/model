@@ -28,7 +28,8 @@ type defOuter struct {
 	Arr   []defInner           `defaultElem:"dive"`
 	ArrPt []*defInner          `defaultElem:"dive"`
 	S2    string               `defaultElem:"dive"` // non-collection -> ignore
-	unexp string               `default:"zzz"`      // unexported -> skipped
+	//nolint:unused // unexported field is intentionally unused to assert it is skipped by SetDefaultsStruct
+	unexp string `default:"zzz"` // unexported -> skipped
 
 	// literals
 	S   string        `default:"hello"`
@@ -83,7 +84,7 @@ func assertSetDefaultStructFieldError(t *testing.T, err error, wantField string)
 // contains is a tiny local helper mirrors strings.Contains but keeps
 // string-search details out of the assertion logic above.
 func contains(s, substr string) bool {
-	return len(substr) == 0 || (len(s) >= len(substr) && (func() bool {
+	return substr == "" || (len(s) >= len(substr) && (func() bool {
 		// simple substring scan without importing strings
 		for i := 0; i+len(substr) <= len(s); i++ {
 			if s[i:i+len(substr)] == substr {
@@ -174,13 +175,13 @@ func TestModel_SetDefaultsStruct(t *testing.T) {
 							{},
 							{A: "keepA", B: 9},
 						},
-						ArrPt: []*defInner{nil, &defInner{}},
+						ArrPt: []*defInner{nil, {}},
 						M: map[string]defInner{
 							"k1": {},
 							"k2": {A: "preset"},
 						},
 						MPtr: map[string]*defInner{
-							"p1": &defInner{},
+							"p1": {},
 							"p2": nil,
 						},
 					}

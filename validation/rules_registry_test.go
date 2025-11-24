@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
-
 	errorsPkg "github.com/ygrebnov/model/errors"
 )
 

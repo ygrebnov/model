@@ -7,13 +7,6 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
-// Benchmark helper struct
-type benchStruct struct {
-	S string `validate:"min(1)"`
-	I int    `validate:"positive,nonzero"`
-	D int64  `validate:"nonzero"`
-}
-
 // mediumRule is a medium-level CPU and memory usage rule used for benchmarking.
 // It performs a moderate amount of work on the input string: allocations,
 // iterations, and some branching.

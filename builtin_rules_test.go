@@ -7,11 +7,10 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
-
 	modelerrors "github.com/ygrebnov/model/errors"
 )
 
-func assertRuleErrorHas(t *testing.T, err error, wantSentinel error, wantRule string, kv map[errorc.Key]string) {
+func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, kv map[errorc.Key]string) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected error, got nil")
@@ -35,7 +34,6 @@ func assertRuleErrorHas(t *testing.T, err error, wantSentinel error, wantRule st
 }
 
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
-
 	type strOK struct {
 		S string `validate:"min(1),max(10)"`
 	}

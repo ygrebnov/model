@@ -96,7 +96,6 @@ func TestNewRule(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			// build rule according to fn's inferred generic parameter
 			var (
@@ -199,7 +198,6 @@ func TestValidationRuleFn(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			fn := tt.rule.GetValidationFn()
 			err := fn(reflect.ValueOf(tt.value))

@@ -27,8 +27,9 @@ type vInner struct {
 // Struct under test with a variety of fields/tags.
 type vOuter struct {
 	// Recursion targets
-	In  vInner  `validate:""`         // explicit empty (no rule), but should dive due to struct recursion
-	PIn *vInner `validate:""`         // pointer; nil → no validation; non-nil → dive
+	In  vInner  `validate:""` // explicit empty (no rule), but should dive due to struct recursion
+	PIn *vInner `validate:""` // pointer; nil → no validation; non-nil → dive
+	//nolint:unused // unexported field to test that it's skipped even with a tag
 	pin *vInner `validate:"nonempty"` // unexported: must be skipped despite tag
 
 	// Simple rules

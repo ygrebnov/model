@@ -4,7 +4,6 @@ import (
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/errors"
 )
 

@@ -55,36 +55,74 @@ func (s *Service) ValidateStruct(
 		}
 
 		// Process `validate` tag
-		if rawTag := field.Tag.Get(tagValidate); rawTag != "" && rawTag != "-" {
-			rules, exists := s.rulesMapping.Get(typ, i, tagValidate)
-			if !exists {
-				rules = validation.ParseTag(rawTag)
-				s.rulesMapping.Add(typ, i, tagValidate, rules)
-			}
-
-			for _, r := range rules {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				if err := s.applyRule(r.Name, fv, r.Params...); err != nil {
-					ve.Add(validation.FieldError{Path: fpath, Rule: r.Name, Params: r.Params, Err: err})
-				}
-			}
+		if err := s.processValidateTag(ctx, &field, fpath, fv, typ, i, ve); err != nil {
+			return err
 		}
 
 		// Process `validateElem` tag for slices, arrays, and maps
-		if elemRaw := field.Tag.Get(tagValidateElem); elemRaw != "" && elemRaw != "-" {
-			elemRules, exists := s.rulesMapping.Get(typ, i, tagValidateElem)
-			if !exists {
-				elemRules = validation.ParseTag(elemRaw)
-				s.rulesMapping.Add(typ, i, tagValidateElem, elemRules)
-			}
-
-			if err := s.validateElements(ctx, fv, fpath, elemRules, ve); err != nil {
-				return err
-
-			}
+		if err := s.processValidateElemTag(ctx, &field, fpath, fv, typ, i, ve); err != nil {
+			return err
 		}
+	}
+
+	return nil
+}
+
+func (s *Service) processValidateTag(
+	ctx context.Context,
+	field *reflect.StructField,
+	fieldPath string,
+	fieldValue reflect.Value,
+	structType reflect.Type,
+	fieldIndex int,
+	ve *validation.Error,
+) error {
+	rawTag := field.Tag.Get(tagValidate)
+	if rawTag == "" || rawTag == "-" {
+		return nil
+	}
+	// Check cache for parsed rules
+	rules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidate)
+	if !exists {
+		rules = validation.ParseTag(rawTag)
+		s.rulesMapping.Add(structType, fieldIndex, tagValidate, rules)
+	}
+
+	for _, r := range rules {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.applyRule(r.Name, fieldValue, r.Params...); err != nil {
+			ve.Add(validation.FieldError{Path: fieldPath, Rule: r.Name, Params: r.Params, Err: err})
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) processValidateElemTag(
+	ctx context.Context,
+	field *reflect.StructField,
+	fieldPath string,
+	fieldValue reflect.Value,
+	structType reflect.Type,
+	fieldIndex int,
+	ve *validation.Error,
+) error {
+	elemRaw := field.Tag.Get(tagValidateElem)
+	if elemRaw == "" || elemRaw == "-" {
+		return nil
+	}
+
+	// Check cache for parsed rules
+	elemRules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidateElem)
+	if !exists {
+		elemRules = validation.ParseTag(elemRaw)
+		s.rulesMapping.Add(structType, fieldIndex, tagValidateElem, elemRules)
+	}
+
+	if err := s.validateElements(ctx, fieldValue, fieldPath, elemRules, ve); err != nil {
+		return err
 	}
 
 	return nil

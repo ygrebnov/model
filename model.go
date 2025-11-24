@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/internal/core"
 	"github.com/ygrebnov/model/validation"
@@ -157,7 +156,7 @@ func (m *Model[TObject]) applyDefaults() error {
 		return err
 	}
 
-	if err = m.ensureBinding(); err != nil {
+	if err := m.ensureBinding(); err != nil {
 		return err
 	}
 	return m.service.SetDefaultsStruct(rv)
@@ -216,10 +215,14 @@ func (m *Model[TObject]) validate(ctx context.Context) (err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
+
+	err = ctx.Err()
+	if err != nil {
 		return err
 	}
-	if err := m.ensureBinding(); err != nil {
+
+	err = m.ensureBinding()
+	if err != nil {
 		return err
 	}
 

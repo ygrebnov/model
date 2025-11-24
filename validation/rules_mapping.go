@@ -65,9 +65,8 @@ type RuleNameParams struct {
 //   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
 //   - Does not support quotes or escaping inside parameters.
 func ParseTag(tag string) []RuleNameParams {
-	var rules []RuleNameParams
 	if tag == "" || tag == "-" {
-		return rules
+		return nil
 	}
 
 	var tokens []string
@@ -92,6 +91,12 @@ func ParseTag(tag string) []RuleNameParams {
 	if start <= len(tag) {
 		tokens = append(tokens, strings.TrimSpace(tag[start:]))
 	}
+
+	return parseTokens(tokens)
+}
+
+func parseTokens(tokens []string) []RuleNameParams {
+	var rules []RuleNameParams
 
 	for _, tok := range tokens {
 		if tok == "" {

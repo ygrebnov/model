@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/errors"
 )
 
@@ -72,7 +71,7 @@ func (r *rulesRegistry) Get(name string, v reflect.Value) (Rule, error) {
 	}
 
 	valueType := v.Type()
-	rules, _ := r.rules[name]
+	rules := r.rules[name]
 
 	var (
 		exacts  []Rule

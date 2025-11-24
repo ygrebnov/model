@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
-
 	errorsPkg "github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/validation"
 )

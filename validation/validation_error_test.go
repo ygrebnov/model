@@ -257,8 +257,9 @@ func TestFieldError_Error(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := tt.fe.Error()
 			for _, s := range tt.wantHas {
 				if !strings.Contains(got, s) {
@@ -343,8 +344,9 @@ func TestFieldError_MarshalJSON(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			data, err := tt.fe.MarshalJSON()
 			if err != nil {
 				t.Fatalf("MarshalJSON error: %v", err)

@@ -2,7 +2,6 @@ package errors
 
 import (
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/constants"
 )
 

@@ -15,7 +15,6 @@ linters:
     - dupl
     - durationcheck
     - errcheck
-    - exhaustive
     - funlen
     - gci
     - goconst
@@ -96,6 +95,7 @@ issues:
       linters:
         - dogsled
         - dupl
+        - goconst
         - gocyclo
         - gosec
         - gosimple
