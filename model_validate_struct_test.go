@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 // ----- Test types -----
@@ -25,8 +27,9 @@ type vInner struct {
 // Struct under test with a variety of fields/tags.
 type vOuter struct {
 	// Recursion targets
-	In  vInner  `validate:""`         // explicit empty (no rule), but should dive due to struct recursion
-	PIn *vInner `validate:""`         // pointer; nil → no validation; non-nil → dive
+	In  vInner  `validate:""` // explicit empty (no rule), but should dive due to struct recursion
+	PIn *vInner `validate:""` // pointer; nil → no validation; non-nil → dive
+	//nolint:unused // unexported field to test that it's skipped even with a tag
 	pin *vInner `validate:"nonempty"` // unexported: must be skipped despite tag
 
 	// Simple rules
@@ -80,7 +83,7 @@ func ruleNonEmpty(s string, _ ...string) error {
 }
 
 // withParams echoes params to prove parsing worked
-func ruleWithParams(s string, params ...string) error {
+func ruleWithParams(_ string, params ...string) error {
 	if len(params) == 0 {
 		return fmt.Errorf("expected params")
 	}
@@ -108,31 +111,37 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 
 func TestModel_validateStruct(t *testing.T) {
 	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
-	stringNonEmpty, err := NewRule[string]("nonempty", ruleNonEmpty)
+	m := &Model[vOuter]{}
+	// attach a dummy object so ensureBinding can derive the struct type
+	objZero := vOuter{}
+	m.obj = &objZero
+	if err := m.ensureBinding(); err != nil {
+		t.Fatalf("ensureBinding error: %v", err)
+	}
+	stringNonEmpty, err := validation.NewRule[string]("nonempty", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	stringWithParams, err := NewRule[string]("withParams", ruleWithParams)
+	stringWithParams, err := validation.NewRule[string]("withParams", ruleWithParams)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	durationNonzero, err := NewRule[time.Duration]("nonzeroDuration", ruleNonzeroDuration)
+	durationNonzero, err := validation.NewRule[time.Duration]("nonzeroDuration", ruleNonzeroDuration)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
 	// Register interface-based rule (AssignableTo path)
-	stringerBad, err := NewRule[fmt.Stringer]("stringerBad", ruleStringerBad)
+	stringerBad, err := validation.NewRule[fmt.Stringer]("stringerBad", ruleStringerBad)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
 	// Register single rule for dup (used to be ambiguous with duplicates)
-	stringDup1, err := NewRule[string]("dup", ruleNonEmpty)
+	stringDup1, err := validation.NewRule[string]("dup", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
 	// Also a rule for int to demonstrate element rules on int slices if needed
-	intSlices, err := NewRule[int]("intErr", ruleIntAlwaysErr)
+	intSlices, err := validation.NewRule[int]("intErr", ruleIntAlwaysErr)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
@@ -200,9 +209,13 @@ func TestModel_validateStruct(t *testing.T) {
 		obj.Ptrs[1] = &vInner{}
 		obj.FixedP[1] = &vInner{}
 
-		ve := &ValidationError{}
+		ve := &validation.Error{}
+		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
+		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
+		if err != nil {
+			t.Fatalf("ValidateStruct error: %v", err)
+		}
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
@@ -436,9 +449,13 @@ func TestModel_validateStruct(t *testing.T) {
 		obj := vOuter{
 			PIn: &vInner{S: "", D: 0}, // both violate rules in vInner
 		}
-		ve := &ValidationError{}
+		ve := &validation.Error{}
+		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		m.validateStruct(context.Background(), rv, "Root", ve)
+		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve)
+		if err != nil {
+			t.Fatalf("ValidateStruct error: %v", err)
+		}
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")

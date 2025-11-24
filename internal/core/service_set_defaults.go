@@ -1,4 +1,4 @@
-package model
+package core
 
 import (
 	"fmt"
@@ -8,35 +8,11 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/errors"
 )
 
-// SetDefaults applies default values based on `default:"..."` tags to the model's object.
-// It is safe to call multiple times; only zero-valued fields are set.
-func (m *Model[TObject]) SetDefaults() error {
-	var err error
-	m.once.Do(func() { err = m.applyDefaults() })
-	return err
-}
-
-// applyDefaults walks the object and applies defaults according to `default` and `defaultElem` tags.
-// Supported forms:
-//   - `default:"<literal>"` sets the field if it is zero
-//   - `default:"dive"` on a struct or pointer-to-struct recurses into its fields
-//   - `default:"alloc"` allocates an empty map/slice when the field is nil
-//   - `defaultElem:"dive"` recurses into slice/array elements or map values that are structs
-//
-// Notes:
-//   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
-//   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
-func (m *Model[TObject]) applyDefaults() error {
-	if rv, err := m.rootStructValue("SetDefaults"); err != nil {
-		return err
-	} else {
-		return m.setDefaultsStruct(rv)
-	}
-}
-
-func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
+// SetDefaultsStruct walks the struct value and applies defaults according to `default` and `defaultElem` tags.
+func (s *Service) SetDefaultsStruct(rv reflect.Value) error {
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		field := typ.Field(i)
@@ -48,13 +24,13 @@ func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
 
 		// Handle default tag
 		if dtag := field.Tag.Get(tagDefault); dtag != "" && dtag != "-" {
-			if err := m.applyDefaultTag(fv, dtag, field.Name); err != nil {
+			if err := s.applyDefaultTag(fv, dtag, field.Name); err != nil {
 				return err
 			}
 		}
 		// Element defaults for collections
 		if etag := field.Tag.Get(tagDefaultElem); etag != "" && etag != "-" {
-			if err := m.applyDefaultElemTag(fv, etag); err != nil {
+			if err := s.applyDefaultElemTag(fv, etag); err != nil {
 				return err
 			}
 		}
@@ -64,10 +40,10 @@ func (m *Model[TObject]) setDefaultsStruct(rv reflect.Value) error {
 
 // applyDefaultTag applies the `default` tag semantics to a single field value.
 // Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
-func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
+func (s *Service) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
 	switch tag {
 	case tagDive:
-		return m.diveDefaultsIntoValue(fv)
+		return s.diveDefaultsIntoValue(fv)
 	case tagAlloc:
 		// Allocate empty slice/map if nil
 		if fv.Kind() == reflect.Slice && fv.IsNil() {
@@ -79,9 +55,9 @@ func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string
 	default:
 		if err := setLiteralDefault(fv, tag); err != nil {
 			return errorc.With(
-				ErrSetDefault,
-				errorc.String(ErrorFieldFieldName, fieldName),
-				errorc.Error(ErrorFieldCause, err),
+				errors.ErrSetDefault,
+				errorc.String(errors.ErrorFieldFieldName, fieldName),
+				errorc.Error(errors.ErrorFieldCause, err),
 			)
 		}
 		return nil
@@ -90,7 +66,7 @@ func (m *Model[TObject]) applyDefaultTag(fv reflect.Value, tag, fieldName string
 
 // diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
 // For nil *struct, it allocates the struct before diving. Non-structs are ignored.
-func (m *Model[TObject]) diveDefaultsIntoValue(fv reflect.Value) error {
+func (s *Service) diveDefaultsIntoValue(fv reflect.Value) error {
 	switch fv.Kind() {
 	case reflect.Ptr:
 		if fv.IsNil() {
@@ -101,11 +77,11 @@ func (m *Model[TObject]) diveDefaultsIntoValue(fv reflect.Value) error {
 			}
 		}
 		if fv.Elem().Kind() == reflect.Struct {
-			return m.setDefaultsStruct(fv.Elem())
+			return s.SetDefaultsStruct(fv.Elem())
 		}
 		return nil
 	case reflect.Struct:
-		return m.setDefaultsStruct(fv)
+		return s.SetDefaultsStruct(fv)
 	default:
 		return nil
 	}
@@ -113,7 +89,7 @@ func (m *Model[TObject]) diveDefaultsIntoValue(fv reflect.Value) error {
 
 // applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
 // Currently supports: defaultElem:"dive".
-func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error {
+func (s *Service) applyDefaultElemTag(fv reflect.Value, tag string) error {
 	if tag != tagDive {
 		return nil
 	}
@@ -123,40 +99,12 @@ func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error
 	}
 	switch cont.Kind() {
 	case reflect.Slice, reflect.Array:
-		l := cont.Len()
-		for j := 0; j < l; j++ {
-			ev := cont.Index(j)
-			dv := ev
-			if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-				dv = dv.Elem()
-			}
-			if dv.Kind() == reflect.Struct {
-				if err := m.setDefaultsStruct(dv); err != nil {
-					return err
-				}
-			}
+		if err := s.setSliceArrayElementsDefaultValues(cont); err != nil {
+			return err
 		}
 	case reflect.Map:
-		for _, key := range cont.MapKeys() {
-			val := cont.MapIndex(key)
-			// Pointer-to-struct map values: mutate in place
-			if val.Kind() == reflect.Ptr {
-				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-					if err := m.setDefaultsStruct(val.Elem()); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			// Value-typed struct map values: copy-modify-write-back
-			if val.Kind() == reflect.Struct {
-				copyVal := reflect.New(val.Type()).Elem()
-				copyVal.Set(val)
-				if err := m.setDefaultsStruct(copyVal); err != nil {
-					return err
-				}
-				cont.SetMapIndex(key, copyVal)
-			}
+		if err := s.setMapElementsDefaultValues(cont); err != nil {
+			return err
 		}
 	default:
 		// ignore for non-collections
@@ -164,10 +112,60 @@ func (m *Model[TObject]) applyDefaultElemTag(fv reflect.Value, tag string) error
 	return nil
 }
 
+func (s *Service) setSliceArrayElementsDefaultValues(value reflect.Value) error {
+	l := value.Len()
+	for j := 0; j < l; j++ {
+		ev := value.Index(j)
+		dv := ev
+
+		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
+			dv = dv.Elem()
+		}
+
+		if dv.Kind() == reflect.Struct {
+			if err := s.SetDefaultsStruct(dv); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
+	for _, key := range mapValue.MapKeys() {
+		mapElemValue := mapValue.MapIndex(key)
+
+		// Pointer-to-struct map values: mutate in place
+		if mapElemValue.Kind() == reflect.Ptr {
+			if !mapElemValue.IsNil() && mapElemValue.Elem().Kind() == reflect.Struct {
+				if err := s.SetDefaultsStruct(mapElemValue.Elem()); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		// Value-typed struct map values: copy-modify-write-back
+		if mapElemValue.Kind() == reflect.Struct {
+			structValue := reflect.New(mapElemValue.Type()).Elem()
+			structValue.Set(mapElemValue)
+			if err := s.SetDefaultsStruct(structValue); err != nil {
+				return err
+			}
+			mapValue.SetMapIndex(key, structValue)
+		}
+	}
+
+	return nil
+}
+
 var durationType = reflect.TypeOf(time.Duration(0))
 
 // setLiteralDefault sets a literal default value into fv if it is zero.
 // For pointer-to-scalar fields, it allocates and sets the pointed value.
+//
+//nolint:gocyclo,funlen // cyclomatic complexity is acceptable here
 func setLiteralDefault(fv reflect.Value, lit string) error {
 	target := fv
 	// Allocate for pointer-to-scalar when nil
@@ -235,8 +233,8 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 		target.SetFloat(fv)
 	default:
 		return errorc.With(
-			ErrDefaultLiteralUnsupportedKind,
-			errorc.String(ErrorFieldDefaultLiteralKind, target.Kind().String()),
+			errors.ErrDefaultLiteralUnsupportedKind,
+			errorc.String(errors.ErrorFieldDefaultLiteralKind, target.Kind().String()),
 		)
 	}
 	return nil

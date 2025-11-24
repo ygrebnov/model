@@ -1,4 +1,4 @@
-package model
+package validation
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 
 // fieldRulesKey uniquely identifies a struct field's tag to cache parsed rules.
 // It uses the parent struct type and the field index to avoid collisions
-// across different structs that have the same field type or name.
+// across different structs that have the same field type or Name.
 // tagName distinguishes between validate and validateElem (and leaves room for others).
 type fieldRulesKey struct {
 	parent  reflect.Type
@@ -16,9 +16,14 @@ type fieldRulesKey struct {
 	tagName string
 }
 
-// mapping holds a thread-safe cache for parsed validation rules mapping.
-type mapping struct {
-	c cache // map[fieldRulesKey][]ruleNameParams
+type RulesMapping interface {
+	Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool)
+	Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams)
+}
+
+// rulesMapping holds a thread-safe cache for parsed validation rules mapping.
+type rulesMapping struct {
+	c cache // map[fieldRulesKey][]RuleNameParams
 }
 
 type cache interface {
@@ -26,43 +31,42 @@ type cache interface {
 	Store(key any, value any)
 }
 
-func newMapping() *mapping {
-	return &mapping{
+func NewRulesMapping() RulesMapping {
+	return &rulesMapping{
 		c: &sync.Map{},
 	}
 }
 
-func (c *mapping) get(parent reflect.Type, fieldIndex int, tagName string) ([]ruleNameParams, bool) {
+func (c *rulesMapping) Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool) {
 	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
 	if v, ok := c.c.Load(key); ok {
-		return v.([]ruleNameParams), true
+		return v.([]RuleNameParams), true
 	}
 
 	return nil, false
 }
 
-func (c *mapping) add(parent reflect.Type, fieldIndex int, tagName string, parsed []ruleNameParams) {
+func (c *rulesMapping) Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams) {
 	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
 	c.c.Store(key, parsed)
 }
 
-// ruleNameParams holds the name and params of a single validation rule.
-type ruleNameParams struct {
-	name   string
-	params []string
+// RuleNameParams holds the Name and Params of a single validation rule.
+type RuleNameParams struct {
+	Name   string
+	Params []string
 }
 
-// parseTag tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
+// ParseTag tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
 // Behavior:
 //   - Splits on top-level commas only (commas inside parentheses do not split tokens).
 //   - Trims whitespace around tokens and parameters.
 //   - Empty tokens (from leading/trailing commas) are skipped.
 //   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
 //   - Does not support quotes or escaping inside parameters.
-func parseTag(tag string) []ruleNameParams {
-	var rules []ruleNameParams
+func ParseTag(tag string) []RuleNameParams {
 	if tag == "" || tag == "-" {
-		return rules
+		return nil
 	}
 
 	var tokens []string
@@ -88,6 +92,12 @@ func parseTag(tag string) []ruleNameParams {
 		tokens = append(tokens, strings.TrimSpace(tag[start:]))
 	}
 
+	return parseTokens(tokens)
+}
+
+func parseTokens(tokens []string) []RuleNameParams {
+	var rules []RuleNameParams
+
 	for _, tok := range tokens {
 		if tok == "" {
 			continue
@@ -108,7 +118,7 @@ func parseTag(tag string) []ruleNameParams {
 			}
 		}
 		if name != "" {
-			rules = append(rules, ruleNameParams{name: name, params: params})
+			rules = append(rules, RuleNameParams{Name: name, Params: params})
 		}
 	}
 	return rules

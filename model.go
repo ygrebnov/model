@@ -6,33 +6,20 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/validation"
 )
 
-type rulesRegistry interface {
-	add(r Rule) error
-	get(name string, v reflect.Value) (Rule, error)
-}
-
-type rulesMapping interface {
-	add(parent reflect.Type, fieldIndex int, tagName string, rules []ruleNameParams)
-	get(parent reflect.Type, fieldIndex int, tagName string) ([]ruleNameParams, bool)
-}
-
-func newRulesRegistry() rulesRegistry {
-	return newRegistry()
-}
-
-func newRulesMapping() rulesMapping {
-	return newMapping()
-}
-
 type Model[TObject any] struct {
+	// once ensures defaults are applied to this model's object at most once.
+	// Binding[T] and the internal Service are reusable per-type and remain stateless
+	// with respect to individual object instances.
 	once               sync.Once
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 	obj                *TObject
-	rulesRegistry      rulesRegistry
-	rulesMapping       rulesMapping
+	service            service
 	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
@@ -42,11 +29,14 @@ type Model[TObject any] struct {
 func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], error) {
 	// Validate: obj must be a non-nil pointer to a struct
 	if obj == nil {
-		return nil, ErrNilObject
+		return nil, errors.ErrNilObject
 	}
 	elem := reflect.TypeOf(obj).Elem()
 	if elem.Kind() != reflect.Struct {
-		return nil, errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, elem.Kind().String()))
+		return nil, errorc.With(
+			errors.ErrNotStructPtr,
+			errorc.String(errors.ErrorFieldObjectType, elem.Kind().String()),
+		)
 	}
 
 	m := &Model[TObject]{obj: obj, ctx: context.Background()}
@@ -95,7 +85,6 @@ func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 		} else {
 			m.ctx = ctx
 		}
-		m.initRules()
 		return nil
 	}
 }
@@ -106,8 +95,8 @@ func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 //
 // All rules must be of the same field type (e.g., string, int).
 //
-// See the Rule type and NewRule function for details on creating rules.
-func WithRules[TObject any](rules ...Rule) Option[TObject] {
+// See the validation.Rule type and validation.NewRule function for details on creating rules.
+func WithRules[TObject any](rules ...validation.Rule) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		return m.RegisterRules(rules...)
 	}
@@ -118,26 +107,136 @@ func WithRules[TObject any](rules ...Rule) Option[TObject] {
 func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	if m.obj == nil {
 		// defensive, cannot happen due to New() checks
-		return reflect.Value{}, errorc.With(ErrNilObject, errorc.String(ErrorFieldPhase, phase))
+		return reflect.Value{},
+			errorc.With(errors.ErrNilObject, errorc.String(errors.ErrorFieldPhase, phase))
 	}
 	rv := reflect.ValueOf(m.obj)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		// defensive: unreachable under normal generic use
 		return reflect.Value{},
 			errorc.With(
-				ErrNotStructPtr,
-				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(ErrorFieldPhase, phase),
+				errors.ErrNotStructPtr,
+				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(errors.ErrorFieldPhase, phase),
 			)
 	}
 	rv = rv.Elem()
 	if rv.Kind() != reflect.Struct {
 		return reflect.Value{},
 			errorc.With(
-				ErrNotStructPtr,
-				errorc.String(ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(ErrorFieldPhase, phase),
+				errors.ErrNotStructPtr,
+				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
+				errorc.String(errors.ErrorFieldPhase, phase),
 			)
 	}
 	return rv, nil
+}
+
+// SetDefaults applies default values based on `default:"..."` tags to the model's object.
+// It is safe to call multiple times; only zero-valued fields are set.
+func (m *Model[TObject]) SetDefaults() error {
+	var err error
+	m.once.Do(func() { err = m.applyDefaults() })
+	return err
+}
+
+// applyDefaults walks the object and applies defaults according to `default` and `defaultElem` tags.
+// Supported forms:
+//   - `default:"<literal>"` sets the field if it is zero
+//   - `default:"dive"` on a struct or pointer-to-struct recurses into its fields
+//   - `default:"alloc"` allocates an empty map/slice when the field is nil
+//   - `defaultElem:"dive"` recurses into slice/array elements or map values that are structs
+//
+// Notes:
+//   - Literals are parsed by kind: string, bool, ints/uints, floats, time.Duration.
+//   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
+func (m *Model[TObject]) applyDefaults() error {
+	rv, err := m.rootStructValue("SetDefaults")
+	if err != nil {
+		return err
+	}
+
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+	return m.service.SetDefaultsStruct(rv)
+}
+
+// ensureBinding initializes the model's service, rulesRegistry, and rulesMapping lazily.
+func (m *Model[TObject]) ensureBinding() error {
+	if m.service != nil {
+		return nil
+	}
+	// Derive the concrete struct type from the bound object.
+	rv, err := m.rootStructValue("initBinding")
+	if err != nil {
+		return err
+	}
+	typ := rv.Type()
+	reg := validation.NewRulesRegistry()
+	mapping := validation.NewRulesMapping()
+	tb, err := core.NewService(typ, reg, mapping)
+	if err != nil {
+		return err
+	}
+	m.service = tb
+	return nil
+}
+
+// RegisterRules registers one or many named custom validation rules of the same field type
+// into the model's validator rulesRegistry.
+//
+// See the Rule type and NewRule function for details on creating rules.
+func (m *Model[TObject]) RegisterRules(rules ...validation.Rule) error {
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+	for _, r := range rules {
+		if err := m.service.AddRule(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate runs the registered validation rules against the model's bound object with the provided context.
+// If the context is canceled or its deadline exceeded, validation stops early and ctx.Err() is returned.
+func (m *Model[TObject]) Validate(ctx context.Context) error {
+	if err := m.ensureBinding(); err != nil {
+		return err
+	}
+	return m.validate(ctx)
+}
+
+// validate is the internal implementation that walks struct fields and applies rules
+// declared in `validate:"..."` tags. It supports rule parameters via the syntax
+// "rule" or "rule(p1,p2)" and multiple rules separated by commas.
+func (m *Model[TObject]) validate(ctx context.Context) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	err = ctx.Err()
+	if err != nil {
+		return err
+	}
+
+	err = m.ensureBinding()
+	if err != nil {
+		return err
+	}
+
+	var rv reflect.Value
+	if rv, err = m.rootStructValue("Validate"); err != nil {
+		return err
+	}
+	ve := &validation.Error{}
+	// Delegate traversal to service to keep logic centralized.
+	if err := m.service.ValidateStruct(ctx, rv, "", ve); err != nil {
+		return err
+	}
+	if ve.Empty() {
+		return nil
+	}
+	return ve
 }

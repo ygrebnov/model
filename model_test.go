@@ -10,21 +10,11 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+	errorsPkg "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/validation"
 )
 
 // ---- Helpers ----
-
-//func mustPanic(t *testing.T, fn func()) (msg string) {
-//	t.Helper()
-//	defer func() {
-//		if r := recover(); r != nil {
-//			msg = fmt.Sprint(r)
-//		}
-//	}()
-//	fn()
-//	t.Fatalf("expected panic, got none")
-//	return ""
-//}
 
 type myStringer interface{ String() string }
 type wrapS struct{ v string }
@@ -61,10 +51,10 @@ func TestNew(t *testing.T) {
 		if m != nil {
 			t.Fatalf("expected nil model")
 		}
-		if !errors.Is(err, ErrNilObject) {
+		if !errors.Is(err, errorsPkg.ErrNilObject) {
 			t.Fatalf("expected ErrNilObject, got %v", err)
 		}
-		if err.Error() != ErrNilObject.Error() {
+		if err.Error() != errorsPkg.ErrNilObject.Error() {
 			t.Fatalf("expected ErrNilObject message, got %q", err.Error())
 		}
 	})
@@ -75,10 +65,13 @@ func TestNew(t *testing.T) {
 		if m != nil {
 			t.Fatalf("expected nil model")
 		}
-		if !errors.Is(err, ErrNotStructPtr) {
+		if !errors.Is(err, errorsPkg.ErrNotStructPtr) {
 			t.Fatalf("expected ErrNotStructPtr, got %v", err)
 		}
-		expectedError := errorc.With(ErrNotStructPtr, errorc.String(ErrorFieldObjectType, "int"))
+		expectedError := errorc.With(
+			errorsPkg.ErrNotStructPtr,
+			errorc.String(errorsPkg.ErrorFieldObjectType, "int"),
+		)
 		if err.Error() != expectedError.Error() {
 			t.Fatalf("expected %q message, got %q", expectedError.Error(), err.Error())
 		}
@@ -129,11 +122,11 @@ func TestNew(t *testing.T) {
 				D:   time.Second,
 			},
 		}
-		nonempty, err := NewRule("nonempty", ruleNonEmpty)
+		nonempty, err := validation.NewRule("nonempty", ruleNonEmpty)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		nonzeroDur, err := NewRule("nonzero", ruleNonZeroDur)
+		nonzeroDur, err := validation.NewRule("nonzero", ruleNonZeroDur)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
@@ -148,7 +141,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("WithValidation: returns validation error", func(t *testing.T) {
 		obj := newValidateBad{} // name empty
-		r, err := NewRule("nonempty", ruleNonEmpty)
+		r, err := validation.NewRule("nonempty", ruleNonEmpty)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
@@ -163,7 +156,7 @@ func TestNew(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected validation error, got nil")
 		}
-		var ve *ValidationError
+		var ve *validation.Error
 		if !errors.As(err, &ve) {
 			t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 		}
@@ -175,60 +168,57 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("WithRules: registers multiple and dispatch works (exact match)", func(t *testing.T) {
-		obj := struct{ S string }{S: ""}
-		nonempty, err := NewRule[string]("nonempty", ruleNonEmpty)
+		// Use a struct with an explicit validate tag so Validate triggers the custom rule.
+		type Obj struct {
+			S string `validate:"nonempty"`
+		}
+		obj := Obj{S: ""}
+		nonempty, err := validation.NewRule[string]("nonempty", ruleNonEmpty)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		m, err := New(&obj, WithRules[struct{ S string }](nonempty))
+		m, err := New(&obj, WithRules[Obj](nonempty))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
 		}
-		// Dispatch to prove adapter is wired; expect rule error (we pass empty string)
-		if err := m.applyRule("nonempty", reflect.ValueOf(obj.S)); err == nil || !strings.Contains(err.Error(), "must not be empty") {
-			t.Fatalf("applyRule expected rule error, got: %v", err)
+		// Dispatch via public Validate; expect validation error for empty S.
+		if err := m.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+			t.Fatalf("Validate expected rule error, got: %v", err)
 		}
 	})
 
 	t.Run("newRuleAdapter: interface overload is usable (AssignableTo)", func(t *testing.T) {
+		// This test is specifically about AssignableTo dispatch, so we
+		// exercise the registry + rule directly instead of relying on tags.
 		obj := struct{ W wrapS }{W: wrapS{v: "Z"}}
-		iface, err := NewRule[myStringer]("iface", func(s myStringer, _ ...string) error {
+		iface, err := validation.NewRule[myStringer]("iface", func(s myStringer, _ ...string) error {
 			return fmt.Errorf("iface:%s", s.String())
 		})
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		m, err := New(&obj, WithRules[struct{ W wrapS }](iface))
+		// Build a lightweight registry and call the rule directly to verify AssignableTo behavior.
+		reg := validation.NewRulesRegistry()
+		if err = reg.Add(iface); err != nil {
+			t.Fatalf("registry.add error: %v", err)
+		}
+		// Simulate dispatch by resolving the rule for the concrete type wrapS.
+		r, err := reg.Get("iface", reflect.ValueOf(obj.W))
 		if err != nil {
-			t.Fatalf("New error: %v", err)
+			t.Fatalf("registry.get error: %v", err)
 		}
-		// Call through applyRule with a concrete type implementing the interface
-		if err := m.applyRule("iface", reflect.ValueOf(obj.W)); err == nil || !strings.Contains(err.Error(), "iface:Z") {
+		if err = r.GetValidationFn()(reflect.ValueOf(obj.W), nil...); err == nil || !strings.Contains(err.Error(), "iface:Z") {
 			t.Fatalf("expected interface overload to run, got: %v", err)
-		}
-	})
-
-	t.Run("WithRule error: empty name", func(t *testing.T) {
-		_, err := NewRule[string]("", ruleNonEmpty)
-		if err == nil || !strings.Contains(err.Error(), "non-empty name") {
-			t.Fatalf("expected NewRule error for empty name, got: %v", err)
-		}
-	})
-
-	t.Run("WithRule error: nil function", func(t *testing.T) {
-		_, err := NewRule[string]("x", nil)
-		if err == nil || !strings.Contains(err.Error(), "non-nil Fn") {
-			t.Fatalf("expected NewRule error for nil function, got: %v", err)
 		}
 	})
 
 	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
-		r1, err := NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
+		r1, err := validation.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
 		if err != nil {
 			t.Fatalf("NewRule r1 error: %v", err)
 		}
-		r2, err := NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("two") })
+		r2, err := validation.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("two") })
 		if err != nil {
 			t.Fatalf("NewRule r2 error: %v", err)
 		}
@@ -240,36 +230,4 @@ func TestNew(t *testing.T) {
 			t.Fatalf("expected duplicate overload rule error, got: %v", err)
 		}
 	})
-
-	// returning error has been removed from Option signature
-	//	t.Run("options: short-circuit on first error; subsequent opts not applied", func(t *testing.T) {
-	//		type T struct{}
-	//		obj := T{}
-	//		called1 := false
-	//		called2 := false
-	//
-	//		failOpt := Option[T](func(m *Model[T]) {
-	//			called1 = true
-	//			return fmt.Errorf("fail-first")
-	//		})
-	//		sideOpt := Option[T](func(m *Model[T]) {
-	//			called2 = true
-	//			m.applyDefaultsOnNew = true // visible side-effect if applied
-	//			return nil
-	//		})
-	//
-	//		m, err := New(&obj, failOpt, sideOpt)
-	//		if m != nil {
-	//			t.Fatalf("expected nil model on first option error")
-	//		}
-	//		if err == nil || !strings.Contains(err.Error(), "fail-first") {
-	//			t.Fatalf("expected first option error, got %v", err)
-	//		}
-	//		if !called1 {
-	//			t.Fatalf("expected first option to be called")
-	//		}
-	//		if called2 {
-	//			t.Fatalf("expected second option NOT to be called after first error")
-	//		}
-	//	})
 }

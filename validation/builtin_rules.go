@@ -1,0 +1,472 @@
+package validation
+
+import (
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/constants"
+	modelerrors "github.com/ygrebnov/model/errors"
+)
+
+// Built-ins are always implicitly available.
+
+// key consists of a name and a field value type.
+type key struct {
+	name      string
+	fieldType reflect.Type
+}
+
+// Lazy built-in rule storage.
+var (
+	builtInsOnce        sync.Once
+	builtInMap          map[key]Rule
+	builtinStringRules  []Rule
+	builtinIntRules     []Rule
+	builtinInt64Rules   []Rule
+	builtinFloat64Rules []Rule
+)
+
+// string rules
+func getStringMinMaxRule(
+	name string,
+	noop func(v int64) bool,
+	compare func(a, b int) bool,
+) (Rule, error) {
+	return NewRule[string](name, func(s string, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, name),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 0)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if noop(v) { // noop as requested
+			return nil
+		}
+		if compare(int(v), len(s)) {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, name),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
+// min(length): requires one integer parameter. If missing -> error. If <1 -> noop.
+func getStrMinRule() (Rule, error) {
+	return getStringMinMaxRule(
+		constants.RuleStringMin,
+		func(v int64) bool { return v < 1 },
+		func(a, b int) bool { return a > b },
+	)
+}
+
+// max(length): requires one integer parameter. If missing -> error. If <0 -> noop.
+func getStrMaxRule() (Rule, error) {
+	return getStringMinMaxRule(
+		constants.RuleStringMax,
+		func(v int64) bool { return v < 0 },
+		func(a, b int) bool { return a < b },
+	)
+}
+
+// email rule: deliberately simple; not RFC 5322 exhaustive. Provides lightweight validation.
+func getStrEmailRule() (Rule, error) {
+	return NewRule[string]("email", func(s string, _ ...string) error {
+		if s == "" { // treat empty as error, keeping semantics similar to prior nonempty
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+			)
+		}
+		if strings.Count(s, "@") != 1 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "at_count"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, "1"),
+			)
+		}
+		parts := strings.Split(s, "@")
+		local, domain := parts[0], parts[1]
+		if local == "" || domain == "" {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "local_domain_nonempty"),
+			)
+		}
+		if strings.ContainsAny(s, " \t\n\r") {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "no_whitespace"),
+			)
+		}
+		if !strings.Contains(domain, ".") { // simple domain heuristic
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "email"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "domain_has_dot"),
+			)
+		}
+		return nil
+	})
+}
+
+// oneof rule: value must match one of the provided parameters.
+func getStrOneofRule() (Rule, error) {
+	return NewRule[string]("oneof", func(s string, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
+		}
+		for _, p := range params {
+			if s == p {
+				return nil
+			}
+		}
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			// we expose the allowed set as the param value for debugging/inspection
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
+	})
+}
+
+// uuid rule: value must be a valid canonical UUID string (lower/upper hex, 8-4-4-4-12 format).
+func getStrUUIDRule() (Rule, error) {
+	return NewRule[string]("uuid", func(s string, _ ...string) error {
+		// Empty is invalid; caller can omit the rule if empty is allowed.
+		// Canonical form: 36 chars, 8-4-4-4-12 with hyphens, hex digits only.
+		if len(s) != 36 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, strconv.Itoa(len(s))),
+			)
+		}
+		// Hyphen positions 8,13,18,23
+		h := map[int]struct{}{8: {}, 13: {}, 18: {}, 23: {}}
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if _, isHyphen := h[i]; isHyphen {
+				if c != '-' {
+					return errorc.With(
+						modelerrors.ErrRuleConstraintViolated,
+						errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+						errorc.String(modelerrors.ErrorFieldRuleParamName, "format"),
+						errorc.String(modelerrors.ErrorFieldRuleParamValue, "expected hyphens at 8,13,18,23"),
+					)
+				}
+				continue
+			}
+			// hex digit?
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return errorc.With(
+					modelerrors.ErrRuleConstraintViolated,
+					errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "hex"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, "non-hex character"),
+				)
+			}
+		}
+		return nil
+	})
+}
+
+func getNumericMinMaxRule[T interface{ int | int64 | float64 }](
+	name string,
+	parse func(string) (T, error),
+	compare func(a, b T) bool,
+) (Rule, error) {
+	return NewRule[T](name, func(n T, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, name),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := parse(raw)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, name),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if compare(n, v) {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, name),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
+// int rules
+// min(value): requires one integer parameter. Field value must be >= param.
+func getIntMinRule() (Rule, error) {
+	return getNumericMinMaxRule[int](constants.RuleIntMin, strconv.Atoi, func(a, b int) bool { return a < b })
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getIntMaxRule() (Rule, error) {
+	return getNumericMinMaxRule[int](constants.RuleIntMax, strconv.Atoi, func(a, b int) bool { return a > b })
+}
+
+// nonzero: n must not be zero
+func getIntNonzeroRule() (Rule, error) {
+	return NewRule[int]("nonzero", func(n int, _ ...string) error {
+		if n == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
+		}
+		return nil
+	})
+}
+
+// oneof: n must equal one of the provided integer parameters
+func getIntOneofRule() (Rule, error) {
+	return NewRule[int]("oneof", func(n int, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
+		}
+		for _, p := range params {
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseInt(raw, 10, 0)
+			if err != nil {
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
+			}
+			if int(v) == n {
+				return nil
+			}
+		}
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
+	})
+}
+
+// int64 rules
+// min(value): requires one integer parameter. Field value must be >= param.
+func getInt64MinRule() (Rule, error) {
+	return getNumericMinMaxRule[int64](
+		constants.RuleInt64Min,
+		func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
+		func(a, b int64) bool { return a < b },
+	)
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getInt64MaxRule() (Rule, error) {
+	return getNumericMinMaxRule[int64](
+		constants.RuleInt64Max,
+		func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
+		func(a, b int64) bool { return a > b },
+	)
+}
+
+func getInt64NonzeroRule() (Rule, error) {
+	return NewRule[int64]("nonzero", func(n int64, _ ...string) error {
+		if n == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
+		}
+		return nil
+	})
+}
+
+func getInt64OneofRule() (Rule, error) {
+	return NewRule[int64]("oneof", func(n int64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
+		}
+		for _, p := range params {
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
+			}
+			if v == n {
+				return nil
+			}
+		}
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
+	})
+}
+
+// float64 rules
+// min(value): requires one integer parameter. Field value must be >= param.
+func getFloat64MinRule() (Rule, error) {
+	return getNumericMinMaxRule[float64](
+		constants.RuleFloat64Min,
+		func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
+		func(a, b float64) bool { return a < b },
+	)
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getFloat64MaxRule() (Rule, error) {
+	return getNumericMinMaxRule[float64](
+		constants.RuleFloat64Max,
+		func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
+		func(a, b float64) bool { return a > b },
+	)
+}
+
+func getFloat64NonzeroRule() (Rule, error) {
+	return NewRule[float64]("nonzero", func(n float64, _ ...string) error {
+		if n == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "nonzero"),
+			)
+		}
+		return nil
+	})
+}
+
+func getFloat64OneofRule() (Rule, error) {
+	return NewRule[float64]("oneof", func(n float64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			)
+		}
+		for _, p := range params {
+			raw := strings.TrimSpace(p)
+			v, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+					errorc.Error(modelerrors.ErrorFieldCause, err),
+				)
+			}
+			if v == n {
+				return nil
+			}
+		}
+		return errorc.With(
+			modelerrors.ErrRuleConstraintViolated,
+			errorc.String(modelerrors.ErrorFieldRuleName, "oneof"),
+			errorc.String(modelerrors.ErrorFieldRuleParamName, "allowed"),
+			errorc.String(modelerrors.ErrorFieldRuleParamValue, strings.Join(params, ",")),
+		)
+	})
+}
+
+// ensureBuiltIns initializes built-in rules exactly once.
+func ensureBuiltIns() {
+	builtInsOnce.Do(func() {
+		builtInMap = make(map[key]Rule)
+
+		// string rules
+		strMin, _ := getStrMinRule()
+		strMax, _ := getStrMaxRule()
+		strEmail, _ := getStrEmailRule()
+		strOneof, _ := getStrOneofRule()
+		strUUID, _ := getStrUUIDRule()
+		builtinStringRules = []Rule{strMin, strMax, strEmail, strOneof, strUUID}
+
+		// int rules
+		minInt, _ := getIntMinRule()
+		maxInt, _ := getIntMaxRule()
+		nonzeroInt, _ := getIntNonzeroRule()
+		oneofInt, _ := getIntOneofRule()
+		builtinIntRules = []Rule{minInt, maxInt, nonzeroInt, oneofInt}
+
+		// int64 rules
+		minInt64, _ := getInt64MinRule()
+		maxInt64, _ := getInt64MaxRule()
+		nonzeroInt64, _ := getInt64NonzeroRule()
+		oneofInt64, _ := getInt64OneofRule()
+		builtinInt64Rules = []Rule{minInt64, maxInt64, nonzeroInt64, oneofInt64}
+
+		// float64 rules
+		minFloat64, _ := getFloat64MinRule()
+		maxFloat64, _ := getFloat64MaxRule()
+		nonzeroFloat64, _ := getFloat64NonzeroRule()
+		oneofFloat64, _ := getFloat64OneofRule()
+		builtinFloat64Rules = []Rule{minFloat64, maxFloat64, nonzeroFloat64, oneofFloat64}
+
+		// fill map
+		register := func(rs []Rule) {
+			for _, r := range rs {
+				builtInMap[key{r.GetName(), r.getFieldType()}] = r
+			}
+		}
+		register(builtinStringRules)
+		register(builtinIntRules)
+		register(builtinInt64Rules)
+		register(builtinFloat64Rules)
+	})
+}
+
+// lookupBuiltin returns a built-in rule by (Name,type) if present.
+func lookupBuiltin(name string, t reflect.Type) (Rule, bool) {
+	ensureBuiltIns()
+	r, ok := builtInMap[key{name, t}]
+	return r, ok
+}

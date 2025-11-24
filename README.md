@@ -68,25 +68,24 @@ import (
 )
 
 type Address struct {
-    City    string `default:"Paris"  validate:"min(3)"`
-    Country string `default:"France" validate:"min(3)"`
+    City    string `default:"Paris"  validate:"min(3),max(50)"`
+    Country string `default:"France" validate:"min(3),max(50)"`
 }
 
 type User struct {
-    Name     string        `default:"Anonymous" validate:"min(3)"`
-    Age      int           `default:"18"        validate:"positive,nonzero"`
+    Name     string        `default:"Anonymous" validate:"min(3),max(50)"`
+    Age      int           `default:"18"        validate:"min(1),nonzero"`
     Timeout  time.Duration `default:"1s"`
-    Home     Address       `default:"dive"`          // recurse into nested struct
-    Aliases  []string      `validateElem:"min(3)"` // validate each element
+    Home     Address       `default:"dive"`           // recurse into nested struct
+    Aliases  []string      `validateElem:"min(3)"`   // validate each element
     Profiles map[string]Address `default:"alloc" defaultElem:"dive"`
 }
 
 func main() {
     u := User{Aliases: []string{"", "ok"}} // index 0 will fail validation
 
-    // Built-in rules (min / numeric checks) are available implicitly.
     m, err := model.New(&u,
-        model.WithDefaults[User](),                 // apply defaults during construction
+        model.WithDefaults[User](),                       // apply defaults during construction
         model.WithValidation[User](context.Background()), // run validation during construction (cancellable)
     )
     if err != nil {
@@ -103,8 +102,75 @@ func main() {
     fmt.Printf("User after defaults: %+v\n", u)
 
     // You can also call them later:
-    _ = m.SetDefaults()                          // guarded by sync.Once — no double work
-    _ = m.Validate(context.Background())         // returns *ValidationError on failure
+    _ = m.SetDefaults()                  // guarded by sync.Once — no double work
+    _ = m.Validate(context.Background()) // returns *ValidationError on failure
+}
+```
+
+---
+
+## Binding[T] – reusable defaults and validation
+
+`Model[T]` binds a single struct instance; sometimes you want a reusable engine for a type that you can apply to many instances. That is what `Binding[T]` is for.
+
+```go
+import (
+    "context"
+
+    "github.com/ygrebnov/model"
+)
+
+type Payload struct {
+    ID      string `validate:"uuid"`
+    Email   string `validate:"email"`
+    Retries int    `validate:"min(0),max(5)"`
+}
+
+func validatePayload(ctx context.Context, p *Payload) error {
+    // Construct once per process (or cache it) and reuse.
+    b, err := model.NewBinding[Payload]()
+    if err != nil {
+        return err
+    }
+    // If you have custom rules:
+    //   customRule, _ := model.NewRule[Payload](...)
+    //   _ = b.RegisterRules(customRule)
+
+    // Apply defaults (from `default` tags) and then validate.
+    if err := b.ValidateWithDefaults(ctx, p); err != nil {
+        return err
+    }
+    return nil
+}
+```
+
+Key points:
+
+- `NewBinding[T]` builds a reusable binding for the type `T` using a fresh `RulesRegistry` and `RulesMapping`.
+- `Binding[T].ApplyDefaults(*T)` applies `default` / `defaultElem` tags to a concrete instance.
+- `Binding[T].Validate(ctx, *T)` validates a concrete instance using `validate` / `validateElem` tags.
+- `Binding[T].ValidateWithDefaults(ctx, *T)` combines both in a single call.
+- `Binding[T].RegisterRules(...)` lets you register custom validation rules for that binding’s type; these participate alongside the built-ins.
+
+A typical service pattern is to construct a `Binding[T]` once at startup and reuse it in handlers:
+
+```go
+var payloadBinding *model.Binding[Payload]
+
+func init() {
+    var err error
+    payloadBinding, err = model.NewBinding[Payload]()
+    if err != nil {
+        panic(err) // or return a startup error from main
+    }
+}
+
+func handleRequest(ctx context.Context, p *Payload) error {
+    if err := payloadBinding.ValidateWithDefaults(ctx, p); err != nil {
+        return err
+    }
+    // p is now defaulted and validated
+    return nil
 }
 ```
 
@@ -258,8 +324,17 @@ Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal 
 
 Built-in rules are always implicitly available (you do **not** need to register or import anything for them):
 
-- String: `min()`, `oneof(...)`, `email`
-- Int / Int64 / Float64: `positive`, `nonzero`, `oneof(...)`
+- String:
+  - `min(N)` – length must be **>= N** (N ≥ 1). If N < 1, the rule is a no-op.
+  - `max(N)` – length must be **<= N** (N ≥ 0). If N < 0, the rule is a no-op.
+  - `oneof(v1,v2,...)` – value must be exactly one of the listed strings.
+  - `email` – lightweight email check (single `@`, non-empty local/domain, domain contains `.`, no whitespace).
+  - `uuid` – canonical UUID string (`8-4-4-4-12` hex format with hyphens).
+- Int / Int64 / Float64:
+  - `min(V)` – value must be **>= V**.
+  - `max(V)` – value must be **<= V**.
+  - `nonzero` – value must not be zero.
+  - `oneof(v1,v2,...)` – value must be equal to one of the listed values.
 
 Overriding: if you register a custom rule with the same name and exact type **before** validation runs, your rule is chosen (duplicate exact registrations for the same name & type are rejected). Interface-based rules still participate via assignable matching when no exact rule exists.
 
@@ -267,134 +342,90 @@ Overriding: if you register a custom rule with the same name and exact type **be
 
 ---
 
-## Custom rules (with parameters)
+### Numeric min / max examples
 
 ```go
-minLen, _ := model.NewRule[string]("minLen", func(s string, params ...string) error {
-    if len(params) < 1 { return fmt.Errorf("minLen requires 1 param") }
-    n, err := strconv.Atoi(params[0])
-    if err != nil { return fmt.Errorf("minLen: bad param: %w", err) }
-    if len(s) < n { return fmt.Errorf("must be at least %d chars", n) }
-    return nil
-})
-
-type Payload struct { Body string `validate:"minLen(3)"` }
-
-p := Payload{Body: "xy"}
-m, _ := model.New(&p, model.WithRules[Payload](minLen))
-if err := m.Validate(context.Background()); err != nil {
-    fmt.Println(err) // Body: must be at least 3 chars (rule minLen)
+type Limits struct {
+    Port    int     `validate:"min(1),max(65535)"`
+    Retries int64   `validate:"min(0),max(10)"`
+    Ratio   float64 `validate:"min(0.0),max(1.0)"`
 }
 ```
 
-Interface rules:
+- `Port` must be between 1 and 65535.
+- `Retries` must be between 0 and 10.
+- `Ratio` must be between 0.0 and 1.0 inclusive.
+
+### String max and uuid examples
 
 ```go
-type stringer interface{ String() string }
-stringerRule, _ := model.NewRule[stringer]("stringerBad", func(s stringer, _ ...string) error {
-    if s.String() == "" { return fmt.Errorf("empty") }
-    return fmt.Errorf("bad stringer: %s", s.String()) // demo
-})
-
-m, _ := model.New(&obj, model.WithRules[YourType](stringerRule))
-```
-
----
-
-## Error types
-
-### FieldError
-
-```go
-fe := model.FieldError{Path: "User.Name", Rule: "min", Err: fmt.Errorf("must not be empty")}
-fmt.Println(fe.Error()) // "User.Name: must not be empty (rule min)"
-```
-
-### ValidationError
-
-Aggregates many `FieldError`s and provides helpers: `Len()`, `Fields()`, `ByField()`, `ForField(path)`, `Unwrap()`.
-
-Errors for rules that cannot be dispatched include a deterministic, alphabetically sorted list of available overload types (see below).
-
-### Deterministic ordering of available types
-
-When a rule name has overloads but none match the field's type, the error includes a sorted list of available types for stable, testable output.
-
-Example fragment: `available_types: int, string`
-
----
-
-## Performance & benchmarks
-
-A few micro-benchmarks (run on Go 1.22, macOS, Apple M-series; numbers are illustrative) show the cost profile:
-
-| Benchmark | ns/op | B/op | allocs/op | Notes |
-|-----------|-------|------|-----------|-------|
-| BuiltinColdStart | ~3050 | ~1888 | 58 | First validation triggers lazy built-in rule initialization. |
-| BuiltinWarm | ~720 | ~240 | 11 | Subsequent validations (same model, built-ins cached). |
-| ValidateNoBuiltins | ~248 | ~120 | 5 | Custom rule only (no built-ins on the value path). |
-
-Key points:
-- The one-time lazy init cost (~3µs) is amortized quickly; warm validations drop below 1µs for this simple struct.
-- Memory allocations drop significantly after warm-up (primarily slice/map allocations for rule lookups and error structures when no failures occur).
-- You can reduce allocs further by reusing the same Model instance; `Validate(ctx)` does not mutate cached rule parsing state.
-
-Run benchmarks locally:
-
-```bash
-go test -bench . -benchmem -run ^$
-```
-
-For real workloads, overall cost will scale with number of exported fields traversed and rules applied; rule functions themselves typically dominate if they perform parsing or heavy logic.
-
-### Performance tuning tips
-
-Practical ways to minimize overhead in hot paths:
-
-1. Reuse Model instances: construct a single `Model[T]` per long‑lived object (or pool of objects) and call `Validate(ctx)` repeatedly. Tag parsing and rule registry lookups are cached; re-validation avoids re-parsing tags.
-2. Separate construction from the hot loop: do `model.New(&obj, WithValidation[T](context.Background()))` outside tight request loops so the one‑time lazy built‑in initialization cost is amortized.
-3. Prefer exact type rules over interface rules when possible: exact matches are resolved faster than walking assignable interface candidates.
-4. Avoid unnecessary rule duplication: register each custom rule once up front. Re-registering (or creating rules every call) allocates and defeats caching.
-5. Aggregate small validations: if you have many tiny structs, consider grouping related fields into a single struct to reduce reflective traversal overhead.
-6. Keep rule bodies lean: do parameter parsing (e.g., strconv) once if values are static, or precompute maps/sets for frequent membership checks.
-7. Zero‑alloc fast path: if you expect mostly valid data, write rule errors succinctly; fewer allocations happen when no `FieldError`s are produced.
-8. Avoid per‑call defaults unless needed: `SetDefaults()` is guarded by `sync.Once`—calling it again is cheap, but skip it entirely in hot loops if defaults are already applied.
-9. Profile before micro‑optimizing: use `go test -bench` or `pprof` to confirm hotspots (often custom rule logic, not the framework).
-
-Minimal pattern for reuse inside a service handler:
-
-```go
-var userModel *model.Model[User]
-
-func init() {
-    u := User{} // template instance if you only validate (or allocate per request below)
-    // Register overrides & built-ins once.
-    userModel, _ = model.New(&u, model.WithValidation[User](context.Background()))
+type Account struct {
+    ID    string `validate:"uuid"`
+    Name  string `validate:"min(3),max(100)"`
+    Email string `validate:"email"`
 }
+```
 
-func handle(ctx context.Context, u *User) error {
-    if err := userModel.Validate(ctx); err != nil { // reuses cached tag parsing
-        return err
+- `ID` must be a canonical UUID string (e.g. `123e4567-e89b-12d3-a456-426614174000`).
+- `Name` must be between 3 and 100 characters.
+- `Email` must satisfy a simple email heuristic (single `@`, etc.).
+
+---
+
+## Structured errors: errorc, sentinels, and ErrorField* keys
+
+Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. The `errors` package defines sentinel errors and strongly-typed keys:
+
+- Sentinels (examples):
+  - `errors.ErrNilObject`
+  - `errors.ErrNotStructPtr`
+  - `errors.ErrRuleMissingParameter`
+  - `errors.ErrRuleInvalidParameter`
+  - `errors.ErrRuleConstraintViolated`
+- Keys (examples):
+  - `errors.ErrorFieldRuleName` (e.g. `model.rule.name`)
+  - `errors.ErrorFieldRuleParamName` (e.g. `model.rule.param_name`)
+  - `errors.ErrorFieldRuleParamValue` (e.g. `model.rule.param_value`)
+  - `errors.ErrorFieldFieldName` (e.g. `model.field.name`)
+  - `errors.ErrorFieldCause` (the underlying cause error)
+
+Builtin rules attach metadata when they fail. For example, the string `min` rule:
+
+```go
+return errorc.With(
+    errors.ErrRuleConstraintViolated,
+    errorc.String(errors.ErrorFieldRuleName, "min"),
+    errorc.String(errors.ErrorFieldRuleParamName, "length"),
+    errorc.String(errors.ErrorFieldRuleParamValue, raw),
+)
+```
+
+From your code, you can inspect these errors using `errors.Is` and by reading the message (which includes the structured key/value pairs), or by using `errors.As` into `*validation.Error` for field-level failures.
+
+Example:
+
+```go
+m, err := model.New(&u, model.WithValidation[User](ctx))
+if err != nil {
+    var ve *model.ValidationError
+    if errors.As(err, &ve) {
+        // Per-field errors
+        for path, fes := range ve.ByField() {
+            for _, fe := range fes {
+                fmt.Printf("field=%s rule=%s err=%v\n", path, fe.Rule, fe.Err)
+            }
+        }
     }
-    return nil
 }
 ```
 
----
-
-## Behavior notes
-
-- `SetDefaults()` is idempotent per `Model` (via `sync.Once`).
-- Creating a new `Model` on the same object re-applies defaults safely (only zero values set).
-- `default:"dive"` allocates nil `*struct` pointers before recursing.
-- Duplicate exact rule registrations are blocked early (no runtime ambiguity errors).
-- Built-ins are always available even if you never call `WithRules`.
-- Concurrency: After construction, calling `Validate(ctx)` and `SetDefaults()` on the same *Model* instance from multiple goroutines concurrently is safe for reads of cached metadata, but typical usage mutates the underlying struct. For concurrent validation of distinct objects, create one Model per object or guard shared object mutation. Register all custom rules before exposing the Model to multiple goroutines (rule registration is not concurrency-safe once validation begins).
-- Cancellation: `Validate(ctx)` checks context at top-level and between field iterations, and returns `ctx.Err()` early when canceled or timed out. If you want cancellation when running validation during construction, pass `WithValidation(ctx)` to `New(...)`.
+If you need to work directly with the structured error metadata (e.g., to localize messages), you can call into `errorc` from your own code, or build small helpers around the keys exposed by `github.com/ygrebnov/model/errors`.
 
 ---
 
-## Integration example: validation failure with sorted available types
+## Overriding a builtin rule
+
+You can override a builtin rule by registering a custom rule with the same name and exact field type before validation runs. For example, to replace the builtin string `min` rule with a whitespace-aware version:
 
 ```go
 package main
@@ -403,180 +434,54 @@ import (
     "context"
     "errors"
     "fmt"
+    "strings"
+
     "github.com/ygrebnov/model"
 )
 
-type Ex struct { X float64 `validate:"r"` }
+type Comment struct {
+    Text string `validate:"min(3)"`
+}
 
 func main() {
-    ex := Ex{X: 3.14}
-
-    // Register only string and int overloads (float64 missing)
-    rStr, _ := model.NewRule[string]("r", func(_ string, _ ...string) error { return nil })
-    rInt, _ := model.NewRule[int]("r", func(_ int, _ ...string) error { return nil })
-
-    m, err := model.New(&ex,
-        model.WithRules[Ex](rStr, rInt),
-        model.WithValidation[Ex](context.Background()),
-    )
-    if err != nil {
-        var ve *model.ValidationError
-        if errors.As(err, &ve) {
-            fmt.Println(ve.Error())
-            for field, fes := range ve.ByField() {
-                for _, fe := range fes {
-                    fmt.Printf("%s: %s\n", field, fe.Error())
-                }
-            }
-        } else {
-            fmt.Println("error:", err)
+    trimMin, err := model.NewRule[string]("min", func(s string, params ...string) error {
+        // Treat leading/trailing whitespace as insignificant.
+        s = strings.TrimSpace(s)
+        if len(params) == 0 {
+            return fmt.Errorf("min requires a length parameter")
         }
-        _ = m
-        return
+        // For brevity, we skip full structured errorc usage here;
+        // in production, use sentinel errors + errorc.With, similar to builtin rules.
+        n := len(params[0]) // pretend this is parsed
+        if len(s) < n {
+            return fmt.Errorf("must be at least %d characters after trimming", n)
+        }
+        return nil
+    })
+    if err != nil {
+        panic(err)
     }
-}
-```
 
-Possible line (simplified):
+    c := Comment{Text: "  x "}
 
-```
-X: model: rule overload not found, rule_name: r, value_type: float64, available_types: int, string (rule r)
-```
-
----
-
-## Missing rule vs missing overload
-
-Two distinct error cases help diagnose configuration issues:
-
-1. ErrRuleNotFound – no rule with that name exists (and no built-in with that name).
-2. ErrRuleOverloadNotFound – at least one overload with that rule name exists, but none matches the field's type.
-
-### 1. Missing rule name entirely
-```go
-package main
-import (
-  "context"
-  "fmt"
-  "errors"
-  "github.com/ygrebnov/model"
-)
-
-type A struct { X int `validate:"unknownRule"` }
-
-func main() {
-  a := A{}
-  m, _ := model.New(&a) // no rules registered
-  if err := m.Validate(context.Background()); err != nil {
-    var ve *model.ValidationError
-    if errors.As(err, &ve) {
-      fmt.Println("-- ErrRuleNotFound example --")
-      fmt.Println(ve.Error())
-    }
-  }
-}
-```
-Possible fragment (order of fields stable but other context may precede it):
-```
-X: model: rule not found, rule_name: unknownRule (rule unknownRule)
-```
-
-### 2. Rule name exists, but type overload missing
-```go
-package main
-import (
-  "context"
-  "fmt"
-  "errors"
-  "github.com/ygrebnov/model"
-)
-
-type B struct { F float64 `validate:"r"` }
-
-func main() {
-  b := B{F: 1.23}
-  rInt, _ := model.NewRule[int]("r", func(_ int, _ ...string) error { return nil })
-  rString, _ := model.NewRule[string]("r", func(_ string, _ ...string) error { return nil })
-  m, _ := model.New(&b, model.WithRules[B](rInt, rString))
-  if err := m.Validate(context.Background()); err != nil {
-    var ve *model.ValidationError
-    if errors.As(err, &ve) {
-      fmt.Println("-- ErrRuleOverloadNotFound example --")
-      fmt.Println(ve.Error())
-    }
-  }
-}
-```
-Possible fragment:
-```
-F: model: rule overload not found, rule_name: r, value_type: float64, available_types: int, string (rule r)
-```
-
----
-
-## Minimal example
-
-```go
-package main
-
-import (
-    "encoding/json"
-    "errors"
-    "fmt"
-    "time"
-    "github.com/ygrebnov/model"
-)
-
-type Cfg struct {
-    Name string        `default:"svc" validate:"min(3)"`
-    Wait time.Duration `default:"500ms"`
-}
-
-func main() {
-    cfg := Cfg{}
-    m, err := model.New(&cfg,
-        model.WithDefaults[Cfg](),
-        model.WithValidation[Cfg](context.Background()), // built-ins supply min automatically
+    m, err := model.New(&c,
+        model.WithRules[Comment](trimMin),           // override builtin string min
+        model.WithValidation[Comment](context.Background()),
     )
     if err != nil {
         var ve *model.ValidationError
         if errors.As(err, &ve) {
-            b, _ := json.MarshalIndent(ve, "", "  ")
-            fmt.Println(string(b))
+            fmt.Println("validation error:", ve)
         } else {
             fmt.Println("error:", err)
         }
         return
     }
+
     _ = m
-    fmt.Printf("OK: %+v\n", cfg)
+    fmt.Println("comment is valid")
 }
 ```
 
----
-
-## Examples
-
-The examples now live directly in the main package (no separate `examples` or `example` package). They are conventional Go example functions named `Example*` so they:
-
-- Render automatically on pkg.go.dev.
-- Run as part of `go test` (ensuring they compile and their output, if any, matches expectations).
-
-### Running the examples
-
-```bash
-go test ./...                 # runs unit tests and example functions
-go test -run Example ./...    # run only examples
-```
-
-Browse them:
-- On pkg.go.dev: https://pkg.go.dev/github.com/ygrebnov/model
-- In the repository root: search for `Example` functions inside `*.go` files.
-
-If you had previously referenced an `examples/` directory in external docs, update that reference—examples are now inlined in the package itself for better discoverability.
-
----
-
-## License
-
-Distributed under the MIT License. See the [LICENSE](LICENSE) file for details.
+In this example, tag `validate:"min(3)"` for `Comment.Text` uses the overridden rule because it shares the same name and exact field type (`string`) as the builtin.
+````

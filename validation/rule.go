@@ -1,36 +1,41 @@
-package model
+package validation
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/errors"
 )
 
-var (
-	ErrRuleTypeMismatch = fmt.Errorf("rule type mismatch")
-	ErrInvalidRule      = fmt.Errorf("rule must have non-empty name and non-nil Fn")
-)
+type Rule interface {
+	GetName() string
+	GetValidationFn() func(v reflect.Value, params ...string) error
 
-// validationRule defines a named validation function for a specific field type.
-type validationRule struct {
+	getFieldTypeName() string
+	getFieldType() reflect.Type
+	isOfType(t reflect.Type) bool
+	isAssignableTo(t reflect.Type) bool
+}
+
+// rule defines a named validation function for a specific field type.
+type rule struct {
 	name      string
 	fieldType reflect.Type
 	fn        func(v reflect.Value, params ...string) error
 }
 
-func newRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (*validationRule, error) {
+func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
 	if name == "" || fn == nil {
-		return nil, ErrInvalidRule
+		return nil, errors.ErrInvalidRule
 	}
 
 	// Capture the static type of FieldType even when FieldType is an interface.
 	fieldType := reflect.TypeOf((*FieldType)(nil)).Elem()
 
-	return &validationRule{
+	return &rule{
 		name:      name,
 		fieldType: fieldType,
-		//fn:        fn,
+		// fn:        fn,
 		fn: func(v reflect.Value, params ...string) error {
 			// Ensure the reflect.Value `v` is compatible with FieldType.
 			if v.Type() != fieldType {
@@ -39,9 +44,9 @@ func newRule[FieldType any](name string, fn func(value FieldType, params ...stri
 					// As a fallback for interface FieldType, use Implements for clarity.
 					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
 						return errorc.With(
-							ErrRuleTypeMismatch,
-							errorc.String(ErrorFieldValueType, v.Type().String()),
-							errorc.String(ErrorFieldFieldType, fieldType.String()),
+							errors.ErrRuleTypeMismatch,
+							errorc.String(errors.ErrorFieldValueType, v.Type().String()),
+							errorc.String(errors.ErrorFieldFieldType, fieldType.String()),
 						)
 					}
 				}
@@ -52,30 +57,30 @@ func newRule[FieldType any](name string, fn func(value FieldType, params ...stri
 	}, nil
 }
 
-func (r validationRule) getName() string {
+func (r *rule) GetName() string {
 	return r.name
 }
 
-func (r validationRule) getFieldTypeName() string {
+func (r *rule) getFieldTypeName() string {
 	if r.fieldType == nil {
 		return "" // defensive, cannot happen due to constructor check
 	}
 	return r.fieldType.String()
 }
 
-func (r validationRule) getFieldType() reflect.Type {
+func (r *rule) getFieldType() reflect.Type {
 	return r.fieldType
 }
 
-func (r validationRule) getValidationFn() func(v reflect.Value, params ...string) error {
+func (r *rule) GetValidationFn() func(v reflect.Value, params ...string) error {
 	return r.fn
 }
 
-func (r validationRule) isOfType(t reflect.Type) bool {
+func (r *rule) isOfType(t reflect.Type) bool {
 	return r.fieldType == t
 }
 
-func (r validationRule) isAssignableTo(t reflect.Type) bool {
+func (r *rule) isAssignableTo(t reflect.Type) bool {
 	if r.fieldType == nil {
 		return false // defensive, cannot happen due to constructor check
 	}

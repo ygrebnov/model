@@ -1,4 +1,4 @@
-package model
+package core
 
 const (
 	tagValidate     = "validate"

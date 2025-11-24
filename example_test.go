@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 func ExampleNew_withDefaults() {
@@ -32,7 +34,7 @@ func ExampleNew_withWithRuleAndValidation() {
 	}
 
 	in := Input{} // D is zero -> should fail validation
-	nonZeroDurationRule, err := NewRule[time.Duration]("nonzeroDur",
+	nonZeroDurationRule, err := validation.NewRule[time.Duration]("nonzeroDur",
 		func(d time.Duration, _ ...string) error {
 			if d == 0 {
 				return fmt.Errorf("duration must be non-zero")
@@ -50,7 +52,7 @@ func ExampleNew_withWithRuleAndValidation() {
 		WithValidation[Input](context.Background()), // run validation in New().
 	)
 	if err != nil {
-		var ve *ValidationError
+		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("WithValidation+WithRule -> validation error:")
 			fmt.Println(ve.Error())
@@ -76,7 +78,7 @@ func ExampleNew_withRuleAndLaterValidation() {
 	// Note: if you register a rule with the same name as a built-in rule, your custom rule
 	// will override the built-in one.
 	d := Doc{}
-	nonEmptyRule, err := NewRule[string]("nonempty",
+	nonEmptyRule, err := validation.NewRule[string]("nonempty",
 		func(s string, _ ...string) error {
 			if s == "" {
 				return fmt.Errorf("must not be empty")
@@ -111,7 +113,7 @@ func ExampleNew_withMultipleRules() {
 		Age int `validate:"positive,nonzero"`
 	}
 
-	positive, err := NewRule[int]("positive", func(n int, _ ...string) error {
+	positive, err := validation.NewRule[int]("positive", func(n int, _ ...string) error {
 		if n <= 0 {
 			return fmt.Errorf("must be > 0")
 		}
@@ -121,7 +123,7 @@ func ExampleNew_withMultipleRules() {
 		fmt.Println("error creating positive rule:", err)
 		return
 	}
-	nonzero, err := NewRule[int]("nonzero", func(n int, _ ...string) error {
+	nonzero, err := validation.NewRule[int]("nonzero", func(n int, _ ...string) error {
 		if n == 0 {
 			return fmt.Errorf("must not be zero")
 		}
@@ -138,7 +140,7 @@ func ExampleNew_withMultipleRules() {
 		WithValidation[Rec](context.Background()), // run validation
 	)
 	if err != nil {
-		var ve *ValidationError
+		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("WithRules:", ve.Error())
 			return
@@ -152,4 +154,41 @@ func ExampleNew_withMultipleRules() {
 	// Output: WithRules: validation failed:
 	//   - Field "Age": rule "positive": must be > 0
 	//   - Field "Age": rule "nonzero": must not be zero
+}
+
+// ExampleBinding demonstrates how to use Binding[T] as a reusable
+// engine for applying defaults and validation to multiple instances
+// of the same type.
+func ExampleBinding() {
+	// Define the payload type with tags.
+	type payload struct {
+		ID      string `validate:"uuid"`
+		Email   string `validate:"email"`
+		Retries int    `validate:"min(0),max(5)"`
+	}
+
+	// Construct a reusable binding for payload.
+	b, err := NewBinding[payload]()
+	if err != nil {
+		// In examples, we just print the error.
+		fmt.Println("binding error:", err.Error())
+		return
+	}
+
+	// Use the binding on multiple instances.
+	p1 := payload{ID: "123e4567-e89b-12d3-a456-426614174000", Email: "user@example.com", Retries: 1}
+	p2 := payload{ID: "not-a-uuid", Email: "bad", Retries: 10}
+
+	ctx := context.Background()
+
+	_ = b.ValidateWithDefaults(ctx, &p1) // p1 is valid
+	if err := b.ValidateWithDefaults(ctx, &p2); err != nil {
+		// In real code you would inspect *ValidationError here.
+		fmt.Println("validation error:", err.Error())
+	}
+
+	// Output: validation error: validation failed:
+	//   - Field "ID": rule "uuid": model: rule constraint violated, model.rule.name: uuid, model.rule.param_name: length, model.rule.param_value: 10
+	//   - Field "Email": rule "email": model: rule constraint violated, model.rule.name: email, model.rule.param_name: at_count, model.rule.param_value: 1
+	//   - Field "Retries": rule "max": model: rule constraint violated, model.rule.name: max, model.rule.param_name: value, model.rule.param_value: 5
 }

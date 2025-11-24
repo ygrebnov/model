@@ -3,16 +3,22 @@ package model
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/errorc"
+	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/validation"
 )
 
 // --- helpers & sample rules used in tests ---
 func ruleNonZeroDur(d time.Duration, _ ...string) error {
 	if d == 0 {
-		return fmt.Errorf("duration must be non-zero")
+		return errorc.With(
+			modelerrors.ErrRuleNonZeroDurFailed,
+			errorc.String(modelerrors.ErrorFieldRuleName, "nonZeroDur"),
+		)
 	}
 	return nil
 }
@@ -20,7 +26,10 @@ func ruleNonZeroDur(d time.Duration, _ ...string) error {
 // custom rule implementing min(1) semantics for tests replaced nonempty
 func ruleMin1(s string, _ ...string) error {
 	if len(s) < 1 {
-		return fmt.Errorf("length must be >= 1 (got %d)", len(s))
+		return errorc.With(
+			modelerrors.ErrRuleMin1Failed,
+			errorc.String(modelerrors.ErrorFieldRuleName, "min(1)"),
+		)
 	}
 	return nil
 }
@@ -43,7 +52,7 @@ type vHasTags struct {
 func TestModel_validate(t *testing.T) {
 	t.Parallel()
 
-	type runFn func() (error, any)
+	type runFn func() (any, error)
 
 	tests := []struct {
 		name    string
@@ -53,78 +62,80 @@ func TestModel_validate(t *testing.T) {
 	}{
 		{
 			name: "nil object -> error",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[vNoTags]
 				m.obj = nil
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "nil object",
 		},
 		{
 			name: "non-struct object -> error",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[int]
 				x := 42
 				m.obj = &x // *int (Elem != struct)
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "object must be a non-nil pointer to struct",
 		},
 		{
 			name: "no tags -> ok (nil error)",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				var m Model[vNoTags]
 				obj := vNoTags{A: 1, B: "x"}
 				m.obj = &obj
-				return m.validate(context.Background()), &m
+				return &m, m.validate(context.Background())
 			},
 			wantErr: "",
 		},
 		{
 			name: "rules satisfied -> ok (nil error)",
-			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+			run: func() (any, error) {
+				m := &Model[vHasTags]{}
 				obj := vHasTags{Name: "ok", Wait: time.Second}
 				obj.Info.Note = "ok"
 				m.obj = &obj
 				// register rules
-				min1, err := NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
+				min1, err := validation.NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				if err = m.RegisterRules(min1, nonZeroDur); err != nil {
-					return err, m
+				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
+					return m, err
 				}
-				return m.validate(context.Background()), m
+				validationErr := m.validate(context.Background())
+				return m, validationErr
 			},
 			wantErr: "",
 		},
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
-			run: func() (error, any) {
-				m := &Model[vHasTags]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+			run: func() (any, error) {
+				m := &Model[vHasTags]{}
 				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
 				m.obj = &obj
-				min1, err := NewRule("min(1)", ruleMin1)
+				min1, err := validation.NewRule("min(1)", ruleMin1)
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				nonZeroDur, err := NewRule("nonZeroDur", ruleNonZeroDur)
+				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return err, m
+					return m, err
 				}
-				if err = m.RegisterRules(min1, nonZeroDur); err != nil {
-					return err, m
+				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
+					return m, err
 				}
-				return m.validate(context.Background()), m
+				validationErr := m.validate(context.Background())
+				return m, validationErr
 			},
 			wantErr: "validation",
 			verify: func(t *testing.T, err error, _ any) {
-				var ve *ValidationError
+				var ve *validation.Error
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
@@ -137,28 +148,49 @@ func TestModel_validate(t *testing.T) {
 						t.Errorf("missing error for field path %q", p)
 					}
 				}
-				if es := by["Name"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "length must be >= 1") {
-					t.Errorf("expected min(1) error for name, got: %+v", es)
+				if es := by["Name"]; len(es) == 0 {
+					t.Fatalf("expected error for Name")
+				} else {
+					// Name uses builtin string min rule; assert on builtin sentinel and metadata.
+					if !errors.Is(es[0].Err, modelerrors.ErrRuleConstraintViolated) {
+						t.Fatalf("expected ErrRuleConstraintViolated for Name, got %v", es[0].Err)
+					}
+					msg := es[0].Err.Error()
+					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": min") {
+						t.Errorf("expected builtin min rule name metadata for Name, got: %q", msg)
+					}
+					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamName)+": length") ||
+						!strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamValue)+": 1") {
+						t.Errorf("expected min length metadata for Name, got: %q", msg)
+					}
 				}
-				if es := by["Wait"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "non-zero") {
-					t.Errorf("expected nonZeroDur error for Wait, got: %+v", es)
+				if es := by["Wait"]; len(es) == 0 {
+					t.Fatalf("expected error for Wait")
+				} else {
+					if !errors.Is(es[0].Err, modelerrors.ErrRuleNonZeroDurFailed) {
+						t.Fatalf("expected ErrRuleNonZeroDurFailed for Wait, got %v", es[0].Err)
+					}
+					if msg := es[0].Err.Error(); !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": nonZeroDur") {
+						t.Errorf("expected rule name metadata for nonZeroDur in Wait error, got: %q", msg)
+					}
 				}
 			},
 		},
 		{
 			name: "unknown rule -> ValidationError with rule-not-registered message",
-			run: func() (error, any) {
+			run: func() (any, error) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{rulesMapping: newRulesMapping(), rulesRegistry: newRulesRegistry()}
+				m := &Model[vUnknown]{}
 				obj := vUnknown{}
 				m.obj = &obj
-				return m.validate(context.Background()), m
+				err := m.validate(context.Background())
+				return m, err
 			},
 			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
-				var ve *ValidationError
+				var ve *validation.Error
 				if !errors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
@@ -171,7 +203,9 @@ func TestModel_validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err, m := tt.run()
+			t.Parallel()
+
+			m, err := tt.run()
 			checkValidateTopError(t, err, tt.wantErr)
 			if tt.verify != nil {
 				tt.verify(t, err, m)
@@ -197,7 +231,7 @@ func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected validation error for empty S, got nil")
 	}
-	var ve *ValidationError
+	var ve *validation.Error
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 	}

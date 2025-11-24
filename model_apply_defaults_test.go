@@ -86,8 +86,9 @@ func TestModel_ApplyDefaults(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			switch mm := tt.setupModel().(type) {
 			case *Model[adOK]:
 				err := mm.applyDefaults()
@@ -98,10 +99,8 @@ func TestModel_ApplyDefaults(t *testing.T) {
 					if tt.verify != nil {
 						tt.verify(t, mm)
 					}
-				} else {
-					if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-						t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
-					}
+				} else if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
 				}
 			case *Model[adBad]:
 				err := mm.applyDefaults()

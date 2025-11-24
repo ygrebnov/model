@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 type bv struct {
@@ -20,7 +22,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected validation error due to implicit builtin rules")
 	}
-	var ve *ValidationError
+	var ve *validation.Error
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
@@ -35,7 +37,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customEmail, err := NewRule[string]("email", func(s string, _ ...string) error {
+	customEmail, err := validation.NewRule[string]("email", func(s string, _ ...string) error {
 		if s == "" {
 			return errors.New("custom email empty")
 		}
@@ -48,7 +50,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}
-	var ve *ValidationError
+	var ve *validation.Error
 	if !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}

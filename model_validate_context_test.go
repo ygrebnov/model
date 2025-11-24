@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 // simple type with repeating fields to ensure traversal loops would run if not canceled
@@ -53,7 +55,7 @@ func TestValidate_LongRunning_CanceledMidway(t *testing.T) {
 	}
 
 	var processed int32
-	slowRule, err := NewRule[string]("slow", func(s string, _ ...string) error {
+	slowRule, err := validation.NewRule[string]("slow", func(s string, _ ...string) error {
 		time.Sleep(5 * time.Millisecond) // simulate work per element
 		atomic.AddInt32(&processed, 1)
 		return nil
