@@ -16,13 +16,13 @@ type fieldRulesKey struct {
 	tagName string
 }
 
-type Mapping interface {
+type RulesMapping interface {
 	Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool)
 	Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams)
 }
 
-// mapping holds a thread-safe cache for parsed validation rules mapping.
-type mapping struct {
+// rulesMapping holds a thread-safe cache for parsed validation rules mapping.
+type rulesMapping struct {
 	c cache // map[fieldRulesKey][]RuleNameParams
 }
 
@@ -31,13 +31,13 @@ type cache interface {
 	Store(key any, value any)
 }
 
-func NewMapping() Mapping {
-	return &mapping{
+func NewRulesMapping() RulesMapping {
+	return &rulesMapping{
 		c: &sync.Map{},
 	}
 }
 
-func (c *mapping) Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool) {
+func (c *rulesMapping) Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool) {
 	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
 	if v, ok := c.c.Load(key); ok {
 		return v.([]RuleNameParams), true
@@ -46,7 +46,7 @@ func (c *mapping) Get(parent reflect.Type, fieldIndex int, tagName string) ([]Ru
 	return nil, false
 }
 
-func (c *mapping) Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams) {
+func (c *rulesMapping) Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams) {
 	key := fieldRulesKey{parent: parent, index: fieldIndex, tagName: tagName}
 	c.c.Store(key, parsed)
 }

@@ -42,12 +42,12 @@ type dummy struct{}
 
 // newTestBindingDummy constructs a typeBinding and its backing registry/mapping
 // for a dummy type, used to test applyRule behavior via the registry/get logic.
-func newTestBindingDummy(t *testing.T) (*TypeBinding, validation.Registry) {
+func newTestBindingDummy(t *testing.T) (*Service, validation.RulesRegistry) {
 	t.Helper()
-	reg := validation.NewRegistry()
-	mapping := validation.NewMapping()
+	reg := validation.NewRulesRegistry()
+	mapping := validation.NewRulesMapping()
 	// typ is not used by applyRule itself, but required by typeBinding.
-	tb, err := NewTypeBinding(reflect.TypeOf(dummy{}), reg, mapping)
+	tb, err := NewService(reflect.TypeOf(dummy{}), reg, mapping)
 	if err != nil {
 		t.Fatalf("buildTypeBinding error: %v", err)
 	}

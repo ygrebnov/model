@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	errorsPkg "github.com/ygrebnov/model/errors"
 )
 
 // helper types for interface assignability tests
@@ -28,7 +30,7 @@ func TestNewRule(t *testing.T) {
 			ruleName: "",
 			fn:       func(int, ...string) error { return nil },
 			assert: func(r Rule, err error) {
-				if !errors.Is(err, ErrInvalidRule) {
+				if !errors.Is(err, errorsPkg.ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
 				if r != nil {
@@ -41,7 +43,7 @@ func TestNewRule(t *testing.T) {
 			ruleName: "r1",
 			fn:       nil,
 			assert: func(r Rule, err error) {
-				if !errors.Is(err, ErrInvalidRule) {
+				if !errors.Is(err, errorsPkg.ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
 				if r != nil {
@@ -60,8 +62,8 @@ func TestNewRule(t *testing.T) {
 				if r.GetName() != "intRule" {
 					t.Fatalf("unexpected Name %s", r.GetName())
 				}
-				if r.GetFieldType() != reflect.TypeOf(int(0)) {
-					t.Fatalf("unexpected field type %s", r.GetFieldType())
+				if r.getFieldType() != reflect.TypeOf(int(0)) {
+					t.Fatalf("unexpected field type %s", r.getFieldType())
 				}
 			},
 		},
@@ -73,7 +75,7 @@ func TestNewRule(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				if r.GetFieldType().Kind() != reflect.Interface {
+				if r.getFieldType().Kind() != reflect.Interface {
 					t.Fatalf("expected interface kind")
 				}
 			},
@@ -86,7 +88,7 @@ func TestNewRule(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				if r.GetFieldType().Kind() != reflect.Ptr {
+				if r.getFieldType().Kind() != reflect.Ptr {
 					t.Fatalf("expected pointer kind")
 				}
 			},
@@ -157,8 +159,8 @@ func TestValidationRuleFn(t *testing.T) {
 			name:        "type mismatch primitive -> mismatch error",
 			rule:        intRule,
 			value:       "not-int",
-			expectedErr: ErrRuleTypeMismatch,
-			sentinel:    ErrRuleTypeMismatch,
+			expectedErr: errorsPkg.ErrRuleTypeMismatch,
+			sentinel:    errorsPkg.ErrRuleTypeMismatch,
 		},
 		{
 			name:  "interface assignable concrete type",
@@ -169,8 +171,8 @@ func TestValidationRuleFn(t *testing.T) {
 			name:        "interface mismatch not implementing",
 			rule:        stringerRuleErrMismatch,
 			value:       123, // int does not implement fmt.Stringer
-			expectedErr: ErrRuleTypeMismatch,
-			sentinel:    ErrRuleTypeMismatch,
+			expectedErr: errorsPkg.ErrRuleTypeMismatch,
+			sentinel:    errorsPkg.ErrRuleTypeMismatch,
 		},
 		{
 			name:  "empty interface accepts struct",
@@ -181,8 +183,8 @@ func TestValidationRuleFn(t *testing.T) {
 			name:        "struct vs pointer mismatch",
 			rule:        structRule,
 			value:       &structSimple{A: 2},
-			expectedErr: ErrRuleTypeMismatch,
-			sentinel:    ErrRuleTypeMismatch,
+			expectedErr: errorsPkg.ErrRuleTypeMismatch,
+			sentinel:    errorsPkg.ErrRuleTypeMismatch,
 		},
 		{
 			name:  "pointer exact match",

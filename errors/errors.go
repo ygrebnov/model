@@ -12,6 +12,8 @@ var namespace = errorc.Namespace(constants.Namespace)
 var (
 	ErrNilObject                     = namespace.NewError("nil object")
 	ErrNotStructPtr                  = namespace.NewError("object must be a non-nil pointer to struct")
+	ErrInvalidRule                   = namespace.NewError("rule must have non-empty name and non-nil function")
+	ErrRuleTypeMismatch              = namespace.NewError("rule type mismatch")
 	ErrDuplicateOverloadRule         = namespace.NewError("duplicate overload rule")
 	ErrRuleNotFound                  = namespace.NewError("rule not found")
 	ErrRuleOverloadNotFound          = namespace.NewError("rule overload not found")

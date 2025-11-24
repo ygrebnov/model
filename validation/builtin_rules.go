@@ -176,7 +176,7 @@ func ensureBuiltIns() {
 		// fill map
 		register := func(rs []Rule) {
 			for _, r := range rs {
-				builtInMap[key{r.GetName(), r.GetFieldType()}] = r
+				builtInMap[key{r.GetName(), r.getFieldType()}] = r
 			}
 		}
 		register(builtinStringRules)

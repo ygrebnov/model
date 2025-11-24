@@ -12,10 +12,8 @@ import (
 	"github.com/ygrebnov/model/errors"
 )
 
-// SetDefaultsStruct walks the struct value and applies defaults according to
-// `default` and `defaultElem` tags. This is the type-level equivalent of the
-// previous Model.SetDefaultsStruct.
-func (tb *TypeBinding) SetDefaultsStruct(rv reflect.Value) error {
+// SetDefaultsStruct walks the struct value and applies defaults according to `default` and `defaultElem` tags.
+func (s *Service) SetDefaultsStruct(rv reflect.Value) error {
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		field := typ.Field(i)
@@ -27,13 +25,13 @@ func (tb *TypeBinding) SetDefaultsStruct(rv reflect.Value) error {
 
 		// Handle default tag
 		if dtag := field.Tag.Get(tagDefault); dtag != "" && dtag != "-" {
-			if err := tb.applyDefaultTag(fv, dtag, field.Name); err != nil {
+			if err := s.applyDefaultTag(fv, dtag, field.Name); err != nil {
 				return err
 			}
 		}
 		// Element defaults for collections
 		if etag := field.Tag.Get(tagDefaultElem); etag != "" && etag != "-" {
-			if err := tb.applyDefaultElemTag(fv, etag); err != nil {
+			if err := s.applyDefaultElemTag(fv, etag); err != nil {
 				return err
 			}
 		}
@@ -43,10 +41,10 @@ func (tb *TypeBinding) SetDefaultsStruct(rv reflect.Value) error {
 
 // applyDefaultTag applies the `default` tag semantics to a single field value.
 // Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
-func (tb *TypeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
+func (s *Service) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
 	switch tag {
 	case tagDive:
-		return tb.diveDefaultsIntoValue(fv)
+		return s.diveDefaultsIntoValue(fv)
 	case tagAlloc:
 		// Allocate empty slice/map if nil
 		if fv.Kind() == reflect.Slice && fv.IsNil() {
@@ -69,7 +67,7 @@ func (tb *TypeBinding) applyDefaultTag(fv reflect.Value, tag, fieldName string) 
 
 // diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
 // For nil *struct, it allocates the struct before diving. Non-structs are ignored.
-func (tb *TypeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
+func (s *Service) diveDefaultsIntoValue(fv reflect.Value) error {
 	switch fv.Kind() {
 	case reflect.Ptr:
 		if fv.IsNil() {
@@ -80,11 +78,11 @@ func (tb *TypeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
 			}
 		}
 		if fv.Elem().Kind() == reflect.Struct {
-			return tb.SetDefaultsStruct(fv.Elem())
+			return s.SetDefaultsStruct(fv.Elem())
 		}
 		return nil
 	case reflect.Struct:
-		return tb.SetDefaultsStruct(fv)
+		return s.SetDefaultsStruct(fv)
 	default:
 		return nil
 	}
@@ -92,7 +90,7 @@ func (tb *TypeBinding) diveDefaultsIntoValue(fv reflect.Value) error {
 
 // applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
 // Currently supports: defaultElem:"dive".
-func (tb *TypeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
+func (s *Service) applyDefaultElemTag(fv reflect.Value, tag string) error {
 	if tag != tagDive {
 		return nil
 	}
@@ -110,7 +108,7 @@ func (tb *TypeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 				dv = dv.Elem()
 			}
 			if dv.Kind() == reflect.Struct {
-				if err := tb.SetDefaultsStruct(dv); err != nil {
+				if err := s.SetDefaultsStruct(dv); err != nil {
 					return err
 				}
 			}
@@ -121,7 +119,7 @@ func (tb *TypeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 			// Pointer-to-struct map values: mutate in place
 			if val.Kind() == reflect.Ptr {
 				if !val.IsNil() && val.Elem().Kind() == reflect.Struct {
-					if err := tb.SetDefaultsStruct(val.Elem()); err != nil {
+					if err := s.SetDefaultsStruct(val.Elem()); err != nil {
 						return err
 					}
 				}
@@ -131,7 +129,7 @@ func (tb *TypeBinding) applyDefaultElemTag(fv reflect.Value, tag string) error {
 			if val.Kind() == reflect.Struct {
 				copyVal := reflect.New(val.Type()).Elem()
 				copyVal.Set(val)
-				if err := tb.SetDefaultsStruct(copyVal); err != nil {
+				if err := s.SetDefaultsStruct(copyVal); err != nil {
 					return err
 				}
 				cont.SetMapIndex(key, copyVal)

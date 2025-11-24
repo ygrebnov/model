@@ -20,8 +20,8 @@ type outerDef struct {
 	PInt   *int
 }
 
-func newTypeBinding[T any](obj *T) *TypeBinding {
-	return &TypeBinding{
+func newService[T any](obj *T) *Service {
+	return &Service{
 		reflectType: reflect.TypeOf(obj),
 	}
 }
@@ -30,7 +30,7 @@ func TestApplyDefaultTag(t *testing.T) {
 	tests := []struct {
 		name   string
 		prep   func() (obj *outerDef, fv reflect.Value)
-		act    func(*TypeBinding, reflect.Value) error
+		act    func(*Service, reflect.Value) error
 		verify func(t *testing.T, obj *outerDef)
 	}{
 		{
@@ -41,7 +41,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				fv := rv.FieldByName("Inner")
 				return obj, fv
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "dive", "Inner")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -58,7 +58,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				fv := rv.FieldByName("PInner")
 				return obj, fv
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "dive", "PInner")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -74,7 +74,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "dive", "N")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -90,7 +90,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("S")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "alloc", "S")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -106,7 +106,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("M")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "alloc", "M")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -122,7 +122,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("PInt")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "7", "PInt")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -138,7 +138,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "9", "N")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -154,7 +154,7 @@ func TestApplyDefaultTag(t *testing.T) {
 				rv := reflect.ValueOf(obj).Elem()
 				return obj, rv.FieldByName("N")
 			},
-			act: func(tb *TypeBinding, fv reflect.Value) error {
+			act: func(tb *Service, fv reflect.Value) error {
 				return tb.applyDefaultTag(fv, "9", "N")
 			},
 			verify: func(t *testing.T, obj *outerDef) {
@@ -168,7 +168,7 @@ func TestApplyDefaultTag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			obj, fv := tc.prep()
-			tb := newTypeBinding(obj)
+			tb := newService(obj)
 			if err := tc.act(tb, fv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -299,7 +299,7 @@ func TestApplyDefaultElemTag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			obj, fv := tc.prep()
-			tb := newTypeBinding(obj)
+			tb := newService(obj)
 			if err := tb.applyDefaultElemTag(fv, tagDive); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

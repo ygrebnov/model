@@ -8,14 +8,14 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
-func (tb *TypeBinding) AddRule(r validation.Rule) error {
-	return tb.rulesRegistry.Add(r)
+func (s *Service) AddRule(r validation.Rule) error {
+	return s.rulesRegistry.Add(r)
 }
 
 // ValidateStruct walks a struct value and applies rules on each field according to its `validate` tag.
 // Nested structs and pointers to structs are traversed recursively. The `path` argument tracks the
 // dotted field path for clearer error messages.
-func (tb *TypeBinding) ValidateStruct(
+func (s *Service) ValidateStruct(
 	ctx context.Context,
 	rv reflect.Value,
 	path string,
@@ -42,31 +42,31 @@ func (tb *TypeBinding) ValidateStruct(
 
 		// Recurse into pointers to structs
 		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
-			if err := tb.ValidateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
+			if err := s.ValidateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
 				return err
 			}
 		}
 
 		// Recurse into embedded/inline structs
 		if fv.Kind() == reflect.Struct {
-			if err := tb.ValidateStruct(ctx, fv, fpath, ve); err != nil {
+			if err := s.ValidateStruct(ctx, fv, fpath, ve); err != nil {
 				return err
 			}
 		}
 
 		// Process `validate` tag
 		if rawTag := field.Tag.Get(tagValidate); rawTag != "" && rawTag != "-" {
-			rules, exists := tb.rulesMapping.Get(typ, i, tagValidate)
+			rules, exists := s.rulesMapping.Get(typ, i, tagValidate)
 			if !exists {
 				rules = validation.ParseTag(rawTag)
-				tb.rulesMapping.Add(typ, i, tagValidate, rules)
+				s.rulesMapping.Add(typ, i, tagValidate, rules)
 			}
 
 			for _, r := range rules {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if err := tb.applyRule(r.Name, fv, r.Params...); err != nil {
+				if err := s.applyRule(r.Name, fv, r.Params...); err != nil {
 					ve.Add(validation.FieldError{Path: fpath, Rule: r.Name, Params: r.Params, Err: err})
 				}
 			}
@@ -74,13 +74,13 @@ func (tb *TypeBinding) ValidateStruct(
 
 		// Process `validateElem` tag for slices, arrays, and maps
 		if elemRaw := field.Tag.Get(tagValidateElem); elemRaw != "" && elemRaw != "-" {
-			elemRules, exists := tb.rulesMapping.Get(typ, i, tagValidateElem)
+			elemRules, exists := s.rulesMapping.Get(typ, i, tagValidateElem)
 			if !exists {
 				elemRules = validation.ParseTag(elemRaw)
-				tb.rulesMapping.Add(typ, i, tagValidateElem, elemRules)
+				s.rulesMapping.Add(typ, i, tagValidateElem, elemRules)
 			}
 
-			if err := tb.validateElements(ctx, fv, fpath, elemRules, ve); err != nil {
+			if err := s.validateElements(ctx, fv, fpath, elemRules, ve); err != nil {
 				return err
 
 			}
@@ -92,7 +92,7 @@ func (tb *TypeBinding) ValidateStruct(
 
 // validateElements applies validation rules to elements of a slice, array, or map
 // using pre-parsed rules (e.g., retrieved from the cache).
-func (tb *TypeBinding) validateElements(
+func (s *Service) validateElements(
 	ctx context.Context,
 	fv reflect.Value,
 	fpath string,
@@ -120,7 +120,7 @@ func (tb *TypeBinding) validateElements(
 			}
 			elem := cont.Index(i)
 			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
-			if err := tb.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve); err != nil {
+			if err := s.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve); err != nil {
 				return err
 			}
 		}
@@ -131,7 +131,7 @@ func (tb *TypeBinding) validateElements(
 			}
 			elem := cont.MapIndex(key)
 			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-			if err := tb.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve); err != nil {
+			if err := s.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve); err != nil {
 				return err
 			}
 		}
@@ -140,7 +140,7 @@ func (tb *TypeBinding) validateElements(
 }
 
 // validateSingleElement handles validation for a single item from a collection.
-func (tb *TypeBinding) validateSingleElement(
+func (s *Service) validateSingleElement(
 	ctx context.Context,
 	elem reflect.Value,
 	path string,
@@ -157,7 +157,7 @@ func (tb *TypeBinding) validateSingleElement(
 			dv = dv.Elem()
 		}
 		if dv.Kind() == reflect.Struct {
-			return tb.ValidateStruct(ctx, dv, path, ve)
+			return s.ValidateStruct(ctx, dv, path, ve)
 		}
 		ve.Add(
 			validation.FieldError{
@@ -173,7 +173,7 @@ func (tb *TypeBinding) validateSingleElement(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := tb.applyRule(r.Name, elem, r.Params...); err != nil {
+		if err := s.applyRule(r.Name, elem, r.Params...); err != nil {
 			ve.Add(validation.FieldError{Path: path, Rule: r.Name, Params: r.Params, Err: err})
 		}
 	}
@@ -183,8 +183,8 @@ func (tb *TypeBinding) validateSingleElement(
 // applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
 // passing any additional string parameters.
 // If the rule is not found or fails, an error is returned.
-func (tb *TypeBinding) applyRule(name string, v reflect.Value, params ...string) error {
-	r, err := tb.rulesRegistry.Get(name, v)
+func (s *Service) applyRule(name string, v reflect.Value, params ...string) error {
+	r, err := s.rulesRegistry.Get(name, v)
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,7 @@ type Model[TObject any] struct {
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 	obj                *TObject
-	binding            typeBinding
+	binding            service
 	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
@@ -93,7 +93,7 @@ func WithValidation[TObject any](ctx context.Context) Option[TObject] {
 //
 // All rules must be of the same field type (e.g., string, int).
 //
-// See the Rule type and NewRule function for details on creating rules.
+// See the validation.Rule type and validation.NewRule function for details on creating rules.
 func WithRules[TObject any](rules ...validation.Rule) Option[TObject] {
 	return func(m *Model[TObject]) error {
 		return m.RegisterRules(rules...)
@@ -160,7 +160,7 @@ func (m *Model[TObject]) applyDefaults() error {
 	return m.binding.SetDefaultsStruct(rv)
 }
 
-// ensureBinding initializes the model's typeBinding, rulesRegistry, and rulesMapping lazily.
+// ensureBinding initializes the model's service, rulesRegistry, and rulesMapping lazily.
 func (m *Model[TObject]) ensureBinding() error {
 	if m.binding != nil {
 		return nil
@@ -171,9 +171,9 @@ func (m *Model[TObject]) ensureBinding() error {
 		return err
 	}
 	typ := rv.Type()
-	reg := validation.NewRegistry()
-	mapping := validation.NewMapping()
-	tb, err := core.NewTypeBinding(typ, reg, mapping)
+	reg := validation.NewRulesRegistry()
+	mapping := validation.NewRulesMapping()
+	tb, err := core.NewService(typ, reg, mapping)
 	if err != nil {
 		return err
 	}
@@ -225,7 +225,7 @@ func (m *Model[TObject]) validate(ctx context.Context) (err error) {
 		return err
 	}
 	ve := &validation.Error{}
-	// Delegate traversal to typeBinding to keep logic centralized.
+	// Delegate traversal to service to keep logic centralized.
 	if err := m.binding.ValidateStruct(ctx, rv, "", ve); err != nil {
 		return err
 	}

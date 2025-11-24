@@ -1,7 +1,6 @@
 package validation
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
@@ -9,18 +8,14 @@ import (
 	"github.com/ygrebnov/model/errors"
 )
 
-var (
-	ErrRuleTypeMismatch = fmt.Errorf("rule type mismatch")
-	ErrInvalidRule      = fmt.Errorf("rule must have non-empty Name and non-nil Fn")
-)
-
 type Rule interface {
 	GetName() string
-	GetFieldTypeName() string
-	GetFieldType() reflect.Type
 	GetValidationFn() func(v reflect.Value, params ...string) error
-	IsOfType(t reflect.Type) bool
-	IsAssignableTo(t reflect.Type) bool
+
+	getFieldTypeName() string
+	getFieldType() reflect.Type
+	isOfType(t reflect.Type) bool
+	isAssignableTo(t reflect.Type) bool
 }
 
 // rule defines a named validation function for a specific field type.
@@ -32,7 +27,7 @@ type rule struct {
 
 func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
 	if name == "" || fn == nil {
-		return nil, ErrInvalidRule
+		return nil, errors.ErrInvalidRule
 	}
 
 	// Capture the static type of FieldType even when FieldType is an interface.
@@ -50,7 +45,7 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 					// As a fallback for interface FieldType, use Implements for clarity.
 					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
 						return errorc.With(
-							ErrRuleTypeMismatch,
+							errors.ErrRuleTypeMismatch,
 							errorc.String(errors.ErrorFieldValueType, v.Type().String()),
 							errorc.String(errors.ErrorFieldFieldType, fieldType.String()),
 						)
@@ -67,14 +62,14 @@ func (r *rule) GetName() string {
 	return r.name
 }
 
-func (r *rule) GetFieldTypeName() string {
+func (r *rule) getFieldTypeName() string {
 	if r.fieldType == nil {
 		return "" // defensive, cannot happen due to constructor check
 	}
 	return r.fieldType.String()
 }
 
-func (r *rule) GetFieldType() reflect.Type {
+func (r *rule) getFieldType() reflect.Type {
 	return r.fieldType
 }
 
@@ -82,11 +77,11 @@ func (r *rule) GetValidationFn() func(v reflect.Value, params ...string) error {
 	return r.fn
 }
 
-func (r *rule) IsOfType(t reflect.Type) bool {
+func (r *rule) isOfType(t reflect.Type) bool {
 	return r.fieldType == t
 }
 
-func (r *rule) IsAssignableTo(t reflect.Type) bool {
+func (r *rule) isAssignableTo(t reflect.Type) bool {
 	if r.fieldType == nil {
 		return false // defensive, cannot happen due to constructor check
 	}

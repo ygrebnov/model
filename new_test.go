@@ -199,7 +199,7 @@ func TestNew(t *testing.T) {
 			t.Fatalf("NewRule error: %v", err)
 		}
 		// Build a lightweight registry and call the rule directly to verify AssignableTo behavior.
-		reg := validation.NewRegistry()
+		reg := validation.NewRulesRegistry()
 		if err = reg.Add(iface); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}

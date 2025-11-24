@@ -11,24 +11,24 @@ import (
 	"github.com/ygrebnov/model/errors"
 )
 
-type Registry interface {
+type RulesRegistry interface {
 	Add(r Rule) error
 	Get(name string, v reflect.Value) (Rule, error)
 }
 
-// registry is a registry of validation rules.
-type registry struct {
+// rulesRegistry is a registry of validation rules.
+type rulesRegistry struct {
 	mu    sync.RWMutex
 	rules map[string][]Rule // rule Name -> overloads by type
 }
 
-func NewRegistry() Registry {
-	return &registry{
+func NewRulesRegistry() RulesRegistry {
+	return &rulesRegistry{
 		rules: make(map[string][]Rule),
 	}
 }
 
-func (r *registry) Add(rule Rule) error {
+func (r *rulesRegistry) Add(rule Rule) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -41,11 +41,11 @@ func (r *registry) Add(rule Rule) error {
 	if exists {
 		// Prevent duplicate overloads for the same field type.
 		for _, er := range existing {
-			if er.IsOfType(rule.GetFieldType()) {
+			if er.isOfType(rule.getFieldType()) {
 				return errorc.With(
 					errors.ErrDuplicateOverloadRule,
 					errorc.String(errors.ErrorFieldRuleName, name),
-					errorc.String(errors.ErrorFieldFieldType, rule.GetFieldTypeName()),
+					errorc.String(errors.ErrorFieldFieldType, rule.getFieldTypeName()),
 				)
 			}
 		}
@@ -62,7 +62,7 @@ func (r *registry) Add(rule Rule) error {
 //  3. Otherwise, if no matches, fetch a built-in rule if available.
 //  4. If no matches, return a descriptive error listing available overload types.
 //  5. If multiple exact matches (shouldn't happen), return an ambiguity error.
-func (r *registry) Get(name string, v reflect.Value) (Rule, error) {
+func (r *rulesRegistry) Get(name string, v reflect.Value) (Rule, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -79,14 +79,14 @@ func (r *registry) Get(name string, v reflect.Value) (Rule, error) {
 		assigns []Rule
 	)
 	for _, rule := range rules {
-		if rule.GetFieldType() == nil || rule.GetValidationFn() == nil {
+		if rule.getFieldType() == nil || rule.GetValidationFn() == nil {
 			continue // defensive, should not happen due to checks in NewRule
 		}
-		if rule.IsOfType(valueType) {
+		if rule.isOfType(valueType) {
 			exacts = append(exacts, rule)
 			continue
 		}
-		if rule.IsAssignableTo(valueType) {
+		if rule.isAssignableTo(valueType) {
 			assigns = append(assigns, rule)
 		}
 	}
@@ -111,7 +111,7 @@ func (r *registry) Get(name string, v reflect.Value) (Rule, error) {
 		}
 
 		if len(rules) == 0 {
-			// No rules by the given Name neither in registry no from in built-ins.
+			// No rules by the given Name neither in rulesRegistry no from in built-ins.
 			return nil,
 				errorc.With(errors.ErrRuleNotFound, errorc.String(errors.ErrorFieldRuleName, name))
 		}
@@ -130,7 +130,7 @@ func (r *registry) Get(name string, v reflect.Value) (Rule, error) {
 func getFieldTypesNames(rules []Rule) []string {
 	var names []string
 	for _, rule := range rules {
-		fieldTypeName := rule.GetFieldTypeName()
+		fieldTypeName := rule.getFieldTypeName()
 		if fieldTypeName != "" { // defensive, cannot be empty due to checks in NewRule
 			names = append(names, fieldTypeName)
 		}

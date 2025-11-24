@@ -9,22 +9,20 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
-// Binding is a reusable, precompiled view for a specific struct type T.
-// It reuses the existing tag parsing, defaulting, and validation logic of
-// Model without requiring a Model instance per object.
+// Binding provides defaulting and validation capabilities for type T.
 type Binding[T any] struct {
-	// tb holds the type-level metadata for T.
-	tb typeBinding
+	// service is the underlying core service for type T.
+	service service
 }
 
-type typeBinding interface {
+type service interface {
 	SetDefaultsStruct(v reflect.Value) error
 	AddRule(r validation.Rule) error
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
 
-func newTypeBinding(typ reflect.Type, rr validation.Registry, rm validation.Mapping) (typeBinding, error) {
-	return core.NewTypeBinding(typ, rr, rm)
+func newService(typ reflect.Type, rr validation.RulesRegistry, rm validation.RulesMapping) (service, error) {
+	return core.NewService(typ, rr, rm)
 }
 
 // NewBinding constructs a Binding for the type parameter T using the default
@@ -32,20 +30,20 @@ func newTypeBinding(typ reflect.Type, rr validation.Registry, rm validation.Mapp
 func NewBinding[T any]() (*Binding[T], error) {
 	// Obtain the reflect.Type for T. The zero value of *T is never dereferenced.
 	var zero *T
-	typ := reflect.TypeOf(zero).Elem()
-	if typ.Kind() != reflect.Struct {
+	t := reflect.TypeOf(zero).Elem()
+	if t.Kind() != reflect.Struct {
 		// Mirror New's constraint that only struct types are supported.
 		return nil, errors.ErrNotStructPtr
 	}
 
-	rulesRegistry := validation.NewRegistry()
-	rulesMapping := validation.NewMapping()
+	rulesRegistry := validation.NewRulesRegistry()
+	rulesMapping := validation.NewRulesMapping()
 
-	tb, err := newTypeBinding(typ, rulesRegistry, rulesMapping)
+	s, err := newService(t, rulesRegistry, rulesMapping)
 	if err != nil {
 		return nil, err
 	}
-	return &Binding[T]{tb: tb}, nil
+	return &Binding[T]{service: s}, nil
 }
 
 // ApplyDefaults applies default values to zero fields of obj according to
@@ -62,7 +60,7 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	if elem.Kind() != reflect.Struct {
 		return errors.ErrNotStructPtr
 	}
-	return b.tb.SetDefaultsStruct(elem)
+	return b.service.SetDefaultsStruct(elem)
 }
 
 // Validate runs validation rules declared via `validate` / `validateElem`
@@ -85,7 +83,7 @@ func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 		return errors.ErrNotStructPtr
 	}
 	ve := &validation.Error{}
-	if err := b.tb.ValidateStruct(ctx, elem, "", ve); err != nil {
+	if err := b.service.ValidateStruct(ctx, elem, "", ve); err != nil {
 		return err
 	}
 	if ve.Empty() {
