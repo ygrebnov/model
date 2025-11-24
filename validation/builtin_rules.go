@@ -133,6 +133,48 @@ func getStrOneofRule() (Rule, error) {
 	})
 }
 
+// uuid rule: value must be a valid canonical UUID string (lower/upper hex, 8-4-4-4-12 format).
+func getStrUUIDRule() (Rule, error) {
+	return NewRule[string]("uuid", func(s string, _ ...string) error {
+		// Empty is invalid; caller can omit the rule if empty is allowed.
+		// Canonical form: 36 chars, 8-4-4-4-12 with hyphens, hex digits only.
+		if len(s) != 36 {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, strconv.Itoa(len(s))),
+			)
+		}
+		// Hyphen positions 8,13,18,23
+		h := map[int]struct{}{8: {}, 13: {}, 18: {}, 23: {}}
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if _, isHyphen := h[i]; isHyphen {
+				if c != '-' {
+					return errorc.With(
+						modelerrors.ErrRuleConstraintViolated,
+						errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+						errorc.String(modelerrors.ErrorFieldRuleParamName, "format"),
+						errorc.String(modelerrors.ErrorFieldRuleParamValue, "expected hyphens at 8,13,18,23"),
+					)
+				}
+				continue
+			}
+			// hex digit?
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return errorc.With(
+					modelerrors.ErrRuleConstraintViolated,
+					errorc.String(modelerrors.ErrorFieldRuleName, "uuid"),
+					errorc.String(modelerrors.ErrorFieldRuleParamName, "hex"),
+					errorc.String(modelerrors.ErrorFieldRuleParamValue, "non-hex character"),
+				)
+			}
+		}
+		return nil
+	})
+}
+
 // int rules
 // positive: n must be > 0
 func getIntPositiveRule() (Rule, error) {
@@ -319,7 +361,8 @@ func ensureBuiltIns() {
 		strMin, _ := getStrMinRule()
 		strEmail, _ := getStrEmailRule()
 		strOneof, _ := getStrOneofRule()
-		builtinStringRules = []Rule{strMin, strEmail, strOneof}
+		strUUID, _ := getStrUUIDRule()
+		builtinStringRules = []Rule{strMin, strEmail, strOneof, strUUID}
 
 		// int rules
 		positiveInt, _ := getIntPositiveRule()

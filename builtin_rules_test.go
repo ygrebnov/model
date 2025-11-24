@@ -474,3 +474,82 @@ func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
 		t.Fatalf("WithValidation should not error for valid builtins, got: %v", err)
 	}
 }
+
+func TestBuiltinStringEmailAndUUID(t *testing.T) {
+	type emailUUID struct {
+		Email string `validate:"email"`
+		ID    string `validate:"uuid"`
+	}
+
+	tests := []struct {
+		name      string
+		obj       emailUUID
+		wantError bool
+		checkErr  func(t *testing.T, err error)
+	}{
+		{
+			name: "valid email and uuid pass",
+			obj: emailUUID{
+				Email: "user@example.com",
+				ID:    "123e4567-e89b-12d3-a456-426614174000",
+			},
+		},
+		{
+			name: "invalid email fails",
+			obj: emailUUID{
+				Email: "not-an-email",
+				ID:    "123e4567-e89b-12d3-a456-426614174000",
+			},
+			wantError: true,
+			checkErr: func(t *testing.T, err error) {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				// Expect constraint violation with rule name email.
+				if !errors.Is(err, modelerrors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, got %v", err)
+				}
+				msg := err.Error()
+				if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": email") {
+					t.Fatalf("expected email rule metadata in error, got %q", msg)
+				}
+			},
+		},
+		{
+			name: "invalid uuid fails",
+			obj: emailUUID{
+				Email: "user@example.com",
+				ID:    "not-a-uuid",
+			},
+			wantError: true,
+			checkErr: func(t *testing.T, err error) {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !errors.Is(err, modelerrors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, got %v", err)
+				}
+				msg := err.Error()
+				if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": uuid") {
+					t.Fatalf("expected uuid rule metadata in error, got %q", msg)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := tt.obj
+			_, err := New(&obj, WithValidation[emailUUID](context.Background()))
+			if tt.wantError && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tt.wantError && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.checkErr != nil {
+				tt.checkErr(t, err)
+			}
+		})
+	}
+}
