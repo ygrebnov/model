@@ -13,11 +13,14 @@ import (
 )
 
 type Model[TObject any] struct {
+	// once ensures defaults are applied to this model's object at most once.
+	// Binding[T] and the internal Service are reusable per-type and remain stateless
+	// with respect to individual object instances.
 	once               sync.Once
 	applyDefaultsOnNew bool
 	validateOnNew      bool
 	obj                *TObject
-	binding            service
+	service            service
 	ctx                context.Context // used only for validation during New when WithValidation(ctx) is provided
 }
 
@@ -157,12 +160,12 @@ func (m *Model[TObject]) applyDefaults() error {
 	if err = m.ensureBinding(); err != nil {
 		return err
 	}
-	return m.binding.SetDefaultsStruct(rv)
+	return m.service.SetDefaultsStruct(rv)
 }
 
 // ensureBinding initializes the model's service, rulesRegistry, and rulesMapping lazily.
 func (m *Model[TObject]) ensureBinding() error {
-	if m.binding != nil {
+	if m.service != nil {
 		return nil
 	}
 	// Derive the concrete struct type from the bound object.
@@ -177,7 +180,7 @@ func (m *Model[TObject]) ensureBinding() error {
 	if err != nil {
 		return err
 	}
-	m.binding = tb
+	m.service = tb
 	return nil
 }
 
@@ -190,7 +193,7 @@ func (m *Model[TObject]) RegisterRules(rules ...validation.Rule) error {
 		return err
 	}
 	for _, r := range rules {
-		if err := m.binding.AddRule(r); err != nil {
+		if err := m.service.AddRule(r); err != nil {
 			return err
 		}
 	}
@@ -226,7 +229,7 @@ func (m *Model[TObject]) validate(ctx context.Context) (err error) {
 	}
 	ve := &validation.Error{}
 	// Delegate traversal to service to keep logic centralized.
-	if err := m.binding.ValidateStruct(ctx, rv, "", ve); err != nil {
+	if err := m.service.ValidateStruct(ctx, rv, "", ve); err != nil {
 		return err
 	}
 	if ve.Empty() {

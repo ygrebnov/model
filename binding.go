@@ -48,6 +48,8 @@ func NewBinding[T any]() (*Binding[T], error) {
 
 // ApplyDefaults applies default values to zero fields of obj according to
 // its `default` / `defaultElem` tags. It is safe to call multiple times.
+// ApplyDefaults applies defaults each time it is called.
+// It is idempotent, but not once-guarded; callers control how often to invoke it.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	if obj == nil {
 		return errors.ErrNilObject
@@ -100,4 +102,17 @@ func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 		return err
 	}
 	return b.Validate(ctx, obj)
+}
+
+// RegisterRules registers one or many named custom validation rules of the same field type
+// into the registry.
+//
+// See the validation.Rule type and validation.NewRule function for details on creating rules.
+func (b *Binding[T]) RegisterRules(rules ...validation.Rule) error {
+	for _, r := range rules {
+		if err := b.service.AddRule(r); err != nil {
+			return err
+		}
+	}
+	return nil
 }

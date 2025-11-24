@@ -211,7 +211,7 @@ func TestModel_validateStruct(t *testing.T) {
 		ve := &validation.Error{}
 		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		err = m.binding.ValidateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
+		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
 		if err != nil {
 			t.Fatalf("ValidateStruct error: %v", err)
 		}
@@ -451,7 +451,7 @@ func TestModel_validateStruct(t *testing.T) {
 		ve := &validation.Error{}
 		m.obj = &obj
 		rv := reflect.ValueOf(&obj).Elem()
-		err = m.binding.ValidateStruct(context.Background(), rv, "Root", ve)
+		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve)
 		if err != nil {
 			t.Fatalf("ValidateStruct error: %v", err)
 		}
