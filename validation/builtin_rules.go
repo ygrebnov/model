@@ -65,6 +65,41 @@ func getStrMinRule() (Rule, error) {
 	})
 }
 
+// max(length): requires one integer parameter. If missing -> error. If <0 -> noop.
+func getStrMaxRule() (Rule, error) {
+	return NewRule[string]("max", func(s string, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 0)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if v < 0 { // noop: negative max is ignored
+			return nil
+		}
+		if int(v) < len(s) { // length too large
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "length"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
 // email rule: deliberately simple; not RFC 5322 exhaustive. Provides lightweight validation.
 func getStrEmailRule() (Rule, error) {
 	return NewRule[string]("email", func(s string, _ ...string) error {
@@ -176,13 +211,64 @@ func getStrUUIDRule() (Rule, error) {
 }
 
 // int rules
-// positive: n must be > 0
-func getIntPositiveRule() (Rule, error) {
-	return NewRule[int]("positive", func(n int, _ ...string) error {
-		if n <= 0 {
+// min(value): requires one integer parameter. Field value must be >= param.
+func getIntMinRule() (Rule, error) {
+	return NewRule[int]("min", func(n int, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 0)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n < int(v) {
 			return errorc.With(
 				modelerrors.ErrRuleConstraintViolated,
-				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getIntMaxRule() (Rule, error) {
+	return NewRule[int]("max", func(n int, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 0)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n > int(v) {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
 			)
 		}
 		return nil
@@ -237,12 +323,64 @@ func getIntOneofRule() (Rule, error) {
 }
 
 // int64 rules
-func getInt64PositiveRule() (Rule, error) {
-	return NewRule[int64]("positive", func(n int64, _ ...string) error {
-		if n <= 0 {
+// min(value): requires one integer parameter. Field value must be >= param.
+func getInt64MinRule() (Rule, error) {
+	return NewRule[int64]("min", func(n int64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n < v {
 			return errorc.With(
 				modelerrors.ErrRuleConstraintViolated,
-				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getInt64MaxRule() (Rule, error) {
+	return NewRule[int64]("max", func(n int64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n > v {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
 			)
 		}
 		return nil
@@ -295,12 +433,64 @@ func getInt64OneofRule() (Rule, error) {
 }
 
 // float64 rules
-func getFloat64PositiveRule() (Rule, error) {
-	return NewRule[float64]("positive", func(n float64, _ ...string) error {
-		if !(n > 0) {
+// min(value): requires one integer parameter. Field value must be >= param.
+func getFloat64MinRule() (Rule, error) {
+	return NewRule[float64]("min", func(n float64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n < v {
 			return errorc.With(
 				modelerrors.ErrRuleConstraintViolated,
-				errorc.String(modelerrors.ErrorFieldRuleName, "positive"),
+				errorc.String(modelerrors.ErrorFieldRuleName, "min"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+			)
+		}
+		return nil
+	})
+}
+
+// max(value): requires one integer parameter. Field value must be <= param.
+func getFloat64MaxRule() (Rule, error) {
+	return NewRule[float64]("max", func(n float64, params ...string) error {
+		if len(params) == 0 {
+			return errorc.With(
+				modelerrors.ErrRuleMissingParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+			)
+		}
+		raw := strings.TrimSpace(params[0])
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return errorc.With(
+				modelerrors.ErrRuleInvalidParameter,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
+				errorc.Error(modelerrors.ErrorFieldCause, err),
+			)
+		}
+		if n > v {
+			return errorc.With(
+				modelerrors.ErrRuleConstraintViolated,
+				errorc.String(modelerrors.ErrorFieldRuleName, "max"),
+				errorc.String(modelerrors.ErrorFieldRuleParamName, "value"),
+				errorc.String(modelerrors.ErrorFieldRuleParamValue, raw),
 			)
 		}
 		return nil
@@ -359,28 +549,32 @@ func ensureBuiltIns() {
 
 		// string rules
 		strMin, _ := getStrMinRule()
+		strMax, _ := getStrMaxRule()
 		strEmail, _ := getStrEmailRule()
 		strOneof, _ := getStrOneofRule()
 		strUUID, _ := getStrUUIDRule()
-		builtinStringRules = []Rule{strMin, strEmail, strOneof, strUUID}
+		builtinStringRules = []Rule{strMin, strMax, strEmail, strOneof, strUUID}
 
 		// int rules
-		positiveInt, _ := getIntPositiveRule()
+		minInt, _ := getIntMinRule()
+		maxInt, _ := getIntMaxRule()
 		nonzeroInt, _ := getIntNonzeroRule()
 		oneofInt, _ := getIntOneofRule()
-		builtinIntRules = []Rule{positiveInt, nonzeroInt, oneofInt}
+		builtinIntRules = []Rule{minInt, maxInt, nonzeroInt, oneofInt}
 
 		// int64 rules
-		positiveInt64, _ := getInt64PositiveRule()
+		minInt64, _ := getInt64MinRule()
+		maxInt64, _ := getInt64MaxRule()
 		nonzeroInt64, _ := getInt64NonzeroRule()
 		oneofInt64, _ := getInt64OneofRule()
-		builtinInt64Rules = []Rule{positiveInt64, nonzeroInt64, oneofInt64}
+		builtinInt64Rules = []Rule{minInt64, maxInt64, nonzeroInt64, oneofInt64}
 
 		// float64 rules
-		positiveFloat64, _ := getFloat64PositiveRule()
+		minFloat64, _ := getFloat64MinRule()
+		maxFloat64, _ := getFloat64MaxRule()
 		nonzeroFloat64, _ := getFloat64NonzeroRule()
 		oneofFloat64, _ := getFloat64OneofRule()
-		builtinFloat64Rules = []Rule{positiveFloat64, nonzeroFloat64, oneofFloat64}
+		builtinFloat64Rules = []Rule{minFloat64, maxFloat64, nonzeroFloat64, oneofFloat64}
 
 		// fill map
 		register := func(rs []Rule) {

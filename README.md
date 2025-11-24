@@ -258,8 +258,17 @@ Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal 
 
 Built-in rules are always implicitly available (you do **not** need to register or import anything for them):
 
-- String: `min()`, `oneof(...)`, `email`
-- Int / Int64 / Float64: `positive`, `nonzero`, `oneof(...)`
+- String:
+  - `min(N)` – length must be **>= N** (N ≥ 1). If N < 1, the rule is a no-op.
+  - `max(N)` – length must be **<= N** (N ≥ 0). If N < 0, the rule is a no-op.
+  - `oneof(v1,v2,...)` – value must be exactly one of the listed strings.
+  - `email` – lightweight email check (single `@`, non-empty local/domain, domain contains `.`, no whitespace).
+  - `uuid` – canonical UUID string (`8-4-4-4-12` hex format with hyphens).
+- Int / Int64 / Float64:
+  - `min(V)` – value must be **>= V**.
+  - `max(V)` – value must be **<= V**.
+  - `nonzero` – value must not be zero.
+  - `oneof(v1,v2,...)` – value must be equal to one of the listed values.
 
 Overriding: if you register a custom rule with the same name and exact type **before** validation runs, your rule is chosen (duplicate exact registrations for the same name & type are rejected). Interface-based rules still participate via assignable matching when no exact rule exists.
 

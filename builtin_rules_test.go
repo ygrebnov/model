@@ -37,19 +37,22 @@ func assertRuleErrorHas(t *testing.T, err error, wantSentinel error, wantRule st
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 
 	type strOK struct {
-		S string `validate:"min(1)"`
+		S string `validate:"min(1),max(10)"`
 	}
 	type intOK struct {
-		P  int `validate:"positive"`
-		NZ int `validate:"nonzero"`
+		NMin int `validate:"min(1)"`
+		NMax int `validate:"max(10)"`
+		NZ   int `validate:"nonzero"`
 	}
 	type int64OK struct {
-		P  int64 `validate:"positive"`
-		NZ int64 `validate:"nonzero"`
+		NMin int64 `validate:"min(1)"`
+		NMax int64 `validate:"max(10)"`
+		NZ   int64 `validate:"nonzero"`
 	}
 	type float64OK struct {
-		P  float64 `validate:"positive"`
-		NZ float64 `validate:"nonzero"`
+		NMin float64 `validate:"min(0.5)"`
+		NMax float64 `validate:"max(2.5)"`
+		NZ   float64 `validate:"nonzero"`
 	}
 
 	// --- oneof targets ---
@@ -72,13 +75,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 	type intOneOfNoParams struct {
 		N int `validate:"oneof()"`
 	}
-
-	type intPositiveOnly struct {
-		P int `validate:"positive"`
-	}
-	type intNonZeroOnly struct {
-		NZ int `validate:"nonzero"`
-	}
 	type intOneOfBadParam struct {
 		N int `validate:"oneof(1,a,3)"`
 	}
@@ -91,12 +87,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 	}
 	type int64OneOfNoParams struct {
 		N int64 `validate:"oneof()"`
-	}
-	type int64PositiveOnly struct {
-		P int64 `validate:"positive"`
-	}
-	type int64NonZeroOnly struct {
-		NZ int64 `validate:"nonzero"`
 	}
 	type int64OneOfBadParam struct {
 		N int64 `validate:"oneof(10,a,30)"`
@@ -111,12 +101,6 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 	type float64OneOfNoParams struct {
 		F float64 `validate:"oneof()"`
 	}
-	type float64PositiveOnly struct {
-		P float64 `validate:"positive"`
-	}
-	type float64NonZeroOnly struct {
-		NZ float64 `validate:"nonzero"`
-	}
 	type float64OneOfBadParam struct {
 		F float64 `validate:"oneof(0.5,a,2.5)"`
 	}
@@ -128,13 +112,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		checkErr  func(t *testing.T, err error)
 	}{
 		{
-			name: "string min(1) passes",
+			name: "string min/max pass",
 			run: func(t *testing.T) error {
 				obj := strOK{S: "ok"}
-				_, err := New(
-					&obj,
-					WithValidation[strOK](context.Background()),
-				)
+				_, err := New(&obj, WithValidation[strOK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -142,14 +123,40 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 		},
 		{
-			name:      "string min(1) fails",
+			name:      "string max fails when too long",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := strOK{S: ""}
-				_, err := New(
-					&obj,
-					WithValidation[strOK](context.Background()),
-				)
+				obj := strOK{S: "this string is definitely too long"}
+				_, err := New(&obj, WithValidation[strOK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "length",
+					modelerrors.ErrorFieldRuleParamValue: "10",
+				})
+			},
+		},
+		{
+			name: "int min/max/nonzero pass",
+			run: func(t *testing.T) error {
+				obj := intOK{NMin: 5, NMax: 5, NZ: 1}
+				_, err := New(&obj, WithValidation[intOK](context.Background()))
+				if err != nil {
+					t.Fatalf("New returned error: %v", err)
+				}
+				return nil
+			},
+		},
+		{
+			name:      "int min fails",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := intOK{NMin: 0}
+				_, err := New(&obj, WithValidation[intOK](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
@@ -157,19 +164,34 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 			checkErr: func(t *testing.T, err error) {
 				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "length",
+					modelerrors.ErrorFieldRuleParamName:  "value",
 					modelerrors.ErrorFieldRuleParamValue: "1",
 				})
 			},
 		},
 		{
-			name: "int positive & nonzero pass",
+			name:      "int max fails",
+			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intOK{P: 1, NZ: 1}
-				_, err := New(
-					&obj,
-					WithValidation[intOK](context.Background()),
-				)
+				obj := intOK{NMax: 20}
+				_, err := New(&obj, WithValidation[intOK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "10",
+				})
+			},
+		},
+		{
+			name: "int64 min/max/nonzero pass",
+			run: func(t *testing.T) error {
+				obj := int64OK{NMin: 5, NMax: 5, NZ: 1}
+				_, err := New(&obj, WithValidation[int64OK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -177,13 +199,46 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 		},
 		{
-			name: "int64 positive & nonzero pass",
+			name:      "int64 min fails",
+			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64OK{P: 2, NZ: 3}
-				_, err := New(
-					&obj,
-					WithValidation[int64OK](context.Background()),
-				)
+				obj := int64OK{NMin: 0}
+				_, err := New(&obj, WithValidation[int64OK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "1",
+				})
+			},
+		},
+		{
+			name:      "int64 max fails",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := int64OK{NMax: 20}
+				_, err := New(&obj, WithValidation[int64OK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "10",
+				})
+			},
+		},
+		{
+			name: "float64 min/max/nonzero pass",
+			run: func(t *testing.T) error {
+				obj := float64OK{NMin: 1.5, NMax: 1.5, NZ: 2.3}
+				_, err := New(&obj, WithValidation[float64OK](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -191,17 +246,39 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 		},
 		{
-			name: "float64 positive & nonzero pass",
+			name:      "float64 min fails",
+			wantError: true,
 			run: func(t *testing.T) error {
-				obj := float64OK{P: 0.1, NZ: 2.3}
-				_, err := New(
-					&obj,
-					WithValidation[float64OK](context.Background()),
-				)
-				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+				obj := float64OK{NMin: 0.1}
+				_, err := New(&obj, WithValidation[float64OK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
 				}
-				return nil
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "0.5",
+				})
+			},
+		},
+		{
+			name:      "float64 max fails",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := float64OK{NMax: 3.0}
+				_, err := New(&obj, WithValidation[float64OK](context.Background()))
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return err
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
+					modelerrors.ErrorFieldRuleParamName:  "value",
+					modelerrors.ErrorFieldRuleParamValue: "2.5",
+				})
 			},
 		},
 
