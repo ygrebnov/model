@@ -4,25 +4,28 @@
 
 # model — defaults & validation for Go structs
 
-`model` is a tiny helper that binds a **Model** to your struct. It can:
+`model` is a tiny helper that binds a **Model** (and optionally a reusable **Binding**) to your structs. It can:
 
 - **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"`.
 - **Validate** fields using named rules from `validate:"…"` and `validateElem:"…"`.
 - Accumulate all issues into a single **ValidationError** (no fail-fast).
 - Recurse through nested structs, pointers, slices/arrays, and map values.
 
-It’s designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior).
+It’s designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). For reusable validation across many values of the same type, you can use `Binding[T]` as a shared engine for defaults and validation.
 
 ## Table of Contents
 - [Install](#install)
 - [Why use this?](#why-use-this)
 - [Quick start](#quick-start)
+- [Binding[T] – reusable defaults and validation](#bindingt--reusable-defaults-and-validation)
 - [Constructor: `New`](#constructor-new)
 - [Why no MustNew?](#why-no-mustnew)
 - [Functional options](#functional-options)
 - [Model methods](#model-methods)
 - [Struct tags (how it works)](#struct-tags-how-it-works)
 - [Built-in rules](#built-in-rules)
+- [Structured errors: errorc, sentinels, and ErrorField* keys](#structured-errors-errorc-sentinels-and-errorfield-keys)
+- [Overriding a builtin rule](#overriding-a-builtin-rule)
 - [Custom rules (with parameters)](#custom-rules-with-parameters)
 - [Error types](#error-types)
 - [Performance & benchmarks](#performance--benchmarks)
@@ -46,9 +49,10 @@ go get github.com/ygrebnov/model
 
 ## Why use this?
 
-- **Simple API**: one constructor and two main methods: `SetDefaults()` and `Validate(ctx)`.
+- **Simple API**: one constructor and two main methods on `Model[T]`: `SetDefaults()` and `Validate(ctx)`. For reusable engines, use `Binding[T]` to apply the same defaults/validation to many instances.
 - **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
 - **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
+- **Structured errors**: built-in rules and many internal errors use sentinel values plus structured key/value metadata (via `errorc`), making it easier to inspect and transform validation failures.
 
 ---
 
@@ -484,4 +488,3 @@ func main() {
 ```
 
 In this example, tag `validate:"min(3)"` for `Comment.Text` uses the overridden rule because it shares the same name and exact field type (`string`) as the builtin.
-````
