@@ -1,8 +1,4 @@
-github.com/ygrebnov/errorc v0.3.0 h1:QtaYoyYGMoPZTsbojjp6ar5hnobt60u0wcxY2DqPG40=
-github.com/ygrebnov/errorc v0.3.0/go.mod h1:jD0xEfIlM+EuFGU3z5DPRBL1l8zm3T+hYBh1L0t1UCg=
-github.com/ygrebnov/errorc v0.4.0 h1:LqR6g2XPR6N2794QnWZNUiaaa/eiVlAaCMdhDc7wm4w=
-github.com/ygrebnov/errorc v0.4.0/go.mod h1:jD0xEfIlM+EuFGU3z5DPRBL1l8zm3T+hYBh1L0t1UCg=
-github.com/ygrebnov/errorc v0.5.0 h1:uGwFIXycHKN/ro8qA10eaGKWOx0MuFNzM0Fo8jNKgHg=
-github.com/ygrebnov/errorc v0.5.0/go.mod h1:jD0xEfIlM+EuFGU3z5DPRBL1l8zm3T+hYBh1L0t1UCg=
-github.com/ygrebnov/errorc v0.5.1 h1:gD0jEGpA5Jmms3H8JH3XzVzsqh4tVPglMgF2niz9Xf8=
-github.com/ygrebnov/errorc v0.5.1/go.mod h1:jD0xEfIlM+EuFGU3z5DPRBL1l8zm3T+hYBh1L0t1UCg=
+github.com/ygrebnov/errorc v0.5.4 h1:D1b1q/qNZyBBQjpYw35eqbIA2olQWAZMqCrV5W4PHV8=
+github.com/ygrebnov/errorc v0.5.4/go.mod h1:AofhtU8alqz04CfwXVcszenoKmV5miX2VFoiEhq4mnI=
+github.com/ygrebnov/keys v0.1.0 h1:X5JVbAZMPkbc8PWuvbX8OQbO6ZvA26ElxkbB1b3hZbg=
+github.com/ygrebnov/keys v0.1.0/go.mod h1:4IfRPgv7tFSlToKzHtA9MPMwXP0+HRJ0Kk8XSrvhDvQ=
