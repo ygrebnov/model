@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ygrebnov/model/constants"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -123,7 +124,7 @@ func ExampleNew_withMultipleRules() {
 		fmt.Println("error creating positive rule:", err)
 		return
 	}
-	nonzero, err := validation.NewRule[int]("nonzero", func(n int, _ ...string) error {
+	nonzero, err := validation.NewRule[int](constants.RuleNonzero, func(n int, _ ...string) error {
 		if n == 0 {
 			return fmt.Errorf("must not be zero")
 		}
@@ -142,7 +143,8 @@ func ExampleNew_withMultipleRules() {
 	if err != nil {
 		var ve *validation.Error
 		if errors.As(err, &ve) {
-			fmt.Println("WithRules:", ve.Error())
+			fmt.Println("WithRules:")
+			fmt.Println(ve.Error())
 			return
 		}
 		fmt.Println("unexpected error:", err)
@@ -151,9 +153,9 @@ func ExampleNew_withMultipleRules() {
 	_ = m
 	fmt.Println("WithRules -> ok")
 
-	// Output: WithRules: validation failed:
-	//   - Field "Age": rule "positive": must be > 0
-	//   - Field "Age": rule "nonzero": must not be zero
+	// Output: WithRules:
+	// - Field "Age": rule "positive": must be > 0
+	// - Field "Age": rule "nonzero": must not be zero
 }
 
 // ExampleBinding demonstrates how to use Binding[T] as a reusable
@@ -184,11 +186,12 @@ func ExampleBinding() {
 	_ = b.ValidateWithDefaults(ctx, &p1) // p1 is valid
 	if err := b.ValidateWithDefaults(ctx, &p2); err != nil {
 		// In real code you would inspect *ValidationError here.
-		fmt.Println("validation error:", err.Error())
+		fmt.Println("validation error:")
+		fmt.Println(err.Error())
 	}
 
-	// Output: validation error: validation failed:
-	//   - Field "ID": rule "uuid": model: rule constraint violated, model.rule.name: uuid, model.rule.param_name: length, model.rule.param_value: 10
-	//   - Field "Email": rule "email": model: rule constraint violated, model.rule.name: email, model.rule.param_name: at_count, model.rule.param_value: 1
-	//   - Field "Retries": rule "max": model: rule constraint violated, model.rule.name: max, model.rule.param_name: value, model.rule.param_value: 5
+	// Output: validation error:
+	// - Field "ID": rule "uuid": constraint violated (length=10)
+	// - Field "Email": rule "email": constraint violated (at_count=1)
+	// - Field "Retries": rule "max": constraint violated (value=5)
 }

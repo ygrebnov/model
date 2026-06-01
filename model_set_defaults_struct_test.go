@@ -7,6 +7,7 @@ import (
 	"time"
 
 	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
 type defInner struct {
@@ -75,7 +76,7 @@ func assertSetDefaultStructFieldError(t *testing.T, err error, wantField string)
 	// The error message is expected to contain the field key and name, e.g.
 	// "model: cannot set default value, model.field.name: BadStruct".
 	// Instead of using strings.Contains in call sites, centralize this check here.
-	key := string(modelerrors.ErrorFieldFieldName) + ": " + wantField
+	key := string(keys.FieldName) + ": " + wantField
 	if !contains(msg, key) {
 		t.Fatalf("expected error message to contain field key %q, got: %q", key, msg)
 	}

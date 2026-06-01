@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/constants"
 	errorsPkg "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -70,7 +72,7 @@ func TestNew(t *testing.T) {
 		}
 		expectedError := errorc.With(
 			errorsPkg.ErrNotStructPtr,
-			errorc.String(errorsPkg.ErrorFieldObjectType, "int"),
+			errorc.String(keys.ObjectType, "int"),
 		)
 		if err.Error() != expectedError.Error() {
 			t.Fatalf("expected %q message, got %q", expectedError.Error(), err.Error())
@@ -126,7 +128,7 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}
-		nonzeroDur, err := validation.NewRule("nonzero", ruleNonZeroDur)
+		nonzeroDur, err := validation.NewRule(constants.RuleNonzero, ruleNonZeroDur)
 		if err != nil {
 			t.Fatalf("NewRule error: %v", err)
 		}

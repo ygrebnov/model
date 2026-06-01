@@ -9,6 +9,7 @@ import (
 
 	"github.com/ygrebnov/errorc"
 	"github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
 // SetDefaultsStruct walks the struct value and applies defaults according to `default` and `defaultElem` tags.
@@ -56,8 +57,8 @@ func (s *Service) applyDefaultTag(fv reflect.Value, tag, fieldName string) error
 		if err := setLiteralDefault(fv, tag); err != nil {
 			return errorc.With(
 				errors.ErrSetDefault,
-				errorc.String(errors.ErrorFieldFieldName, fieldName),
-				errorc.Error(errors.ErrorFieldCause, err),
+				errorc.String(keys.FieldName, fieldName),
+				errorc.Error(keys.Cause, err),
 			)
 		}
 		return nil
@@ -234,7 +235,7 @@ func setLiteralDefault(fv reflect.Value, lit string) error {
 	default:
 		return errorc.With(
 			errors.ErrDefaultLiteralUnsupportedKind,
-			errorc.String(errors.ErrorFieldDefaultLiteralKind, target.Kind().String()),
+			errorc.String(keys.DefaultLiteralKind, target.Kind().String()),
 		)
 	}
 	return nil

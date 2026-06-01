@@ -8,16 +8,20 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/constants"
 	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 	"github.com/ygrebnov/model/validation"
 )
+
+var errNonZeroDurFailed = errorc.New("nonZeroDur rule failed", errorc.WithNamespace(constants.Namespace))
 
 // --- helpers & sample rules used in tests ---
 func ruleNonZeroDur(d time.Duration, _ ...string) error {
 	if d == 0 {
 		return errorc.With(
-			modelerrors.ErrRuleNonZeroDurFailed,
-			errorc.String(modelerrors.ErrorFieldRuleName, "nonZeroDur"),
+			errNonZeroDurFailed,
+			errorc.String(keys.RuleName, "nonZeroDur"),
 		)
 	}
 	return nil
@@ -27,8 +31,8 @@ func ruleNonZeroDur(d time.Duration, _ ...string) error {
 func ruleMin1(s string, _ ...string) error {
 	if len(s) < 1 {
 		return errorc.With(
-			modelerrors.ErrRuleMin1Failed,
-			errorc.String(modelerrors.ErrorFieldRuleName, "min(1)"),
+			errorc.New("min(1) rule failed", errorc.WithNamespace(constants.Namespace)),
+			errorc.String(keys.RuleName, "min(1)"),
 		)
 	}
 	return nil
@@ -133,7 +137,7 @@ func TestModel_validate(t *testing.T) {
 				validationErr := m.validate(context.Background())
 				return m, validationErr
 			},
-			wantErr: "validation",
+			wantErr: `- Field "Name"`,
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *validation.Error
 				if !errors.As(err, &ve) {
@@ -156,21 +160,21 @@ func TestModel_validate(t *testing.T) {
 						t.Fatalf("expected ErrRuleConstraintViolated for Name, got %v", es[0].Err)
 					}
 					msg := es[0].Err.Error()
-					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": min") {
+					if !strings.Contains(msg, string(keys.RuleName)+": min") {
 						t.Errorf("expected builtin min rule name metadata for Name, got: %q", msg)
 					}
-					if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamName)+": length") ||
-						!strings.Contains(msg, string(modelerrors.ErrorFieldRuleParamValue)+": 1") {
+					if !strings.Contains(msg, string(keys.RuleParamName)+": length") ||
+						!strings.Contains(msg, string(keys.RuleParamValue)+": 1") {
 						t.Errorf("expected min length metadata for Name, got: %q", msg)
 					}
 				}
 				if es := by["Wait"]; len(es) == 0 {
 					t.Fatalf("expected error for Wait")
 				} else {
-					if !errors.Is(es[0].Err, modelerrors.ErrRuleNonZeroDurFailed) {
+					if !errors.Is(es[0].Err, errNonZeroDurFailed) {
 						t.Fatalf("expected ErrRuleNonZeroDurFailed for Wait, got %v", es[0].Err)
 					}
-					if msg := es[0].Err.Error(); !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": nonZeroDur") {
+					if msg := es[0].Err.Error(); !strings.Contains(msg, string(keys.RuleName)+": nonZeroDur") {
 						t.Errorf("expected rule name metadata for nonZeroDur in Wait error, got: %q", msg)
 					}
 				}

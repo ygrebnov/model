@@ -8,9 +8,11 @@ import (
 	"github.com/ygrebnov/errorc"
 	"github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/keys"
 	"github.com/ygrebnov/model/validation"
 )
 
+// Model binds a struct pointer to defaulting and validation behavior.
 type Model[TObject any] struct {
 	// once ensures defaults are applied to this model's object at most once.
 	// Binding[T] and the internal Service are reusable per-type and remain stateless
@@ -35,7 +37,7 @@ func New[TObject any](obj *TObject, opts ...Option[TObject]) (*Model[TObject], e
 	if elem.Kind() != reflect.Struct {
 		return nil, errorc.With(
 			errors.ErrNotStructPtr,
-			errorc.String(errors.ErrorFieldObjectType, elem.Kind().String()),
+			errorc.String(keys.ObjectType, elem.Kind().String()),
 		)
 	}
 
@@ -108,7 +110,7 @@ func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 	if m.obj == nil {
 		// defensive, cannot happen due to New() checks
 		return reflect.Value{},
-			errorc.With(errors.ErrNilObject, errorc.String(errors.ErrorFieldPhase, phase))
+			errorc.With(errors.ErrNilObject, errorc.String(keys.Phase, phase))
 	}
 	rv := reflect.ValueOf(m.obj)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
@@ -116,8 +118,8 @@ func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 		return reflect.Value{},
 			errorc.With(
 				errors.ErrNotStructPtr,
-				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(errors.ErrorFieldPhase, phase),
+				errorc.String(keys.ObjectType, rv.Kind().String()),
+				errorc.String(keys.Phase, phase),
 			)
 	}
 	rv = rv.Elem()
@@ -125,8 +127,8 @@ func (m *Model[TObject]) rootStructValue(phase string) (reflect.Value, error) {
 		return reflect.Value{},
 			errorc.With(
 				errors.ErrNotStructPtr,
-				errorc.String(errors.ErrorFieldObjectType, rv.Kind().String()),
-				errorc.String(errors.ErrorFieldPhase, phase),
+				errorc.String(keys.ObjectType, rv.Kind().String()),
+				errorc.String(keys.Phase, phase),
 			)
 	}
 	return rv, nil

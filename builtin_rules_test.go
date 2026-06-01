@@ -6,11 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ygrebnov/errorc"
+	keysLib "github.com/ygrebnov/keys"
+	"github.com/ygrebnov/model/constants"
 	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model/validation"
 )
 
-func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, kv map[errorc.Key]string) {
+func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, kv map[keysLib.Key]string) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected error, got nil")
@@ -18,19 +21,81 @@ func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, 
 	if !errors.Is(err, wantSentinel) {
 		t.Fatalf("expected sentinel %v, got %v", wantSentinel, err)
 	}
-	msg := err.Error()
-	if wantRule != "" {
-		needle := string(modelerrors.ErrorFieldRuleName) + ": " + wantRule
-		if !strings.Contains(msg, needle) {
-			t.Fatalf("expected rule name %q in error, got %q", wantRule, msg)
+
+	var ve *validation.Error
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *validation.Error, got %T: %v", err, err)
+	}
+
+	for _, field := range ve.Fields() {
+		for _, fe := range ve.ForField(field) {
+			if !errors.Is(fe.Err, wantSentinel) {
+				continue
+			}
+
+			msg := fe.Err.Error()
+			if wantRule != "" {
+				needle := string(keys.RuleName) + ": " + wantRule
+				if !strings.Contains(msg, needle) {
+					continue
+				}
+			}
+
+			matched := true
+			for k, v := range kv {
+				needle := string(k) + ": " + v
+				if !strings.Contains(msg, needle) {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return
+			}
 		}
 	}
-	for k, v := range kv {
-		needle := string(k) + ": " + v
-		if !strings.Contains(msg, needle) {
-			t.Fatalf("expected %q in error, got %q", needle, msg)
-		}
+
+	t.Fatalf("expected structured field error with sentinel %v, rule %q and kv %+v, got %v", wantSentinel, wantRule, kv, err)
+}
+
+func firstFieldErrorFor(t *testing.T, err error, path string) validation.FieldError {
+	t.Helper()
+
+	var ve *validation.Error
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *validation.Error, got %T: %v", err, err)
 	}
+
+	es := ve.ByField()[path]
+	if len(es) == 0 {
+		t.Fatalf("expected field error for %q, got %v", path, ve.ByField())
+	}
+
+	return es[0]
+}
+
+func assertConstraintViolation(t *testing.T, err error, ruleName, paramName, paramValue string) {
+	t.Helper()
+
+	assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, ruleName, map[keysLib.Key]string{
+		keys.RuleParamName:  paramName,
+		keys.RuleParamValue: paramValue,
+	})
+}
+
+func assertMissingParameter(t *testing.T, err error) {
+	t.Helper()
+
+	assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, constants.RuleOneOf, nil)
+}
+
+func assertInvalidParameter(t *testing.T, err error, ruleName, paramName, paramValue string) {
+	t.Helper()
+
+	assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, ruleName, map[keysLib.Key]string{
+		keys.RuleParamName:  paramName,
+		keys.RuleParamValue: paramValue,
+	})
 }
 
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
@@ -54,20 +119,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 	}
 
 	// --- oneof targets ---
-	type strOneOfOK struct {
-		S string `validate:"oneof(red,green,blue)"`
-	}
-	type strOneOfBad struct {
+	type strOneOf struct {
 		S string `validate:"oneof(red,green,blue)"`
 	}
 	type strOneOfNoParams struct {
 		S string `validate:"oneof()"`
 	}
 
-	type intOneOfOK struct {
-		N int `validate:"oneof(1,2,3)"`
-	}
-	type intOneOfBad struct {
+	type intOneOf struct {
 		N int `validate:"oneof(1,2,3)"`
 	}
 	type intOneOfNoParams struct {
@@ -77,10 +136,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		N int `validate:"oneof(1,a,3)"`
 	}
 
-	type int64OneOfOK struct {
-		N int64 `validate:"oneof(10,20,30)"`
-	}
-	type int64OneOfBad struct {
+	type int64OneOf struct {
 		N int64 `validate:"oneof(10,20,30)"`
 	}
 	type int64OneOfNoParams struct {
@@ -90,10 +146,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		N int64 `validate:"oneof(10,a,30)"`
 	}
 
-	type float64OneOfOK struct {
-		F float64 `validate:"oneof(0.5,1.0,2.5)"`
-	}
-	type float64OneOfBad struct {
+	type float64OneOf struct {
 		F float64 `validate:"oneof(0.5,1.0,2.5)"`
 	}
 	type float64OneOfNoParams struct {
@@ -132,10 +185,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "length",
-					modelerrors.ErrorFieldRuleParamValue: "10",
-				})
+				assertConstraintViolation(t, err, constants.RuleMax, "length", "10")
 			},
 		},
 		{
@@ -161,10 +211,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "1",
-				})
+				assertConstraintViolation(t, err, constants.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -179,10 +226,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "10",
-				})
+				assertConstraintViolation(t, err, constants.RuleMax, "value", "10")
 			},
 		},
 		{
@@ -208,10 +252,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "1",
-				})
+				assertConstraintViolation(t, err, constants.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -226,10 +267,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "10",
-				})
+				assertConstraintViolation(t, err, constants.RuleMax, "value", "10")
 			},
 		},
 		{
@@ -255,10 +293,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "min", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "0.5",
-				})
+				assertConstraintViolation(t, err, constants.RuleMin, "value", "0.5")
 			},
 		},
 		{
@@ -273,10 +308,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "max", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "2.5",
-				})
+				assertConstraintViolation(t, err, constants.RuleMax, "value", "2.5")
 			},
 		},
 
@@ -284,10 +316,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		{
 			name: "string oneof passes",
 			run: func(t *testing.T) error {
-				obj := strOneOfOK{S: "green"}
+				obj := strOneOf{S: "green"}
 				_, err := New(
 					&obj,
-					WithValidation[strOneOfOK](context.Background()),
+					WithValidation[strOneOf](context.Background()),
 				)
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
@@ -299,10 +331,10 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "string oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := strOneOfBad{S: "yellow"}
+				obj := strOneOf{S: "yellow"}
 				_, err := New(
 					&obj,
-					WithValidation[strOneOfBad](context.Background()),
+					WithValidation[strOneOf](context.Background()),
 				)
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -310,10 +342,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "allowed",
-					modelerrors.ErrorFieldRuleParamValue: "red,green,blue",
-				})
+				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "red,green,blue")
 			},
 		},
 		{
@@ -328,7 +357,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
+				assertMissingParameter(t, err)
 			},
 		},
 
@@ -336,8 +365,8 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		{
 			name: "int oneof passes",
 			run: func(t *testing.T) error {
-				obj := intOneOfOK{N: 2}
-				_, err := New(&obj, WithValidation[intOneOfOK](context.Background()))
+				obj := intOneOf{N: 2}
+				_, err := New(&obj, WithValidation[intOneOf](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -348,18 +377,15 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := intOneOfBad{N: 5}
-				_, err := New(&obj, WithValidation[intOneOfBad](context.Background()))
+				obj := intOneOf{N: 5}
+				_, err := New(&obj, WithValidation[intOneOf](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "allowed",
-					modelerrors.ErrorFieldRuleParamValue: "1,2,3",
-				})
+				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "1,2,3")
 			},
 		},
 		{
@@ -374,7 +400,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
+				assertMissingParameter(t, err)
 			},
 		},
 		{
@@ -389,10 +415,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "a",
-				})
+				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -400,8 +423,8 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		{
 			name: "int64 oneof passes",
 			run: func(t *testing.T) error {
-				obj := int64OneOfOK{N: 20}
-				_, err := New(&obj, WithValidation[int64OneOfOK](context.Background()))
+				obj := int64OneOf{N: 20}
+				_, err := New(&obj, WithValidation[int64OneOf](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -412,18 +435,15 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "int64 oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := int64OneOfBad{N: 5}
-				_, err := New(&obj, WithValidation[int64OneOfBad](context.Background()))
+				obj := int64OneOf{N: 5}
+				_, err := New(&obj, WithValidation[int64OneOf](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "allowed",
-					modelerrors.ErrorFieldRuleParamValue: "10,20,30",
-				})
+				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "10,20,30")
 			},
 		},
 		{
@@ -438,7 +458,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
+				assertMissingParameter(t, err)
 			},
 		},
 		{
@@ -453,10 +473,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "a",
-				})
+				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -464,8 +481,8 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		{
 			name: "float64 oneof passes",
 			run: func(t *testing.T) error {
-				obj := float64OneOfOK{F: 1.0}
-				_, err := New(&obj, WithValidation[float64OneOfOK](context.Background()))
+				obj := float64OneOf{F: 1.0}
+				_, err := New(&obj, WithValidation[float64OneOf](context.Background()))
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -476,18 +493,15 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name:      "float64 oneof fails",
 			wantError: true,
 			run: func(t *testing.T) error {
-				obj := float64OneOfBad{F: 3.3}
-				_, err := New(&obj, WithValidation[float64OneOfBad](context.Background()))
+				obj := float64OneOf{F: 3.3}
+				_, err := New(&obj, WithValidation[float64OneOf](context.Background()))
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "allowed",
-					modelerrors.ErrorFieldRuleParamValue: "0.5,1.0,2.5",
-				})
+				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "0.5,1.0,2.5")
 			},
 		},
 		{
@@ -502,7 +516,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, "oneof", nil)
+				assertMissingParameter(t, err)
 			},
 		},
 		{
@@ -517,10 +531,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, "oneof", map[errorc.Key]string{
-					modelerrors.ErrorFieldRuleParamName:  "value",
-					modelerrors.ErrorFieldRuleParamValue: "a",
-				})
+				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
 			},
 		},
 	}
@@ -580,13 +591,13 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
-				// Expect constraint violation with rule name email.
-				if !errors.Is(err, modelerrors.ErrRuleConstraintViolated) {
-					t.Fatalf("expected ErrRuleConstraintViolated, got %v", err)
+				fe := firstFieldErrorFor(t, err, "Email")
+				if !errors.Is(fe.Err, modelerrors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
-				msg := err.Error()
-				if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": email") {
-					t.Fatalf("expected email rule metadata in error, got %q", msg)
+				msg := fe.Err.Error()
+				if !strings.Contains(msg, string(keys.RuleName)+": email") {
+					t.Fatalf("expected email rule metadata in field error, got %q", msg)
 				}
 			},
 		},
@@ -601,12 +612,13 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
-				if !errors.Is(err, modelerrors.ErrRuleConstraintViolated) {
-					t.Fatalf("expected ErrRuleConstraintViolated, got %v", err)
+				fe := firstFieldErrorFor(t, err, "ID")
+				if !errors.Is(fe.Err, modelerrors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
-				msg := err.Error()
-				if !strings.Contains(msg, string(modelerrors.ErrorFieldRuleName)+": uuid") {
-					t.Fatalf("expected uuid rule metadata in error, got %q", msg)
+				msg := fe.Err.Error()
+				if !strings.Contains(msg, string(keys.RuleName)+": uuid") {
+					t.Fatalf("expected uuid rule metadata in field error, got %q", msg)
 				}
 			},
 		},
