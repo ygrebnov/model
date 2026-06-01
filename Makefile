@@ -7,10 +7,13 @@ lint: install-golangci-lint
 	$(GOLANGCI_LINT) run
 
 test:
+	@go test ./...
+
+test-cov:
 	@rm -rf $(COVERAGE_PATH)
 	@mkdir -p $(COVERAGE_PATH)
 	@go test -v -coverpkg=./... ./... -coverprofile $(COVERAGE_PATH)coverage.txt
 	@go tool cover -func=$(COVERAGE_PATH)coverage.txt -o $(COVERAGE_PATH)functions.txt
 	@go tool cover -html=$(COVERAGE_PATH)coverage.txt -o $(COVERAGE_PATH)coverage.html
 
-.PHONY: lint test
+.PHONY: lint test test-cov

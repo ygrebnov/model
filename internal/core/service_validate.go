@@ -8,6 +8,7 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
+// AddRule registers a validation rule in the service's rules registry.
 func (s *Service) AddRule(r validation.Rule) error {
 	return s.rulesRegistry.Add(r)
 }

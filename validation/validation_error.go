@@ -3,8 +3,12 @@ package validation
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
+
+	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
 // Error accumulates multiple FieldError entries.
@@ -21,8 +25,8 @@ func (ve *Error) Add(fe FieldError) {
 		return
 	}
 	ve.mu.Lock()
+	defer ve.mu.Unlock()
 	ve.issues = append(ve.issues, fe)
-	ve.mu.Unlock()
 }
 
 // Addf is a convenience to add from parts.
@@ -35,10 +39,8 @@ func (ve *Error) Len() int {
 	if ve == nil {
 		return 0
 	}
-	ve.mu.Lock()
-	n := len(ve.issues)
-	ve.mu.Unlock()
-	return n
+
+	return len(ve.snapshotIssues())
 }
 
 // Empty reports whether there are no issues.
@@ -49,26 +51,21 @@ func (ve *Error) Error() string {
 	if ve == nil {
 		return ""
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
-	switch len(ve.issues) {
-	case 0:
+
+	issues := ve.snapshotIssues()
+	if len(issues) == 0 {
 		return ""
-	case 1:
-		return ve.issues[0].Error()
-	default:
-		var b strings.Builder
-		b.WriteString("validation failed:\n")
-		for i, fe := range ve.issues {
-			b.WriteString("  ")
-			b.WriteString(fe.Error())
-			if i < len(ve.issues)-1 {
-				b.WriteString("\n")
-			}
-		}
-		b.WriteString("\n")
-		return b.String()
 	}
+
+	var b strings.Builder
+	for i, fe := range issues {
+		b.WriteString(fe.Error())
+		if i < len(issues)-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
 }
 
 // Unwrap joins underlying causes so errors.Is/As keep working on the combined error.
@@ -76,10 +73,10 @@ func (ve *Error) Unwrap() error {
 	if ve == nil {
 		return nil
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
-	errs := make([]error, 0, len(ve.issues))
-	for _, fe := range ve.issues {
+
+	issues := ve.snapshotIssues()
+	errs := make([]error, 0, len(issues))
+	for _, fe := range issues {
 		if fe.Err != nil {
 			errs = append(errs, fe.Err)
 		}
@@ -92,10 +89,10 @@ func (ve *Error) ForField(path string) []FieldError {
 	if ve == nil {
 		return nil
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
+
+	issues := ve.snapshotIssues()
 	var out []FieldError
-	for _, fe := range ve.issues {
+	for _, fe := range issues {
 		if fe.Path == path {
 			out = append(out, fe)
 		}
@@ -109,9 +106,8 @@ func (ve *Error) ByField() map[string][]FieldError {
 	if ve == nil {
 		return m
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
-	for _, fe := range ve.issues {
+
+	for _, fe := range ve.snapshotIssues() {
 		m[fe.Path] = append(m[fe.Path], fe)
 	}
 	return m
@@ -122,11 +118,11 @@ func (ve *Error) Fields() []string {
 	if ve == nil {
 		return nil
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
+
+	issues := ve.snapshotIssues()
 	seen := make(map[string]struct{})
 	var out []string
-	for _, fe := range ve.issues {
+	for _, fe := range issues {
 		if _, ok := seen[fe.Path]; !ok {
 			seen[fe.Path] = struct{}{}
 			out = append(out, fe.Path)
@@ -146,17 +142,24 @@ func (ve *Error) MarshalJSON() ([]byte, error) {
 	if ve == nil {
 		return []byte("null"), nil
 	}
-	ve.mu.Lock()
-	defer ve.mu.Unlock()
-	by := make(map[string][]string, len(ve.issues))
-	for _, fe := range ve.issues {
-		msg := ""
-		if fe.Err != nil {
-			msg = fe.Err.Error()
-		}
-		by[fe.Path] = append(by[fe.Path], msg)
+
+	issues := ve.snapshotIssues()
+	by := make(map[string][]string, len(issues))
+	for _, fe := range issues {
+		by[fe.Path] = append(by[fe.Path], errorMessage(fe.Err))
 	}
 	return json.Marshal(by)
+}
+
+func (ve *Error) snapshotIssues() []FieldError {
+	if ve == nil {
+		return nil
+	}
+
+	ve.mu.Lock()
+	defer ve.mu.Unlock()
+
+	return slices.Clone(ve.issues)
 }
 
 // FieldError represents a single validation failure for a specific field and rule.
@@ -168,27 +171,106 @@ type FieldError struct {
 	Err    error    // underlying error from the rule
 }
 
+// Error returns a compact human-readable representation of the field error.
 func (e FieldError) Error() string {
-	path := "- Field \"" + e.Path + "\":"
-	rule := ""
+	var b strings.Builder
+	b.WriteString("- Field \"")
+	b.WriteString(e.Path)
+	b.WriteString("\"")
 	if e.Rule != "" {
-		rule = " rule \"" + e.Rule + "\":"
+		b.WriteString(": rule \"")
+		b.WriteString(e.Rule)
+		b.WriteString("\"")
 	}
-	err := ""
-	if e.Err != nil {
-		err = " " + e.Err.Error()
+	if msg := formatFieldErrorMessage(e.Err); msg != "" {
+		b.WriteString(": ")
+		b.WriteString(msg)
 	}
-	return path + rule + err
+	return b.String()
 }
 
+func formatFieldErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	base := modelerrors.Summary(err)
+	raw := errorMessage(err)
+	if base == raw {
+		return raw
+	}
+
+	return appendFieldErrorDetail(base, compactErrorDetail(err))
+}
+
+func appendFieldErrorDetail(base, detail string) string {
+	if detail == "" {
+		return base
+	}
+
+	return base + " (" + detail + ")"
+}
+
+func compactErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	msg := errorMessage(err)
+	if paramName, ok := extractErrorField(msg, string(keys.RuleParamName)); ok {
+		if paramValue, ok := extractErrorField(msg, string(keys.RuleParamValue)); ok {
+			return paramName + "=" + paramValue
+		}
+		return paramName
+	}
+
+	valueType, hasValueType := extractErrorField(msg, string(keys.ValueType))
+	availableTypes, hasAvailableTypes := extractErrorField(msg, string(keys.FieldAvailableTypes))
+	fieldType, hasFieldType := extractErrorField(msg, string(keys.FieldType))
+
+	parts := make([]string, 0, 3)
+	if hasValueType {
+		parts = append(parts, string(keys.ValueType)+"="+valueType)
+	}
+	if hasFieldType {
+		parts = append(parts, string(keys.FieldType)+"="+fieldType)
+	}
+	if hasAvailableTypes {
+		parts = append(parts, string(keys.FieldAvailableTypes)+"="+availableTypes)
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return err.Error()
+}
+
+func extractErrorField(msg, key string) (string, bool) {
+	prefix := key + ": "
+	start := strings.Index(msg, prefix)
+	if start < 0 {
+		return "", false
+	}
+
+	start += len(prefix)
+	end := len(msg)
+	if next := strings.Index(msg[start:], ", "); next >= 0 {
+		end = start + next
+	}
+
+	return msg[start:end], true
+}
+
+// Unwrap returns the underlying rule error.
 func (e FieldError) Unwrap() error { return e.Err }
 
 // MarshalJSON exports FieldError as an object with path, rule, and message fields.
 func (e FieldError) MarshalJSON() ([]byte, error) {
-	msg := ""
-	if e.Err != nil {
-		msg = e.Err.Error()
-	}
 	return json.Marshal(struct {
 		Path    string   `json:"path"`
 		Rule    string   `json:"rule"`
@@ -198,6 +280,6 @@ func (e FieldError) MarshalJSON() ([]byte, error) {
 		Path:    e.Path,
 		Rule:    e.Rule,
 		Params:  e.Params,
-		Message: msg,
+		Message: errorMessage(e.Err),
 	})
 }

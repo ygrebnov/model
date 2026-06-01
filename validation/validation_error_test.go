@@ -5,6 +5,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ygrebnov/errorc"
+	modelerrors "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
 // helper constructor
@@ -77,23 +81,32 @@ func TestValidationError_ErrorFormatting(t *testing.T) {
 	ve1 := &Error{}
 	ve1.Add(fe("Name", "nonempty", "must not be empty"))
 	s1 := ve1.Error()
-	if !strings.Contains(s1, "Name") || !strings.Contains(s1, "must not be empty") {
-		t.Fatalf("single issue Error() missing content: %q", s1)
+	if s1 != `- Field "Name": rule "nonempty": must not be empty` {
+		t.Fatalf("single issue Error() = %q, want compact single line", s1)
 	}
-	if strings.Contains(s1, "validation failed (") {
+	if strings.Contains(s1, "validation failed") {
 		t.Fatalf("single issue should not contain header/footer: %q", s1)
 	}
+	if strings.HasSuffix(s1, "\n") {
+		t.Fatalf("single issue should not have trailing newline: %q", s1)
+	}
 
-	// 2+ issues → multi-line with header/footer and each line
+	// 2+ issues → compact multi-line list without header/footer
 	ve2 := &Error{}
 	ve2.Add(fe("Name", "nonempty", "x"))
 	ve2.Add(fe("Age", "positive", "y"))
 	s2 := ve2.Error()
-	if !strings.HasPrefix(s2, "validation failed") {
-		t.Fatalf("multi Error() missing header/footer: %q", s2)
+	if strings.Contains(s2, "validation failed") {
+		t.Fatalf("multi Error() should not contain header/footer: %q", s2)
+	}
+	if s2 != "- Field \"Name\": rule \"nonempty\": x\n- Field \"Age\": rule \"positive\": y" {
+		t.Fatalf("multi Error() wrong compact output: %q", s2)
 	}
 	if !strings.Contains(s2, "Name") || !strings.Contains(s2, "Age") {
 		t.Fatalf("multi Error() missing entries: %q", s2)
+	}
+	if strings.HasSuffix(s2, "\n") {
+		t.Fatalf("multi Error() should not have trailing newline: %q", s2)
 	}
 }
 
@@ -218,13 +231,44 @@ func TestFieldError_Error(t *testing.T) {
 		wantNot []string // substrings that must be absent
 	}{
 		{
-			name: "with rule and non-nil error",
+			name: "with rule and custom non-nil error",
 			fe: FieldError{
 				Path: "Root.Name",
 				Rule: "nonempty",
 				Err:  errors.New("must not be empty"),
 			},
 			wantHas: []string{"Field \"Root.Name\"", "rule \"nonempty\"", "must not be empty"},
+		},
+		{
+			name: "with known structured validation error it prints compact summary",
+			fe: FieldError{
+				Path: "ID",
+				Rule: "uuid",
+				Err: errorc.With(
+					modelerrors.ErrRuleConstraintViolated,
+					errorc.String(keys.RuleName, "uuid"),
+					errorc.String(keys.RuleParamName, "length"),
+					errorc.String(keys.RuleParamValue, "10"),
+				),
+			},
+			wantHas: []string{"Field \"ID\"", "rule \"uuid\"", "constraint violated (length=10)"},
+			wantNot: []string{string(keys.RuleName), string(keys.RuleParamName), string(keys.RuleParamValue), "model: rule constraint violated"},
+		},
+		{
+			name: "known structured invalid parameter error is compact",
+			fe: FieldError{
+				Path: "Retries",
+				Rule: "max",
+				Err: errorc.With(
+					modelerrors.ErrRuleInvalidParameter,
+					errorc.String(keys.RuleName, "max"),
+					errorc.String(keys.RuleParamName, "value"),
+					errorc.String(keys.RuleParamValue, "oops"),
+					errorc.Error(keys.Cause, errors.New("strconv.Atoi: invalid syntax")),
+				),
+			},
+			wantHas: []string{"Field \"Retries\"", "rule \"max\"", "invalid rule parameter (value=oops)"},
+			wantNot: []string{string(keys.Cause), string(keys.RuleParamName), string(keys.RuleParamValue)},
 		},
 		{
 			name: "without rule and non-nil error",
@@ -242,8 +286,8 @@ func TestFieldError_Error(t *testing.T) {
 				Rule: "some",
 				Err:  nil,
 			},
-			// Implementation currently formats the nil error; we only assert it contains path and rule marker.
 			wantHas: []string{"Field \"X\"", "rule \"some\""},
+			wantNot: []string{"rule \"some\":"},
 		},
 		{
 			name: "without rule and nil error (should still include path, no panic)",

@@ -16,8 +16,11 @@ type fieldRulesKey struct {
 	tagName string
 }
 
+// RulesMapping caches parsed validation rules for struct fields and tags.
 type RulesMapping interface {
+	// Get returns cached parsed rules for the given parent type, field index, and tag name.
 	Get(parent reflect.Type, fieldIndex int, tagName string) ([]RuleNameParams, bool)
+	// Add stores parsed rules for the given parent type, field index, and tag name.
 	Add(parent reflect.Type, fieldIndex int, tagName string, parsed []RuleNameParams)
 }
 
@@ -31,6 +34,7 @@ type cache interface {
 	Store(key any, value any)
 }
 
+// NewRulesMapping creates an empty cache for parsed validation rules.
 func NewRulesMapping() RulesMapping {
 	return &rulesMapping{
 		c: &sync.Map{},

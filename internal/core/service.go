@@ -6,6 +6,7 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
+// Service provides per-struct defaulting and validation operations.
 type Service struct {
 	// reflectType is the underlying struct type this service was initialized for.
 	reflectType   reflect.Type

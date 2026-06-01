@@ -5,10 +5,14 @@ import (
 
 	"github.com/ygrebnov/errorc"
 	"github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
+// Rule represents a named validation rule bound to a specific field type.
 type Rule interface {
+	// GetName returns the rule name used in struct tags and registration.
 	GetName() string
+	// GetValidationFn returns the reflect-based validation function for the rule.
 	GetValidationFn() func(v reflect.Value, params ...string) error
 
 	getFieldTypeName() string
@@ -24,6 +28,7 @@ type rule struct {
 	fn        func(v reflect.Value, params ...string) error
 }
 
+// NewRule creates a typed validation rule with the given name and validation function.
 func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
 	if name == "" || fn == nil {
 		return nil, errors.ErrInvalidRule
@@ -45,8 +50,8 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
 						return errorc.With(
 							errors.ErrRuleTypeMismatch,
-							errorc.String(errors.ErrorFieldValueType, v.Type().String()),
-							errorc.String(errors.ErrorFieldFieldType, fieldType.String()),
+							errorc.String(keys.ValueType, v.Type().String()),
+							errorc.String(keys.FieldType, fieldType.String()),
 						)
 					}
 				}

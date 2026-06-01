@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ygrebnov/model/constants"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -37,7 +38,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customEmail, err := validation.NewRule[string]("email", func(s string, _ ...string) error {
+	customEmail, err := validation.NewRule[string](constants.RuleEmail, func(s string, _ ...string) error {
 		if s == "" {
 			return errors.New("custom email empty")
 		}

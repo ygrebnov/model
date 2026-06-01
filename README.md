@@ -8,7 +8,7 @@
 
 - **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"`.
 - **Validate** fields using named rules from `validate:"…"` and `validateElem:"…"`.
-- Accumulate all issues into a single **ValidationError** (no fail-fast).
+- Accumulate all issues into a single `*validation.Error` (no fail-fast).
 - Recurse through nested structs, pointers, slices/arrays, and map values.
 
 It’s designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). For reusable validation across many values of the same type, you can use `Binding[T]` as a shared engine for defaults and validation.
@@ -24,7 +24,7 @@ It’s designed to be **small, explicit, and type-safe** (uses generics). You re
 - [Model methods](#model-methods)
 - [Struct tags (how it works)](#struct-tags-how-it-works)
 - [Built-in rules](#built-in-rules)
-- [Structured errors: errorc, sentinels, and ErrorField* keys](#structured-errors-errorc-sentinels-and-errorfield-keys)
+- [Structured errors: errorc, sentinels, and structured keys](#structured-errors-errorc-sentinels-and-structured-keys)
 - [Overriding a builtin rule](#overriding-a-builtin-rule)
 - [Custom rules (with parameters)](#custom-rules-with-parameters)
 - [Error types](#error-types)
@@ -69,6 +69,7 @@ import (
     "time"
 
     "github.com/ygrebnov/model"
+    modelvalidation "github.com/ygrebnov/model/validation"
 )
 
 type Address struct {
@@ -93,7 +94,7 @@ func main() {
         model.WithValidation[User](context.Background()), // run validation during construction (cancellable)
     )
     if err != nil {
-        var ve *model.ValidationError
+        var ve *modelvalidation.Error
         if errors.As(err, &ve) {
             b, _ := json.MarshalIndent(ve, "", "  ")
             fmt.Println(string(b))
@@ -107,7 +108,7 @@ func main() {
 
     // You can also call them later:
     _ = m.SetDefaults()                  // guarded by sync.Once — no double work
-    _ = m.Validate(context.Background()) // returns *ValidationError on failure
+    _ = m.Validate(context.Background()) // returns *validation.Error on failure
 }
 ```
 
@@ -189,11 +190,11 @@ m, err := model.New(&user,
     model.WithValidation[User](ctx),  // run validation during New() with cancellation support
 )
 if err != nil {
-    var ve *model.ValidationError
+    var ve *validation.Error
     switch {
-    case errors.Is(err, model.ErrNilObject):
+    case errors.Is(err, modelerrors.ErrNilObject):
         // handle nil object
-    case errors.Is(err, model.ErrNotStructPtr):
+    case errors.Is(err, modelerrors.ErrNotStructPtr):
         // handle pointer to non-struct
     case errors.As(err, &ve):
         // handle field validation failures
@@ -213,7 +214,7 @@ To validate later explicitly, call `m.Validate(ctx)` with a context appropriate 
 
 - Panics hinder graceful startup error reporting in services / CLIs.
 - All failure modes (`nil` object, non-struct pointer, duplicate rule overload, validation failures when requested) are ordinary and recoverable.
-- Returning `error` keeps initialization explicit and test-friendly (you can assert exact sentinel errors or unwrap `*ValidationError`).
+- Returning `error` keeps initialization explicit and test-friendly (you can assert exact sentinel errors or unwrap `*validation.Error`).
 - If you truly want a panic wrapper, you can write a 2‑line helper in your own code:
   ```go
   func MustNew[T any](o *T, opts ...model.Option[T]) *model.Model[T] {
@@ -247,7 +248,7 @@ m, err := model.New(&u,
 )
 ```
 
-- Gathers **all** field errors; returns a `*ValidationError` on failure.
+- Gathers **all** field errors; returns a `*validation.Error` on failure.
 - Built-ins are always considered first for matching types.
 - Cancellation/deadlines follow the provided context.
 - To override a built-in rule, register a custom rule *before* `WithValidation`:
@@ -298,7 +299,7 @@ Apply `default:"…"` / `defaultElem:"…"` recursively. Safe to call multiple t
 
 ### `Validate(ctx context.Context) error`
 
-Walk fields and apply rules from `validate:"…"` / `validateElem:"…"` tags. Returns `*ValidationError` on failure.
+Walk fields and apply rules from `validate:"…"` / `validateElem:"…"` tags. Returns `*validation.Error` on failure.
 
 - Returns `ctx.Err()` immediately if the context is canceled or its deadline is exceeded.
 
@@ -376,42 +377,44 @@ type Account struct {
 
 ---
 
-## Structured errors: errorc, sentinels, and ErrorField* keys
+## Structured errors: errorc, sentinels, and structured keys
 
-Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. The `errors` package defines sentinel errors and strongly-typed keys:
+Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. Sentinel errors live in `github.com/ygrebnov/model/errors`, and strongly-typed keys live in `github.com/ygrebnov/model/keys`:
 
 - Sentinels (examples):
-  - `errors.ErrNilObject`
-  - `errors.ErrNotStructPtr`
-  - `errors.ErrRuleMissingParameter`
-  - `errors.ErrRuleInvalidParameter`
-  - `errors.ErrRuleConstraintViolated`
+  - `modelerrors.ErrNilObject`
+  - `modelerrors.ErrNotStructPtr`
+  - `modelerrors.ErrRuleMissingParameter`
+  - `modelerrors.ErrRuleInvalidParameter`
+  - `modelerrors.ErrRuleConstraintViolated`
 - Keys (examples):
-  - `errors.ErrorFieldRuleName` (e.g. `model.rule.name`)
-  - `errors.ErrorFieldRuleParamName` (e.g. `model.rule.param_name`)
-  - `errors.ErrorFieldRuleParamValue` (e.g. `model.rule.param_value`)
-  - `errors.ErrorFieldFieldName` (e.g. `model.field.name`)
-  - `errors.ErrorFieldCause` (the underlying cause error)
+  - `modelkeys.RuleName` (e.g. `model.rule.name`)
+  - `modelkeys.RuleParamName` (e.g. `model.rule.param_name`)
+  - `modelkeys.RuleParamValue` (e.g. `model.rule.param_value`)
+  - `modelkeys.FieldName` (e.g. `model.field.name`)
+  - `modelkeys.Cause` (the underlying cause error)
 
 Builtin rules attach metadata when they fail. For example, the string `min` rule:
 
 ```go
 return errorc.With(
-    errors.ErrRuleConstraintViolated,
-    errorc.String(errors.ErrorFieldRuleName, "min"),
-    errorc.String(errors.ErrorFieldRuleParamName, "length"),
-    errorc.String(errors.ErrorFieldRuleParamValue, raw),
+    modelerrors.ErrRuleConstraintViolated,
+    errorc.String(modelkeys.RuleName, "min"),
+    errorc.String(modelkeys.RuleParamName, "length"),
+    errorc.String(modelkeys.RuleParamValue, raw),
 )
 ```
 
-From your code, you can inspect these errors using `errors.Is` and by reading the message (which includes the structured key/value pairs), or by using `errors.As` into `*validation.Error` for field-level failures.
+Validation formatting keeps the top-level `*validation.Error` concise (for example: `- Field "Name": rule "min": constraint violated (length=3)`), while the underlying `FieldError.Err` values still preserve the raw structured metadata for inspection and mapping.
+
+From your code, you can inspect these errors using `errors.Is`, inspect the wrapped `FieldError.Err`, or use `errors.As` into `*validation.Error` for field-level failures.
 
 Example:
 
 ```go
 m, err := model.New(&u, model.WithValidation[User](ctx))
 if err != nil {
-    var ve *model.ValidationError
+    var ve *validation.Error
     if errors.As(err, &ve) {
         // Per-field errors
         for path, fes := range ve.ByField() {
@@ -423,7 +426,7 @@ if err != nil {
 }
 ```
 
-If you need to work directly with the structured error metadata (e.g., to localize messages), you can call into `errorc` from your own code, or build small helpers around the keys exposed by `github.com/ygrebnov/model/errors`.
+If you need to work directly with the structured error metadata (for example, to localize messages), inspect `FieldError.Err` and use the keys exposed by `github.com/ygrebnov/model/keys` together with the sentinels from `github.com/ygrebnov/model/errors`.
 
 ---
 
@@ -438,9 +441,11 @@ import (
     "context"
     "errors"
     "fmt"
+    "strconv"
     "strings"
 
     "github.com/ygrebnov/model"
+    modelvalidation "github.com/ygrebnov/model/validation"
 )
 
 type Comment struct {
@@ -454,9 +459,10 @@ func main() {
         if len(params) == 0 {
             return fmt.Errorf("min requires a length parameter")
         }
-        // For brevity, we skip full structured errorc usage here;
-        // in production, use sentinel errors + errorc.With, similar to builtin rules.
-        n := len(params[0]) // pretend this is parsed
+        n, err := strconv.Atoi(params[0])
+        if err != nil {
+            return fmt.Errorf("min requires an integer parameter: %w", err)
+        }
         if len(s) < n {
             return fmt.Errorf("must be at least %d characters after trimming", n)
         }
@@ -473,7 +479,7 @@ func main() {
         model.WithValidation[Comment](context.Background()),
     )
     if err != nil {
-        var ve *model.ValidationError
+        var ve *modelvalidation.Error
         if errors.As(err, &ve) {
             fmt.Println("validation error:", ve)
         } else {

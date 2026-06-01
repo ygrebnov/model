@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ygrebnov/model/constants"
 	modelErrors "github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/validation"
 )
@@ -228,7 +229,7 @@ func TestBindingAndModel_Consistency(t *testing.T) {
 		t.Fatalf("failed to create required rule: %v", err)
 	}
 
-	minInt, err := validation.NewRule[int]("min", func(v int, params ...string) error {
+	minInt, err := validation.NewRule[int](constants.RuleMin, func(v int, params ...string) error {
 		if len(params) == 0 {
 			return fmt.Errorf("min: missing param")
 		}
@@ -245,7 +246,7 @@ func TestBindingAndModel_Consistency(t *testing.T) {
 		t.Fatalf("failed to create min rule: %v", err)
 	}
 
-	emailRule, err := validation.NewRule[string]("email", func(v string, _ ...string) error {
+	emailRule, err := validation.NewRule[string](constants.RuleEmail, func(v string, _ ...string) error {
 		if v == "" {
 			return fmt.Errorf("email required")
 		}

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/constants"
 	errorsPkg "github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
 // helper type for TestRegistry_get assignable interface scenario
@@ -111,8 +113,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"]},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "stringRule"),
-				errorc.String(errorsPkg.ErrorFieldFieldType, "string"),
+				errorc.String(keys.RuleName, "stringRule"),
+				errorc.String(keys.FieldType, "string"),
 			),
 		},
 		{
@@ -134,8 +136,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"], intOverloadForStringRule},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "stringRule"),
-				errorc.String(errorsPkg.ErrorFieldFieldType, "string"),
+				errorc.String(keys.RuleName, "stringRule"),
+				errorc.String(keys.FieldType, "string"),
 			),
 		},
 		{
@@ -143,8 +145,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["pointerToInterfaceRule"], pointerToInterfaceRule2},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "pointerToInterfaceRule"),
-				errorc.String(errorsPkg.ErrorFieldFieldType, "*interface {}"),
+				errorc.String(keys.RuleName, "pointerToInterfaceRule"),
+				errorc.String(keys.FieldType, "*interface {}"),
 			),
 		},
 		{
@@ -152,8 +154,8 @@ func TestRegistry_add(t *testing.T) {
 			rulesToAdd: []Rule{testRules["interfaceRule"], interfaceRule2},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "interfaceRule"),
-				errorc.String(errorsPkg.ErrorFieldFieldType, "interface {}"),
+				errorc.String(keys.RuleName, "interfaceRule"),
+				errorc.String(keys.FieldType, "interface {}"),
 			),
 		},
 		{
@@ -264,7 +266,7 @@ func TestRegistry_get(t *testing.T) {
 			expectedSentinelError: errorsPkg.ErrInvalidValue,
 			expectedError: errorc.With(
 				errorsPkg.ErrInvalidValue,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "anything"),
+				errorc.String(keys.RuleName, "anything"),
 			),
 		},
 		{
@@ -275,15 +277,15 @@ func TestRegistry_get(t *testing.T) {
 			expectedSentinelError: errorsPkg.ErrRuleNotFound,
 			expectedError: errorc.With(
 				errorsPkg.ErrRuleNotFound,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "doesNotExist"),
+				errorc.String(keys.RuleName, "doesNotExist"),
 			),
 		},
 		{
 			name:          "builtin fallback only (string email)",
 			setupRegistry: defaultRegistry,
-			ruleName:      "email",
+			ruleName:      constants.RuleEmail,
 			value:         reflect.ValueOf(""),
-			expectedRule:  builtinRuleForTest(t, "email", reflect.TypeOf("")),
+			expectedRule:  builtinRuleForTest(t, constants.RuleEmail, reflect.TypeOf("")),
 		},
 		{
 			name: "builtin fallback when empty slice present",
@@ -291,12 +293,12 @@ func TestRegistry_get(t *testing.T) {
 				r := &rulesRegistry{
 					rules: make(map[string][]Rule),
 				}
-				r.rules["email"] = []Rule{}
+				r.rules[constants.RuleEmail] = []Rule{}
 				return r
 			},
-			ruleName:     "email",
+			ruleName:     constants.RuleEmail,
 			value:        reflect.ValueOf(""),
-			expectedRule: builtinRuleForTest(t, "email", reflect.TypeOf("")),
+			expectedRule: builtinRuleForTest(t, constants.RuleEmail, reflect.TypeOf("")),
 		},
 		{
 			name: "exact match single overload",
@@ -351,9 +353,9 @@ func TestRegistry_get(t *testing.T) {
 			expectedSentinelError: errorsPkg.ErrRuleOverloadNotFound,
 			expectedError: errorc.With(
 				errorsPkg.ErrRuleOverloadNotFound,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "noOverload"),
-				errorc.String(errorsPkg.ErrorFieldValueType, "float64"),
-				errorc.String(errorsPkg.ErrorFieldAvailableTypes, "int, string"),
+				errorc.String(keys.RuleName, "noOverload"),
+				errorc.String(keys.ValueType, "float64"),
+				errorc.String(keys.FieldAvailableTypes, "int, string"),
 			),
 		},
 		{
@@ -370,8 +372,8 @@ func TestRegistry_get(t *testing.T) {
 			expectedSentinelError: errorsPkg.ErrAmbiguousRule,
 			expectedError: errorc.With(
 				errorsPkg.ErrAmbiguousRule,
-				errorc.String(errorsPkg.ErrorFieldRuleName, "ambiguousDuplicates"),
-				errorc.String(errorsPkg.ErrorFieldValueType, "string"),
+				errorc.String(keys.RuleName, "ambiguousDuplicates"),
+				errorc.String(keys.ValueType, "string"),
 			),
 		},
 	}

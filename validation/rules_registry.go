@@ -8,10 +8,14 @@ import (
 
 	"github.com/ygrebnov/errorc"
 	"github.com/ygrebnov/model/errors"
+	"github.com/ygrebnov/model/keys"
 )
 
+// RulesRegistry stores validation rules and resolves the best matching overload by name and type.
 type RulesRegistry interface {
+	// Add registers a rule in the registry.
 	Add(r Rule) error
+	// Get resolves the best matching rule overload for name and value.
 	Get(name string, v reflect.Value) (Rule, error)
 }
 
@@ -21,6 +25,7 @@ type rulesRegistry struct {
 	rules map[string][]Rule // rule Name -> overloads by type
 }
 
+// NewRulesRegistry creates an empty validation rules registry.
 func NewRulesRegistry() RulesRegistry {
 	return &rulesRegistry{
 		rules: make(map[string][]Rule),
@@ -43,8 +48,8 @@ func (r *rulesRegistry) Add(rule Rule) error {
 			if er.isOfType(rule.getFieldType()) {
 				return errorc.With(
 					errors.ErrDuplicateOverloadRule,
-					errorc.String(errors.ErrorFieldRuleName, name),
-					errorc.String(errors.ErrorFieldFieldType, rule.getFieldTypeName()),
+					errorc.String(keys.RuleName, name),
+					errorc.String(keys.FieldType, rule.getFieldTypeName()),
 				)
 			}
 		}
@@ -67,7 +72,7 @@ func (r *rulesRegistry) Get(name string, v reflect.Value) (Rule, error) {
 
 	if !v.IsValid() {
 		return nil,
-			errorc.With(errors.ErrInvalidValue, errorc.String(errors.ErrorFieldRuleName, name))
+			errorc.With(errors.ErrInvalidValue, errorc.String(keys.RuleName, name))
 	}
 
 	valueType := v.Type()
@@ -97,8 +102,8 @@ func (r *rulesRegistry) Get(name string, v reflect.Value) (Rule, error) {
 		// defensive: should not happen due to add() checks
 		return nil, errorc.With(
 			errors.ErrAmbiguousRule,
-			errorc.String(errors.ErrorFieldRuleName, name),
-			errorc.String(errors.ErrorFieldValueType, valueType.String()),
+			errorc.String(keys.RuleName, name),
+			errorc.String(keys.ValueType, valueType.String()),
 		)
 	case len(assigns) >= 1:
 		return assigns[0], nil
@@ -112,16 +117,16 @@ func (r *rulesRegistry) Get(name string, v reflect.Value) (Rule, error) {
 		if len(rules) == 0 {
 			// No rules by the given Name neither in rulesRegistry no from in built-ins.
 			return nil,
-				errorc.With(errors.ErrRuleNotFound, errorc.String(errors.ErrorFieldRuleName, name))
+				errorc.With(errors.ErrRuleNotFound, errorc.String(keys.RuleName, name))
 		}
 
 		// Some rules exist by the given Name, but none match the value type.
 		// Construct helpful message of available overload types.
 		return nil, errorc.With(
 			errors.ErrRuleOverloadNotFound,
-			errorc.String(errors.ErrorFieldRuleName, name),
-			errorc.String(errors.ErrorFieldValueType, valueType.String()),
-			errorc.String(errors.ErrorFieldAvailableTypes, strings.Join(getFieldTypesNames(rules), ", ")),
+			errorc.String(keys.RuleName, name),
+			errorc.String(keys.ValueType, valueType.String()),
+			errorc.String(keys.FieldAvailableTypes, strings.Join(getFieldTypesNames(rules), ", ")),
 		)
 	}
 }

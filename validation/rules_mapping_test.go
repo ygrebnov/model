@@ -3,6 +3,8 @@ package validation
 import (
 	"reflect"
 	"testing"
+
+	"github.com/ygrebnov/model/constants"
 )
 
 func TestParseTag(t *testing.T) {
@@ -24,7 +26,7 @@ func TestParseTag(t *testing.T) {
 		{
 			name: "leading and trailing commas are skipped",
 			in:   ",email,",
-			want: []RuleNameParams{{Name: "email"}},
+			want: []RuleNameParams{{Name: constants.RuleEmail}},
 		},
 		{
 			name: "whitespace around tokens and Params is trimmed",
