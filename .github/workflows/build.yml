@@ -22,7 +22,7 @@ jobs:
       - name: Dependencies
         run: go mod tidy
       - name: lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v1.63.4
           args: --timeout=10m
