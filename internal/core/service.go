@@ -12,14 +12,23 @@ type Service struct {
 	reflectType   reflect.Type
 	rulesRegistry validation.RulesRegistry
 	rulesMapping  validation.RulesMapping
+	envPrefix     string
+	envValues     map[string]string
 }
 
 // NewService creates a Service for the given struct type using the
 // provided RulesRegistry and RulesMapping instances.
-func NewService(t reflect.Type, r validation.RulesRegistry, m validation.RulesMapping) (*Service, error) {
+func NewService(
+	t reflect.Type,
+	r validation.RulesRegistry,
+	m validation.RulesMapping,
+	envPrefix string,
+) *Service {
 	return &Service{
 		reflectType:   t,
 		rulesRegistry: r,
 		rulesMapping:  m,
-	}, nil
+		envPrefix:     envPrefix,
+		envValues:     snapshotEnv(),
+	}
 }

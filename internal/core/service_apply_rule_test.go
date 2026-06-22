@@ -47,10 +47,7 @@ func newTestBindingDummy(t *testing.T) (*Service, validation.RulesRegistry) {
 	reg := validation.NewRulesRegistry()
 	mapping := validation.NewRulesMapping()
 	// typ is not used by applyRule itself, but required by typeBinding.
-	tb, err := NewService(reflect.TypeOf(dummy{}), reg, mapping)
-	if err != nil {
-		t.Fatalf("buildTypeBinding error: %v", err)
-	}
+	tb := NewService(reflect.TypeOf(dummy{}), reg, mapping, "")
 	return tb, reg
 }
 
@@ -59,7 +56,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 	t.Run("unregistered rule -> error", func(t *testing.T) {
 		tb, _ := newTestBindingDummy(t)
 		// no rules registered
-		err := tb.applyRule("nope", reflect.ValueOf("x"))
+		err := tb.applyRule("nope", reflect.ValueOf("x"), false)
 		if err == nil || !strings.Contains(err.Error(), "rule not found") {
 			t.Fatalf("expected unregistered-rule error, got: %v", err)
 		}
@@ -84,7 +81,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 		if err = reg.Add(pick); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		err = tb.applyRule("pick", reflect.ValueOf("hi"))
+		err = tb.applyRule("pick", reflect.ValueOf("hi"), false)
 		if err == nil || !strings.Contains(err.Error(), "exact:string:hi") {
 			t.Fatalf("expected exact overload to run, got: %v", err)
 		}
@@ -106,7 +103,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 		if err = reg.Add(exactOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		err = tb.applyRule("pick", reflect.ValueOf("yo"))
+		err = tb.applyRule("pick", reflect.ValueOf("yo"), false)
 		if err == nil || !strings.Contains(err.Error(), "exact:string:yo") {
 			t.Fatalf("expected EXACT overload chosen, got: %v", err)
 		}
@@ -122,7 +119,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		v := sw{s: "wrapped"}
-		err = tb.applyRule("iface", reflect.ValueOf(v))
+		err = tb.applyRule("iface", reflect.ValueOf(v), false)
 		if err == nil || !strings.Contains(err.Error(), "assign:stringer:wrapped") {
 			t.Fatalf("expected interface overload to run, got: %v", err)
 		}
@@ -164,7 +161,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 			t.Fatalf("registry.add error: %v", err)
 		}
 		// Trigger no-overload with a float
-		err = tb.applyRule("r", reflect.ValueOf(3.14))
+		err = tb.applyRule("r", reflect.ValueOf(3.14), false)
 		if err == nil || !strings.Contains(err.Error(), "rule overload not found") {
 			t.Fatalf("expected no-overload rule-not-found error, got: %v", err)
 		}
@@ -189,7 +186,7 @@ func TestTypeBinding_applyRule(t *testing.T) {
 		if err = reg.Add(intOverload); err != nil {
 			t.Fatalf("registry.add error: %v", err)
 		}
-		err = tb.applyRule("sorted", reflect.ValueOf(1.23))
+		err = tb.applyRule("sorted", reflect.ValueOf(1.23), false)
 		if err == nil {
 			t.Fatalf("expected error")
 		}

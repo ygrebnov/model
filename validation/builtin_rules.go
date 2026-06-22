@@ -2,17 +2,53 @@ package validation
 
 import (
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/ygrebnov/errorc"
-	"github.com/ygrebnov/model/constants"
-	modelerrors "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // Built-ins are always implicitly available.
+
+const (
+	// RuleMin is the canonical built-in rule name for minimum constraints.
+	RuleMin = "min"
+	// RuleMax is the canonical built-in rule name for maximum constraints.
+	RuleMax = "max"
+	// RuleNonzero is the canonical built-in rule name for non-zero constraints.
+	RuleNonzero = "nonzero"
+	// RuleOneOf is the canonical built-in rule name for allowed-set membership checks.
+	RuleOneOf = "oneof"
+	// RuleEmail is the canonical built-in rule name for email validation.
+	RuleEmail = "email"
+	// RuleUUID is the canonical built-in rule name for UUID validation.
+	RuleUUID = "uuid"
+	// RuleSemver is the canonical built-in rule name for semantic version numbers validation.
+	RuleSemver = "semver"
+)
+
+const (
+	// RuleStringMin is the backward-compatible alias for the string min rule name.
+	RuleStringMin = RuleMin
+	// RuleStringMax is the backward-compatible alias for the string max rule name.
+	RuleStringMax = RuleMax
+	// RuleIntMin is the backward-compatible alias for the int min rule name.
+	RuleIntMin = RuleMin
+	// RuleIntMax is the backward-compatible alias for the int max rule name.
+	RuleIntMax = RuleMax
+	// RuleInt64Min is the backward-compatible alias for the int64 min rule name.
+	RuleInt64Min = RuleMin
+	// RuleInt64Max is the backward-compatible alias for the int64 max rule name.
+	RuleInt64Max = RuleMax
+	// RuleFloat64Min is the backward-compatible alias for the float64 min rule name.
+	RuleFloat64Min = RuleMin
+	// RuleFloat64Max is the backward-compatible alias for the float64 max rule name.
+	RuleFloat64Max = RuleMax
+)
 
 // key consists of a name and a field value type.
 type key struct {
@@ -25,9 +61,7 @@ var (
 	builtInsOnce        sync.Once
 	builtInMap          map[key]Rule
 	builtinStringRules  []Rule
-	builtinIntRules     []Rule
-	builtinInt64Rules   []Rule
-	builtinFloat64Rules []Rule
+	builtinNumericRules []Rule
 )
 
 const (
@@ -49,14 +83,14 @@ var uuidHyphenPositions = [4]int{8, 13, 18, 23}
 
 func newRuleMissingParameterError(ruleName string) error {
 	return errorc.With(
-		modelerrors.ErrRuleMissingParameter,
+		errors.ErrRuleMissingParameter,
 		errorc.String(keys.RuleName, ruleName),
 	)
 }
 
 func newRuleInvalidParameterError(ruleName, paramName, paramValue string, cause error) error {
 	return errorc.With(
-		modelerrors.ErrRuleInvalidParameter,
+		errors.ErrRuleInvalidParameter,
 		errorc.String(keys.RuleName, ruleName),
 		errorc.String(keys.RuleParamName, paramName),
 		errorc.String(keys.RuleParamValue, paramValue),
@@ -66,14 +100,14 @@ func newRuleInvalidParameterError(ruleName, paramName, paramValue string, cause 
 
 func newRuleConstraintViolationError(ruleName string) error {
 	return errorc.With(
-		modelerrors.ErrRuleConstraintViolated,
+		errors.ErrRuleConstraintViolated,
 		errorc.String(keys.RuleName, ruleName),
 	)
 }
 
 func newRuleConstraintViolationWithStringParamError(ruleName, paramName, paramValue string) error {
 	return errorc.With(
-		modelerrors.ErrRuleConstraintViolated,
+		errors.ErrRuleConstraintViolated,
 		errorc.String(keys.RuleName, ruleName),
 		errorc.String(keys.RuleParamName, paramName),
 		errorc.String(keys.RuleParamValue, paramValue),
@@ -82,7 +116,7 @@ func newRuleConstraintViolationWithStringParamError(ruleName, paramName, paramVa
 
 func newRuleConstraintViolationWithIntParamError(ruleName, paramName string, paramValue int) error {
 	return errorc.With(
-		modelerrors.ErrRuleConstraintViolated,
+		errors.ErrRuleConstraintViolated,
 		errorc.String(keys.RuleName, ruleName),
 		errorc.String(keys.RuleParamName, paramName),
 		errorc.Int(keys.RuleParamValue, paramValue),
@@ -91,7 +125,7 @@ func newRuleConstraintViolationWithIntParamError(ruleName, paramName string, par
 
 func newRuleConstraintViolationWithParamNameError(ruleName, paramName string) error {
 	return errorc.With(
-		modelerrors.ErrRuleConstraintViolated,
+		errors.ErrRuleConstraintViolated,
 		errorc.String(keys.RuleName, ruleName),
 		errorc.String(keys.RuleParamName, paramName),
 	)
@@ -112,23 +146,38 @@ func splitEmailParts(s string) (local, domain string) {
 
 func validateBuiltinEmail(s string) error {
 	if s == "" { // treat empty as error, keeping semantics similar to prior nonempty
-		return newRuleConstraintViolationError(constants.RuleEmail)
+		return newRuleConstraintViolationError(RuleEmail)
 	}
 	if strings.Count(s, "@") != 1 {
-		return newRuleConstraintViolationWithStringParamError(constants.RuleEmail, emailCheckAtCount, "1")
+		return newRuleConstraintViolationWithStringParamError(RuleEmail, emailCheckAtCount, "1")
 	}
 
 	local, domain := splitEmailParts(s)
 	if local == "" || domain == "" {
-		return newRuleConstraintViolationWithParamNameError(constants.RuleEmail, emailCheckLocalDomainNonempty)
+		return newRuleConstraintViolationWithParamNameError(RuleEmail, emailCheckLocalDomainNonempty)
 	}
 	if strings.ContainsAny(s, " \t\n\r") {
-		return newRuleConstraintViolationWithParamNameError(constants.RuleEmail, emailCheckNoWhitespace)
+		return newRuleConstraintViolationWithParamNameError(RuleEmail, emailCheckNoWhitespace)
 	}
 	if !strings.Contains(domain, ".") { // simple domain heuristic
-		return newRuleConstraintViolationWithParamNameError(constants.RuleEmail, emailCheckDomainHasDot)
+		return newRuleConstraintViolationWithParamNameError(RuleEmail, emailCheckDomainHasDot)
 	}
 
+	return nil
+}
+
+func validateBuiltinSemver(s string) error {
+	if s == "" {
+		return newRuleConstraintViolationError(RuleSemver)
+	}
+
+	//nolint:lll // a regexp from the official spec.
+	e := `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`
+
+	re := regexp.MustCompile(e)
+	if !re.MatchString(s) {
+		return newRuleConstraintViolationError(RuleSemver)
+	}
 	return nil
 }
 
@@ -150,7 +199,7 @@ func validateBuiltinUUID(s string) error {
 	// Empty is invalid; caller can omit the rule if empty is allowed.
 	// Canonical form: 36 chars, 8-4-4-4-12 with hyphens, hex digits only.
 	if len(s) != uuidLength {
-		return newRuleConstraintViolationWithIntParamError(constants.RuleUUID, paramNameLength, len(s))
+		return newRuleConstraintViolationWithIntParamError(RuleUUID, paramNameLength, len(s))
 	}
 
 	for i := 0; i < len(s); i++ {
@@ -158,13 +207,13 @@ func validateBuiltinUUID(s string) error {
 		if isUUIDHyphenPosition(i) {
 			if c != '-' {
 				return newRuleConstraintViolationWithStringParamError(
-					constants.RuleUUID, uuidCheckFormat, "expected hyphens at 8,13,18,23",
+					RuleUUID, uuidCheckFormat, "expected hyphens at 8,13,18,23",
 				)
 			}
 			continue
 		}
 		if !isHexDigit(c) {
-			return newRuleConstraintViolationWithStringParamError(constants.RuleUUID, uuidCheckHex, "non-hex character")
+			return newRuleConstraintViolationWithStringParamError(RuleUUID, uuidCheckHex, "non-hex character")
 		}
 	}
 
@@ -199,7 +248,7 @@ func getStringMinMaxRule(
 // min(length): requires one integer parameter. If missing -> error. If <1 -> noop.
 func getStrMinRule() (Rule, error) {
 	return getStringMinMaxRule(
-		constants.RuleStringMin,
+		RuleStringMin,
 		func(v int64) bool { return v < 1 },
 		func(a, b int) bool { return a > b },
 	)
@@ -208,7 +257,7 @@ func getStrMinRule() (Rule, error) {
 // max(length): requires one integer parameter. If missing -> error. If <0 -> noop.
 func getStrMaxRule() (Rule, error) {
 	return getStringMinMaxRule(
-		constants.RuleStringMax,
+		RuleStringMax,
 		func(v int64) bool { return v < 0 },
 		func(a, b int) bool { return a < b },
 	)
@@ -216,16 +265,23 @@ func getStrMaxRule() (Rule, error) {
 
 // email rule: deliberately simple; not RFC 5322 exhaustive. Provides lightweight validation.
 func getStrEmailRule() (Rule, error) {
-	return NewRule[string](constants.RuleEmail, func(s string, _ ...string) error {
+	return NewRule[string](RuleEmail, func(s string, _ ...string) error {
 		return validateBuiltinEmail(s)
+	})
+}
+
+// semver rule: corresponding to version 2.0.0 published at https://semver.org/spec/v2.0.0.html
+func getStrSemverRule() (Rule, error) {
+	return NewRule[string](RuleSemver, func(s string, _ ...string) error {
+		return validateBuiltinSemver(s)
 	})
 }
 
 // oneof rule: value must match one of the provided parameters.
 func getStrOneofRule() (Rule, error) {
-	return NewRule[string](constants.RuleOneOf, func(s string, params ...string) error {
+	return NewRule[string](RuleOneOf, func(s string, params ...string) error {
 		if len(params) == 0 {
-			return newRuleMissingParameterError(constants.RuleOneOf)
+			return newRuleMissingParameterError(RuleOneOf)
 		}
 		for _, p := range params {
 			if s == p {
@@ -234,7 +290,7 @@ func getStrOneofRule() (Rule, error) {
 		}
 		// we expose the allowed set as the param value for debugging/inspection
 		return newRuleConstraintViolationWithStringParamError(
-			constants.RuleOneOf,
+			RuleOneOf,
 			paramNameAllowed,
 			strings.Join(params, ","),
 		)
@@ -243,12 +299,28 @@ func getStrOneofRule() (Rule, error) {
 
 // uuid rule: value must be a valid canonical UUID string (lower/upper hex, 8-4-4-4-12 format).
 func getStrUUIDRule() (Rule, error) {
-	return NewRule[string](constants.RuleUUID, func(s string, _ ...string) error {
+	return NewRule[string](RuleUUID, func(s string, _ ...string) error {
 		return validateBuiltinUUID(s)
 	})
 }
 
-func getNumericMinMaxRule[T interface{ int | int64 | float64 }](
+type signedNumeric interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
+
+type unsignedNumeric interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
+}
+
+type floatNumeric interface {
+	~float32 | ~float64
+}
+
+type numeric interface {
+	signedNumeric | unsignedNumeric | floatNumeric
+}
+
+func getNumericMinMaxRule[T numeric](
 	name string,
 	parse func(string) (T, error),
 	compare func(a, b T) bool,
@@ -269,7 +341,7 @@ func getNumericMinMaxRule[T interface{ int | int64 | float64 }](
 	})
 }
 
-func getNumericNonzeroRule[T interface{ int | int64 | float64 }](name string) (Rule, error) {
+func getNumericNonzeroRule[T numeric](name string) (Rule, error) {
 	return NewRule[T](name, func(n T, _ ...string) error {
 		if n == 0 {
 			return newRuleConstraintViolationError(name)
@@ -278,7 +350,7 @@ func getNumericNonzeroRule[T interface{ int | int64 | float64 }](name string) (R
 	})
 }
 
-func getNumericOneofRule[T interface{ int | int64 | float64 }](
+func getNumericOneofRule[T numeric](
 	name string,
 	parse func(string) (T, error),
 ) (Rule, error) {
@@ -300,88 +372,52 @@ func getNumericOneofRule[T interface{ int | int64 | float64 }](
 	})
 }
 
-// int rules
-// min(value): requires one integer parameter. Field value must be >= param.
-func getIntMinRule() (Rule, error) {
-	return getNumericMinMaxRule[int](constants.RuleMin, strconv.Atoi, func(a, b int) bool { return a < b })
+func parseSignedValue[T signedNumeric](bitSize int) func(string) (T, error) {
+	return func(s string) (T, error) {
+		v, err := strconv.ParseInt(strings.TrimSpace(s), 10, bitSize)
+		return T(v), err
+	}
 }
 
-// max(value): requires one integer parameter. Field value must be <= param.
-func getIntMaxRule() (Rule, error) {
-	return getNumericMinMaxRule[int](constants.RuleMax, strconv.Atoi, func(a, b int) bool { return a > b })
+func parseUnsignedValue[T unsignedNumeric](bitSize int) func(string) (T, error) {
+	return func(s string) (T, error) {
+		v, err := strconv.ParseUint(strings.TrimSpace(s), 10, bitSize)
+		return T(v), err
+	}
 }
 
-// nonzero: n must not be zero
-func getIntNonzeroRule() (Rule, error) {
-	return getNumericNonzeroRule[int](constants.RuleNonzero)
+func parseFloatValue[T floatNumeric](bitSize int) func(string) (T, error) {
+	return func(s string) (T, error) {
+		v, err := strconv.ParseFloat(strings.TrimSpace(s), bitSize)
+		return T(v), err
+	}
 }
 
-// oneof: n must equal one of the provided integer parameters
-func getIntOneofRule() (Rule, error) {
-	return getNumericOneofRule[int](
-		constants.RuleOneOf,
-		strconv.Atoi,
-	)
+func getSignedNumericRules[T signedNumeric](bitSize int) []Rule {
+	return []Rule{
+		mustRule(getNumericMinMaxRule[T](RuleMin, parseSignedValue[T](bitSize), func(a, b T) bool { return a < b })),
+		mustRule(getNumericMinMaxRule[T](RuleMax, parseSignedValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
+		mustRule(getNumericOneofRule[T](RuleOneOf, parseSignedValue[T](bitSize))),
+	}
 }
 
-// int64 rules
-// min(value): requires one integer parameter. Field value must be >= param.
-func getInt64MinRule() (Rule, error) {
-	return getNumericMinMaxRule[int64](
-		constants.RuleMin,
-		func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
-		func(a, b int64) bool { return a < b },
-	)
+func getUnsignedNumericRules[T unsignedNumeric](bitSize int) []Rule {
+	return []Rule{
+		mustRule(getNumericMinMaxRule[T](RuleMin, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a < b })),
+		mustRule(getNumericMinMaxRule[T](RuleMax, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
+		mustRule(getNumericOneofRule[T](RuleOneOf, parseUnsignedValue[T](bitSize))),
+	}
 }
 
-// max(value): requires one integer parameter. Field value must be <= param.
-func getInt64MaxRule() (Rule, error) {
-	return getNumericMinMaxRule[int64](
-		constants.RuleMax,
-		func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
-		func(a, b int64) bool { return a > b },
-	)
-}
-
-func getInt64NonzeroRule() (Rule, error) {
-	return getNumericNonzeroRule[int64](constants.RuleNonzero)
-}
-
-func getInt64OneofRule() (Rule, error) {
-	return getNumericOneofRule[int64](
-		constants.RuleOneOf,
-		func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) },
-	)
-}
-
-// float64 rules
-// min(value): requires one integer parameter. Field value must be >= param.
-func getFloat64MinRule() (Rule, error) {
-	return getNumericMinMaxRule[float64](
-		constants.RuleMin,
-		func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
-		func(a, b float64) bool { return a < b },
-	)
-}
-
-// max(value): requires one integer parameter. Field value must be <= param.
-func getFloat64MaxRule() (Rule, error) {
-	return getNumericMinMaxRule[float64](
-		constants.RuleMax,
-		func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
-		func(a, b float64) bool { return a > b },
-	)
-}
-
-func getFloat64NonzeroRule() (Rule, error) {
-	return getNumericNonzeroRule[float64](constants.RuleNonzero)
-}
-
-func getFloat64OneofRule() (Rule, error) {
-	return getNumericOneofRule[float64](
-		constants.RuleOneOf,
-		func(s string) (float64, error) { return strconv.ParseFloat(s, 64) },
-	)
+func getFloatNumericRules[T floatNumeric](bitSize int) []Rule {
+	return []Rule{
+		mustRule(getNumericMinMaxRule[T](RuleMin, parseFloatValue[T](bitSize), func(a, b T) bool { return a < b })),
+		mustRule(getNumericMinMaxRule[T](RuleMax, parseFloatValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
+		mustRule(getNumericOneofRule[T](RuleOneOf, parseFloatValue[T](bitSize))),
+	}
 }
 
 // ensureBuiltIns initializes built-in rules exactly once.
@@ -396,31 +432,23 @@ func ensureBuiltIns() {
 			mustRule(getStrEmailRule()),
 			mustRule(getStrOneofRule()),
 			mustRule(getStrUUIDRule()),
+			mustRule(getStrSemverRule()),
 		}
 
-		// int rules
-		builtinIntRules = []Rule{
-			mustRule(getIntMinRule()),
-			mustRule(getIntMaxRule()),
-			mustRule(getIntNonzeroRule()),
-			mustRule(getIntOneofRule()),
-		}
-
-		// int64 rules
-		builtinInt64Rules = []Rule{
-			mustRule(getInt64MinRule()),
-			mustRule(getInt64MaxRule()),
-			mustRule(getInt64NonzeroRule()),
-			mustRule(getInt64OneofRule()),
-		}
-
-		// float64 rules
-		builtinFloat64Rules = []Rule{
-			mustRule(getFloat64MinRule()),
-			mustRule(getFloat64MaxRule()),
-			mustRule(getFloat64NonzeroRule()),
-			mustRule(getFloat64OneofRule()),
-		}
+		builtinNumericRules = make([]Rule, 0, 52)
+		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int](strconv.IntSize)...)
+		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int8](8)...)
+		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int16](16)...)
+		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int32](32)...)
+		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int64](64)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint](strconv.IntSize)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint8](8)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint16](16)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint32](32)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint64](64)...)
+		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uintptr](strconv.IntSize)...)
+		builtinNumericRules = append(builtinNumericRules, getFloatNumericRules[float32](32)...)
+		builtinNumericRules = append(builtinNumericRules, getFloatNumericRules[float64](64)...)
 
 		// fill map
 		register := func(rs []Rule) {
@@ -429,9 +457,7 @@ func ensureBuiltIns() {
 			}
 		}
 		register(builtinStringRules)
-		register(builtinIntRules)
-		register(builtinInt64Rules)
-		register(builtinFloat64Rules)
+		register(builtinNumericRules)
 	})
 }
 

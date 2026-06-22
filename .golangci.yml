@@ -96,6 +96,7 @@ issues:
         - dogsled
         - dupl
         - goconst
+        - gocritic
         - gocyclo
         - gosec
         - gosimple
@@ -104,6 +105,7 @@ issues:
         - lll
         - staticcheck
         - revive
+        - unparam
     # Relax checks for helper code living under tests/ (some files don’t end with _test.go).
     - path: ^tests/
       linters:
@@ -117,3 +119,7 @@ issues:
         - lll
         - staticcheck
         - revive
+    - path: ^internal/core/service_set_defaults\.go$
+      text: "hugeParam: field is heavy"
+      linters:
+        - gocritic

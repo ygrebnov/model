@@ -1,17 +1,16 @@
-package model
+package tests
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/validation"
 )
-
-// ----- Test types -----
 
 // Implements fmt.Stringer to test AssignableTo(interface) path via rules registered for an interface type.
 type strWrap struct{ v string }
@@ -72,52 +71,7 @@ type vOuter struct {
 	Ghost string `validateElem:"nonempty"`
 }
 
-// ----- Helpers to register rules for tests -----
-
-// nonempty for string
-func ruleNonEmpty(s string, _ ...string) error {
-	if s == "" {
-		return fmt.Errorf("must not be empty")
-	}
-	return nil
-}
-
-// withParams echoes params to prove parsing worked
-func ruleWithParams(_ string, params ...string) error {
-	if len(params) == 0 {
-		return fmt.Errorf("expected params")
-	}
-	// Return an error that includes params for assertion
-	return fmt.Errorf("params=%s", strings.Join(params, "|"))
-}
-
-// nonzeroDuration (time.Duration or int64 underlying)
-func ruleNonzeroDuration(d time.Duration, _ ...string) error {
-	if d == 0 {
-		return fmt.Errorf("duration must be non-zero")
-	}
-	return nil
-}
-
-// int rule that always errors (to populate FieldError)
-func ruleIntAlwaysErr(_ int, _ ...string) error {
-	return fmt.Errorf("bad int")
-}
-
-// Rule for fmt.Stringer (AssignableTo interface)
-func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
-	return fmt.Errorf("bad stringer")
-}
-
-func TestModel_validateStruct(t *testing.T) {
-	// Build a model and register rules needed across subtests.
-	m := &Model[vOuter]{}
-	// attach a dummy object so ensureBinding can derive the struct type
-	objZero := vOuter{}
-	m.obj = &objZero
-	if err := m.ensureBinding(); err != nil {
-		t.Fatalf("ensureBinding error: %v", err)
-	}
+func TestBinding_Validate(t *testing.T) {
 	stringNonEmpty, err := validation.NewRule[string]("nonempty", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
@@ -146,17 +100,17 @@ func TestModel_validateStruct(t *testing.T) {
 		t.Fatalf("NewRule error: %v", err)
 	}
 
-	// Apply all to model
-	err = m.RegisterRules(
+	// Create Binding with all custom rules needed across subtests.
+	b, err := model.NewBinding[vOuter](model.WithRules(
 		stringNonEmpty,
 		stringWithParams,
 		durationNonzero,
 		stringerBad,
 		stringDup1,
 		intSlices,
-	)
+	))
 	if err != nil {
-		t.Fatalf("RegisterRules error: %v", err)
+		t.Fatalf("NewBinding error: %v", err)
 	}
 
 	t.Run("recursion, params parsing, unknown rule, ambiguity, assignable, and validateElem on slices/maps", func(t *testing.T) {
@@ -209,12 +163,14 @@ func TestModel_validateStruct(t *testing.T) {
 		obj.Ptrs[1] = &vInner{}
 		obj.FixedP[1] = &vInner{}
 
-		ve := &validation.Error{}
-		m.obj = &obj
-		rv := reflect.ValueOf(&obj).Elem()
-		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve) // use non-empty path prefix to test dotted paths
-		if err != nil {
-			t.Fatalf("ValidateStruct error: %v", err)
+		err = b.Validate(context.Background(), &obj) // use non-empty path prefix to test dotted paths
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		var ve *validation.Error
+		if !errors.As(err, &ve) {
+			t.Fatalf("expected validation errors; got none")
 		}
 
 		if ve.Empty() {
@@ -225,17 +181,17 @@ func TestModel_validateStruct(t *testing.T) {
 		by := ve.ByField()
 
 		// Recursion into In
-		if _, ok := by["Root.In.S"]; !ok {
-			t.Errorf("expected error at Root.In.S (nonempty)")
+		if _, ok := by["In.S"]; !ok {
+			t.Errorf("expected error at In.S (nonempty)")
 		}
-		if _, ok := by["Root.In.D"]; !ok {
-			t.Errorf("expected error at Root.In.D (nonzeroDuration)")
+		if _, ok := by["In.D"]; !ok {
+			t.Errorf("expected error at In.D (nonzeroDuration)")
 		}
 
-		// PIn nil → no entries under Root.PIn.*
+		// PIn nil → no entries under PIn.*
 		for p := range by {
-			if strings.HasPrefix(p, "Root.PIn.") {
-				t.Errorf("did not expect errors under Root.PIn.*, got %s", p)
+			if strings.HasPrefix(p, "PIn.") {
+				t.Errorf("did not expect errors under PIn.*, got %s", p)
 			}
 		}
 
@@ -247,13 +203,13 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 
 		// Simple rules
-		if _, ok := by["Root.Name"]; !ok {
-			t.Errorf("expected nonempty error at Root.name")
+		if _, ok := by["Name"]; !ok {
+			t.Errorf("expected nonempty error at Name")
 		}
 		// params parsing (withParams and nonempty applied)
-		paramsMsgs := by["Root.Note"]
+		paramsMsgs := by["Note"]
 		if len(paramsMsgs) == 0 {
-			t.Errorf("expected errors for Root.Note")
+			t.Errorf("expected errors for Note")
 		} else {
 			// Ensure the params were captured
 			foundParams := false
@@ -270,28 +226,28 @@ func TestModel_validateStruct(t *testing.T) {
 				t.Errorf("expected withParams error containing params=a|b|c")
 			}
 			if !foundNonEmpty {
-				t.Errorf("expected nonempty error for Root.Note")
+				t.Errorf("expected nonempty error for Note")
 			}
 		}
 
 		// Ambiguity on dup (no longer ambiguous). Expect a single nonempty error.
-		if es := by["Root.Amb"]; len(es) == 0 || es[0].Rule != "dup" || !strings.Contains(es[0].Err.Error(), "must not be empty") {
-			t.Errorf("expected nonempty error at Root.Amb, got: %+v", es)
+		if es := by["Amb"]; len(es) == 0 || es[0].Rule != "dup" || !strings.Contains(es[0].Err.Error(), "must not be empty") {
+			t.Errorf("expected nonempty error at Amb, got: %+v", es)
 		}
 
 		// Unknown rule applied (rule not found)
-		if es := by["Root.Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "rule not found") {
-			t.Errorf("expected unknown rule error at Root.Alias, got: %+v", es)
+		if es := by["Alias"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "rule not found") {
+			t.Errorf("expected unknown rule error at Alias, got: %+v", es)
 		}
 
 		// Assignable interface rule
-		if es := by["Root.Wrapped"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "bad stringer") {
-			t.Errorf("expected stringerBad error at Root.Wrapped, got: %+v", es)
+		if es := by["Wrapped"]; len(es) == 0 || !strings.Contains(es[0].Err.Error(), "bad stringer") {
+			t.Errorf("expected stringerBad error at Wrapped, got: %+v", es)
 		}
 
 		// Tokenizer: nested parentheses should not split inside, producing two top-level tokens (tokA(...), tokB)
-		if es := by["Root.TokNested"]; len(es) != 2 {
-			t.Errorf("expected 2 errors for Root.TokNested (tokA and tokB), got %d: %+v", len(es), es)
+		if es := by["TokNested"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for TokNested (tokA and tokB), got %d: %+v", len(es), es)
 		} else {
 			// Ensure rules are tokA and tokB (unknown rule errors)
 			have := map[string]bool{"tokA": false, "tokB": false}
@@ -307,14 +263,14 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 
 		// Tokenizer: leading/trailing commas create empty tokens which must be skipped; only nonempty should apply
-		if es := by["Root.TokEdges"]; len(es) != 1 || es[0].Rule != "nonempty" {
-			t.Errorf("expected exactly one nonempty error for Root.TokEdges, got %+v", es)
+		if es := by["TokEdges"]; len(es) != 1 || es[0].Rule != "nonempty" {
+			t.Errorf("expected exactly one nonempty error for TokEdges, got %+v", es)
 		}
 
 		// --- validateElem tokenizer coverage ---
 		// ElemTokNested: nested parentheses should not split inside; two top-level tokens (tokEA(...), tokEB)
-		if es := by["Root.ElemTokNested[0]"]; len(es) != 2 {
-			t.Errorf("expected 2 errors for Root.ElemTokNested[0] (tokEA and tokEB), got %d: %+v", len(es), es)
+		if es := by["ElemTokNested[0]"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for ElemTokNested[0] (tokEA and tokEB), got %d: %+v", len(es), es)
 		} else {
 			have := map[string]bool{"tokEA": false, "tokEB": false}
 			for _, fe := range es {
@@ -329,13 +285,13 @@ func TestModel_validateStruct(t *testing.T) {
 		}
 
 		// ElemTokEdges: leading/trailing commas create empty tokens which must be skipped; only nonempty should apply to the element
-		if es := by["Root.ElemTokEdges[0]"]; len(es) != 1 || es[0].Rule != "nonempty" {
-			t.Errorf("expected exactly one nonempty error for Root.ElemTokEdges[0], got %+v", es)
+		if es := by["ElemTokEdges[0]"]; len(es) != 1 || es[0].Rule != "nonempty" {
+			t.Errorf("expected exactly one nonempty error for ElemTokEdges[0], got %+v", es)
 		}
 
 		// ElemParams: commas inside parentheses must not split; expect withParams(a,b,c) and nonempty applied to element[0]
-		if es := by["Root.ElemParams[0]"]; len(es) != 2 {
-			t.Errorf("expected 2 errors for Root.ElemParams[0] (withParams and nonempty), got %d: %+v", len(es), es)
+		if es := by["ElemParams[0]"]; len(es) != 2 {
+			t.Errorf("expected 2 errors for ElemParams[0] (withParams and nonempty), got %d: %+v", len(es), es)
 		} else {
 			var sawParams, sawNonEmpty bool
 			for _, fe := range es {
@@ -347,96 +303,96 @@ func TestModel_validateStruct(t *testing.T) {
 				}
 			}
 			if !sawParams {
-				t.Errorf("expected withParams error with params=a|b|c for Root.ElemParams[0]")
+				t.Errorf("expected withParams error with params=a|b|c for ElemParams[0]")
 			}
 			if !sawNonEmpty {
-				t.Errorf("expected nonempty error for Root.ElemParams[0]")
+				t.Errorf("expected nonempty error for ElemParams[0]")
 			}
 		}
 
 		// validateElem on slice of strings
-		if es := by["Root.Tags[0]"]; len(es) == 0 {
-			t.Errorf("expected nonempty error at Root.Tags[0]")
+		if es := by["Tags[0]"]; len(es) == 0 {
+			t.Errorf("expected nonempty error at Tags[0]")
 		}
-		if _, ok := by["Root.Tags[1]"]; ok {
-			t.Errorf("did not expect error at Root.Tags[1] (was 'ok')")
+		if _, ok := by["Tags[1]"]; ok {
+			t.Errorf("did not expect error at Tags[1] (was 'ok')")
 		}
-		if es := by["Root.Tags[2]"]; len(es) == 0 {
-			t.Errorf("expected nonempty error at Root.Tags[2]")
+		if es := by["Tags[2]"]; len(es) == 0 {
+			t.Errorf("expected nonempty error at Tags[2]")
 		}
 
 		// validateElem dive on People slice (struct elements)
-		if es := by["Root.People[0].S"]; len(es) == 0 {
-			t.Errorf("expected error at Root.People[0].S (nonempty)")
+		if es := by["People[0].S"]; len(es) == 0 {
+			t.Errorf("expected error at People[0].S (nonempty)")
 		}
-		if es := by["Root.People[0].D"]; len(es) == 0 {
-			t.Errorf("expected error at Root.People[0].D (nonzeroDuration)")
+		if es := by["People[0].D"]; len(es) == 0 {
+			t.Errorf("expected error at People[0].D (nonzeroDuration)")
 		}
 		// second element has S ok, D zero → expect only D
-		if _, ok := by["Root.People[1].S"]; ok {
-			t.Errorf("did not expect error at Root.People[1].S")
+		if _, ok := by["People[1].S"]; ok {
+			t.Errorf("did not expect error at People[1].S")
 		}
-		if es := by["Root.People[1].D"]; len(es) == 0 {
-			t.Errorf("expected error at Root.People[1].D")
+		if es := by["People[1].D"]; len(es) == 0 {
+			t.Errorf("expected error at People[1].D")
 		}
 
 		// misuse of dive on non-struct element slice (Numbers): error per element
-		if es := by["Root.Numbers[0]"]; len(es) == 0 || es[0].Rule != "dive" {
-			t.Errorf("expected 'dive' misuse error at Root.Numbers[0], got: %+v", es)
+		if es := by["Numbers[0]"]; len(es) == 0 || es[0].Rule != "dive" {
+			t.Errorf("expected 'dive' misuse error at Numbers[0], got: %+v", es)
 		}
-		if es := by["Root.Numbers[1]"]; len(es) == 0 || es[0].Rule != "dive" {
-			t.Errorf("expected 'dive' misuse error at Root.Numbers[1], got: %+v", es)
+		if es := by["Numbers[1]"]; len(es) == 0 || es[0].Rule != "dive" {
+			t.Errorf("expected 'dive' misuse error at Numbers[1], got: %+v", es)
 		}
 
 		// Ptrs: nil pointer element produces a 'dive' misuse error (kind ptr), non-nil element gets dived
-		if es := by["Root.Ptrs[0]"]; len(es) == 0 || es[0].Rule != "dive" {
-			t.Errorf("expected 'dive' misuse error at Root.Ptrs[0], got: %+v", es)
+		if es := by["Ptrs[0]"]; len(es) == 0 || es[0].Rule != "dive" {
+			t.Errorf("expected 'dive' misuse error at Ptrs[0], got: %+v", es)
 		}
-		if es := by["Root.Ptrs[1].S"]; len(es) == 0 {
-			t.Errorf("expected nonempty error at Root.Ptrs[1].S")
+		if es := by["Ptrs[1].S"]; len(es) == 0 {
+			t.Errorf("expected nonempty error at Ptrs[1].S")
 		}
 
 		// Arrays behave like slices
-		if es := by["Root.Fixed[0].S"]; len(es) == 0 {
-			t.Errorf("expected nonempty error at Root.Fixed[0].S")
+		if es := by["Fixed[0].S"]; len(es) == 0 {
+			t.Errorf("expected nonempty error at Fixed[0].S")
 		}
-		if es := by["Root.Fixed[1].D"]; len(es) == 0 {
-			t.Errorf("expected nonzeroDuration error at Root.Fixed[1].D")
+		if es := by["Fixed[1].D"]; len(es) == 0 {
+			t.Errorf("expected nonzeroDuration error at Fixed[1].D")
 		}
 		// FixedP pointer array: index 0 nil -> 'dive' misuse; index 1 non-nil -> dive into struct
-		if es := by["Root.FixedP[0]"]; len(es) == 0 || es[0].Rule != "dive" {
-			t.Errorf("expected 'dive' misuse error at Root.FixedP[0], got: %+v", es)
+		if es := by["FixedP[0]"]; len(es) == 0 || es[0].Rule != "dive" {
+			t.Errorf("expected 'dive' misuse error at FixedP[0], got: %+v", es)
 		}
-		if es := by["Root.FixedP[1].S"]; len(es) == 0 {
-			t.Errorf("expected error at Root.FixedP[1].S")
+		if es := by["FixedP[1].S"]; len(es) == 0 {
+			t.Errorf("expected error at FixedP[1].S")
 		}
 
 		// Maps
 		// Labels map[string]string with nonempty element rule
-		if es := by[`Root.Labels[a]`]; len(es) == 0 {
-			t.Errorf("expected nonempty error at Root.Labels[a]")
+		if es := by[`Labels[a]`]; len(es) == 0 {
+			t.Errorf("expected nonempty error at Labels[a]")
 		}
-		if _, ok := by[`Root.Labels[b]`]; ok {
-			t.Errorf("did not expect error at Root.Labels[b]")
+		if _, ok := by[`Labels[b]`]; ok {
+			t.Errorf("did not expect error at Labels[b]")
 		}
 		// Profiles map[string]vInner with dive
-		if es := by[`Root.Profiles[k1].S`]; len(es) == 0 {
-			t.Errorf("expected error at Root.Profiles[k1].S")
+		if es := by[`Profiles[k1].S`]; len(es) == 0 {
+			t.Errorf("expected error at Profiles[k1].S")
 		}
-		if es := by[`Root.Profiles[k2].D`]; len(es) == 0 {
-			t.Errorf("expected error at Root.Profiles[k2].D")
+		if es := by[`Profiles[k2].D`]; len(es) == 0 {
+			t.Errorf("expected error at Profiles[k2].D")
 		}
 		// ProfilesP map[string]*vInner with dive
-		if es := by[`Root.ProfilesP[p1].S`]; len(es) == 0 {
-			t.Errorf("expected error at Root.ProfilesP[p1].S")
+		if es := by[`ProfilesP[p1].S`]; len(es) == 0 {
+			t.Errorf("expected error at ProfilesP[p1].S")
 		}
-		if es := by[`Root.ProfilesP[p2]`]; len(es) == 0 || es[0].Rule != "dive" {
-			t.Errorf("expected 'dive' misuse error at Root.ProfilesP[p2], got: %+v", es)
+		if es := by[`ProfilesP[p2]`]; len(es) == 0 || es[0].Rule != "dive" {
+			t.Errorf("expected 'dive' misuse error at ProfilesP[p2], got: %+v", es)
 		}
 
 		// validateElem ignored on non-container (Ghost)
-		if _, ok := by["Root.Ghost"]; ok {
-			t.Errorf("did not expect any error at Root.Ghost due to validateElem tag (non-container)")
+		if _, ok := by["Ghost"]; ok {
+			t.Errorf("did not expect any error at Ghost due to validateElem tag (non-container)")
 		}
 	})
 
@@ -449,23 +405,58 @@ func TestModel_validateStruct(t *testing.T) {
 		obj := vOuter{
 			PIn: &vInner{S: "", D: 0}, // both violate rules in vInner
 		}
-		ve := &validation.Error{}
-		m.obj = &obj
-		rv := reflect.ValueOf(&obj).Elem()
-		err = m.service.ValidateStruct(context.Background(), rv, "Root", ve)
-		if err != nil {
-			t.Fatalf("ValidateStruct error: %v", err)
+
+		err = b.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+
+		var ve *validation.Error
+		if !errors.As(err, &ve) {
+			t.Fatalf("expected error to be of type validation.Error")
 		}
 
 		if ve.Empty() {
 			t.Fatalf("expected validation errors; got none")
 		}
 		by := ve.ByField()
-		if _, ok := by["Root.PIn.S"]; !ok {
-			t.Errorf("expected nonempty error at Root.PIn.S")
+		if _, ok := by["PIn.S"]; !ok {
+			t.Errorf("expected nonempty error at PIn.S")
 		}
-		if _, ok := by["Root.PIn.D"]; !ok {
-			t.Errorf("expected nonzeroDuration error at Root.PIn.D")
+		if _, ok := by["PIn.D"]; !ok {
+			t.Errorf("expected nonzeroDuration error at PIn.D")
 		}
 	})
+}
+
+// New test to ensure built-in rules are applied when Validate is called
+// on a fresh Binding without any options.
+func TestBinding_Validate_NoOptions_Builtins(t *testing.T) {
+	t.Parallel()
+	type Obj struct {
+		S string `validate:"min(1)"`
+	}
+	obj := Obj{}
+	b, err := model.NewBinding[Obj]() // no Rules
+	if err != nil {
+		// New should not fail just because validation isn't requested yet.
+		t.Fatalf("unexpected error from New: %v", err)
+	}
+	// First validation should pick up built-in nonempty and fail because S is empty.
+	err = b.Validate(context.Background(), &obj)
+	if err == nil {
+		t.Fatalf("expected validation error for empty S, got nil")
+	}
+	var ve *validation.Error
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
+	}
+	if _, ok := ve.ByField()["S"]; !ok {
+		t.Fatalf("expected field error for S, got: %+v", ve.ByField())
+	}
+	// Fix the field and validate again; should succeed.
+	obj.S = "x"
+	if err := b.Validate(context.Background(), &obj); err != nil {
+		t.Fatalf("expected no error after fixing S, got: %v", err)
+	}
 }

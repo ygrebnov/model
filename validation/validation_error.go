@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	modelerrors "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	errorspkg "github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // Error accumulates multiple FieldError entries.
@@ -194,13 +194,17 @@ func formatFieldErrorMessage(err error) string {
 		return ""
 	}
 
-	base := modelerrors.Summary(err)
-	raw := errorMessage(err)
-	if base == raw {
-		return raw
+	base := errorspkg.GetBase(err)
+	if base == nil || !isCompactModelFieldError(base) {
+		return err.Error()
 	}
 
-	return appendFieldErrorDetail(base, compactErrorDetail(err))
+	detail := compactErrorDetail(err)
+	if detail == "" {
+		return err.Error()
+	}
+
+	return appendFieldErrorDetail(base.Error(), detail)
 }
 
 func appendFieldErrorDetail(base, detail string) string {
@@ -240,6 +244,22 @@ func compactErrorDetail(err error) string {
 	}
 
 	return strings.Join(parts, ", ")
+}
+
+func isCompactModelFieldError(base error) bool {
+	switch base {
+	case errorspkg.ErrRuleConstraintViolated,
+		errorspkg.ErrRuleInvalidParameter,
+		errorspkg.ErrRuleMissingParameter,
+		errorspkg.ErrRuleTypeMismatch,
+		errorspkg.ErrRuleOverloadNotFound,
+		errorspkg.ErrRuleNotFound,
+		errorspkg.ErrAmbiguousRule,
+		errorspkg.ErrInvalidValue:
+		return true
+	default:
+		return false
+	}
 }
 
 func errorMessage(err error) string {

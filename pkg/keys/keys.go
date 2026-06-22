@@ -34,7 +34,8 @@ var (
 	// ValueType identifies the runtime value type in structured error context.
 	ValueType = keys.New("value.type")
 	// ObjectType identifies the runtime object type in structured error context.
-	ObjectType = keys.New("object.type")
+	ObjectType   = keys.New("object.type")
+	ExpectedType = keys.New("expected_type")
 	// DefaultLiteralKind identifies the kind used when parsing default literal values.
 	DefaultLiteralKind = keys.New("default.literal.kind")
 
@@ -42,4 +43,5 @@ var (
 	Phase = keys.New("phase")
 	// Cause identifies an underlying cause in structured error context.
 	Cause = keys.New("cause")
+	Value = keys.New("value")
 )

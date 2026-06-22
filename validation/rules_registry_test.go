@@ -8,9 +8,8 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
-	"github.com/ygrebnov/model/constants"
-	errorsPkg "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	errorsPkg "github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // helper type for TestRegistry_get assignable interface scenario
@@ -283,9 +282,9 @@ func TestRegistry_get(t *testing.T) {
 		{
 			name:          "builtin fallback only (string email)",
 			setupRegistry: defaultRegistry,
-			ruleName:      constants.RuleEmail,
+			ruleName:      RuleEmail,
 			value:         reflect.ValueOf(""),
-			expectedRule:  builtinRuleForTest(t, constants.RuleEmail, reflect.TypeOf("")),
+			expectedRule:  builtinRuleForTest(t, RuleEmail, reflect.TypeOf("")),
 		},
 		{
 			name: "builtin fallback when empty slice present",
@@ -293,12 +292,12 @@ func TestRegistry_get(t *testing.T) {
 				r := &rulesRegistry{
 					rules: make(map[string][]Rule),
 				}
-				r.rules[constants.RuleEmail] = []Rule{}
+				r.rules[RuleEmail] = []Rule{}
 				return r
 			},
-			ruleName:     constants.RuleEmail,
+			ruleName:     RuleEmail,
 			value:        reflect.ValueOf(""),
-			expectedRule: builtinRuleForTest(t, constants.RuleEmail, reflect.TypeOf("")),
+			expectedRule: builtinRuleForTest(t, RuleEmail, reflect.TypeOf("")),
 		},
 		{
 			name: "exact match single overload",

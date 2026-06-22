@@ -4,8 +4,8 @@ import (
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
-	"github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // Rule represents a named validation rule bound to a specific field type.

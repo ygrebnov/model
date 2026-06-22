@@ -1,20 +1,61 @@
-package model
+package tests
 
 import (
 	"context"
-	"errors"
+	nativeerrors "errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ygrebnov/errorc"
-	"github.com/ygrebnov/model/constants"
-	modelerrors "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/validation"
 )
 
-var errNonZeroDurFailed = errorc.New("nonZeroDur rule failed", errorc.WithNamespace(constants.Namespace))
+type testObj struct {
+	Name string `json:"name" validate:"omitempty,min(3)"`
+}
+
+func TestValidate_omitempty(t *testing.T) {
+	tests := []struct {
+		name          string
+		obj           testObj
+		expectedError bool
+	}{
+		{
+			name:          "empty name -> no error (omitempty)",
+			obj:           testObj{Name: ""},
+			expectedError: false,
+		},
+		{
+			name:          "valid name -> ok",
+			obj:           testObj{Name: "valid"},
+			expectedError: false,
+		},
+		{
+			name:          "valid name -> ok",
+			obj:           testObj{Name: "va"},
+			expectedError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := model.Validate(context.Background(), &test.obj)
+			if test.expectedError && err == nil {
+				t.Fatalf("expected Validate to return an error, but got none")
+			}
+
+			if !test.expectedError && err != nil {
+				t.Fatalf("expected Validate to return no error, but got: %v", err)
+			}
+		})
+	}
+}
+
+var errNonZeroDurFailed = errorc.New("nonZeroDur rule failed")
 
 // --- helpers & sample rules used in tests ---
 func ruleNonZeroDur(d time.Duration, _ ...string) error {
@@ -31,7 +72,7 @@ func ruleNonZeroDur(d time.Duration, _ ...string) error {
 func ruleMin1(s string, _ ...string) error {
 	if len(s) < 1 {
 		return errorc.With(
-			errorc.New("min(1) rule failed", errorc.WithNamespace(constants.Namespace)),
+			errorc.New("min(1) rule failed"),
 			errorc.String(keys.RuleName, "min(1)"),
 		)
 	}
@@ -53,7 +94,7 @@ type vHasTags struct {
 	}
 }
 
-func TestModel_validate(t *testing.T) {
+func TestValidate(t *testing.T) {
 	t.Parallel()
 
 	type runFn func() (any, error)
@@ -67,80 +108,73 @@ func TestModel_validate(t *testing.T) {
 		{
 			name: "nil object -> error",
 			run: func() (any, error) {
-				var m Model[vNoTags]
-				m.obj = nil
-				return &m, m.validate(context.Background())
+				var obj *vNoTags
+
+				return nil, model.Validate(context.Background(), obj)
 			},
 			wantErr: "nil object",
 		},
 		{
 			name: "non-struct object -> error",
 			run: func() (any, error) {
-				var m Model[int]
 				x := 42
-				m.obj = &x // *int (Elem != struct)
-				return &m, m.validate(context.Background())
+				return nil, model.Validate(context.Background(), &x)
 			},
-			wantErr: "object must be a non-nil pointer to struct",
+			wantErr: "type parameter must be a struct",
 		},
 		{
 			name: "no tags -> ok (nil error)",
 			run: func() (any, error) {
-				var m Model[vNoTags]
 				obj := vNoTags{A: 1, B: "x"}
-				m.obj = &obj
-				return &m, m.validate(context.Background())
+				return nil, model.Validate(context.Background(), &obj)
 			},
 			wantErr: "",
 		},
 		{
 			name: "rules satisfied -> ok (nil error)",
 			run: func() (any, error) {
-				m := &Model[vHasTags]{}
-				obj := vHasTags{Name: "ok", Wait: time.Second}
-				obj.Info.Note = "ok"
-				m.obj = &obj
-				// register rules
 				min1, err := validation.NewRule("min(1)", ruleMin1) // illustrative; tag uses min(1) but rule name simplified
 				if err != nil {
-					return m, err
+					return nil, err
 				}
 				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return m, err
+					return nil, err
 				}
-				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
-					return m, err
+				b, err := model.NewBinding[vHasTags](model.WithRules(min1, nonZeroDur))
+				if err != nil {
+					return b, err
 				}
-				validationErr := m.validate(context.Background())
-				return m, validationErr
+				obj := vHasTags{Name: "ok", Wait: time.Second}
+				obj.Info.Note = "ok"
+				validationErr := b.Validate(context.Background(), &obj)
+				return b, validationErr
 			},
 			wantErr: "",
 		},
 		{
 			name: "rule failures -> ValidationError with multiple field errors",
 			run: func() (any, error) {
-				m := &Model[vHasTags]{}
-				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
-				m.obj = &obj
 				min1, err := validation.NewRule("min(1)", ruleMin1)
 				if err != nil {
-					return m, err
+					return nil, err
 				}
 				nonZeroDur, err := validation.NewRule("nonZeroDur", ruleNonZeroDur)
 				if err != nil {
-					return m, err
+					return nil, err
 				}
-				if err := m.RegisterRules(min1, nonZeroDur); err != nil {
-					return m, err
+				b, err := model.NewBinding[vHasTags](model.WithRules(min1, nonZeroDur))
+				if err != nil {
+					return nil, err
 				}
-				validationErr := m.validate(context.Background())
-				return m, validationErr
+				obj := vHasTags{} // Name empty, Wait zero, Info.Note empty
+				validationErr := b.Validate(context.Background(), &obj)
+				return b, validationErr
 			},
 			wantErr: `- Field "Name"`,
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *validation.Error
-				if !errors.As(err, &ve) {
+				if !nativeerrors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if ve.Empty() || ve.Len() < 3 {
@@ -156,7 +190,7 @@ func TestModel_validate(t *testing.T) {
 					t.Fatalf("expected error for Name")
 				} else {
 					// Name uses builtin string min rule; assert on builtin sentinel and metadata.
-					if !errors.Is(es[0].Err, modelerrors.ErrRuleConstraintViolated) {
+					if !errors.Is(es[0].Err, errors.ErrRuleConstraintViolated) {
 						t.Fatalf("expected ErrRuleConstraintViolated for Name, got %v", es[0].Err)
 					}
 					msg := es[0].Err.Error()
@@ -186,16 +220,18 @@ func TestModel_validate(t *testing.T) {
 				type vUnknown struct {
 					Alias string `validate:"doesNotExist"`
 				}
-				m := &Model[vUnknown]{}
+				b, err := model.NewBinding[vUnknown]()
+				if err != nil {
+					return nil, err
+				}
 				obj := vUnknown{}
-				m.obj = &obj
-				err := m.validate(context.Background())
-				return m, err
+				err = b.Validate(context.Background(), &obj)
+				return b, err
 			},
 			wantErr: "rule not found",
 			verify: func(t *testing.T, err error, _ any) {
 				var ve *validation.Error
-				if !errors.As(err, &ve) {
+				if !nativeerrors.As(err, &ve) {
 					t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 				}
 				if len(ve.ByField()["Alias"]) == 0 {
@@ -215,37 +251,6 @@ func TestModel_validate(t *testing.T) {
 				tt.verify(t, err, m)
 			}
 		})
-	}
-}
-
-// New test to ensure built-in rules are applied when Validate is called on a fresh Model without any options.
-func TestModel_Validate_NoOptions_Builtins(t *testing.T) {
-	t.Parallel()
-	type Obj struct {
-		S string `validate:"min(1)"`
-	}
-	obj := Obj{}
-	m, err := New(&obj) // no WithValidation, no WithRules
-	if err != nil {
-		// New should not fail just because validation isn't requested yet.
-		t.Fatalf("unexpected error from New: %v", err)
-	}
-	// First validation should pick up built-in nonempty and fail because S is empty.
-	err = m.Validate(context.Background())
-	if err == nil {
-		t.Fatalf("expected validation error for empty S, got nil")
-	}
-	var ve *validation.Error
-	if !errors.As(err, &ve) {
-		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
-	}
-	if _, ok := ve.ByField()["S"]; !ok {
-		t.Fatalf("expected field error for S, got: %+v", ve.ByField())
-	}
-	// Fix the field and validate again; should succeed.
-	obj.S = "x"
-	if err := m.Validate(context.Background()); err != nil {
-		t.Fatalf("expected no error after fixing S, got: %v", err)
 	}
 }
 

@@ -55,10 +55,11 @@ func (c *rulesMapping) Add(parent reflect.Type, fieldIndex int, tagName string, 
 	c.c.Store(key, parsed)
 }
 
-// RuleNameParams holds the Name and Params of a single validation rule.
+// RuleNameParams holds the Name, Params, and optionality of a single validation rule.
 type RuleNameParams struct {
-	Name   string
-	Params []string
+	Name     string
+	Params   []string
+	Optional bool // rule will not be applied to zero-value if validate tag contains omitempty
 }
 
 // ParseTag tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
@@ -101,6 +102,7 @@ func ParseTag(tag string) []RuleNameParams {
 
 func parseTokens(tokens []string) []RuleNameParams {
 	var rules []RuleNameParams
+	optional := false
 
 	for _, tok := range tokens {
 		if tok == "" {
@@ -121,8 +123,18 @@ func parseTokens(tokens []string) []RuleNameParams {
 				}
 			}
 		}
+		if name == "omitempty" {
+			optional = true
+			continue
+		}
 		if name != "" {
 			rules = append(rules, RuleNameParams{Name: name, Params: params})
+		}
+	}
+
+	if optional {
+		for i := range rules {
+			rules[i].Optional = true
 		}
 	}
 	return rules
