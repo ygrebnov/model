@@ -1,15 +1,15 @@
-package model
+package tests
 
 import (
 	"context"
-	"errors"
+	nativeerrors "errors"
 	"strings"
 	"testing"
 
 	keysLib "github.com/ygrebnov/keys"
-	"github.com/ygrebnov/model/constants"
-	modelerrors "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -23,7 +23,7 @@ func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, 
 	}
 
 	var ve *validation.Error
-	if !errors.As(err, &ve) {
+	if !nativeerrors.As(err, &ve) {
 		t.Fatalf("expected *validation.Error, got %T: %v", err, err)
 	}
 
@@ -62,7 +62,7 @@ func firstFieldErrorFor(t *testing.T, err error, path string) validation.FieldEr
 	t.Helper()
 
 	var ve *validation.Error
-	if !errors.As(err, &ve) {
+	if !nativeerrors.As(err, &ve) {
 		t.Fatalf("expected *validation.Error, got %T: %v", err, err)
 	}
 
@@ -77,7 +77,7 @@ func firstFieldErrorFor(t *testing.T, err error, path string) validation.FieldEr
 func assertConstraintViolation(t *testing.T, err error, ruleName, paramName, paramValue string) {
 	t.Helper()
 
-	assertRuleErrorHas(t, err, modelerrors.ErrRuleConstraintViolated, ruleName, map[keysLib.Key]string{
+	assertRuleErrorHas(t, err, errors.ErrRuleConstraintViolated, ruleName, map[keysLib.Key]string{
 		keys.RuleParamName:  paramName,
 		keys.RuleParamValue: paramValue,
 	})
@@ -86,13 +86,13 @@ func assertConstraintViolation(t *testing.T, err error, ruleName, paramName, par
 func assertMissingParameter(t *testing.T, err error) {
 	t.Helper()
 
-	assertRuleErrorHas(t, err, modelerrors.ErrRuleMissingParameter, constants.RuleOneOf, nil)
+	assertRuleErrorHas(t, err, errors.ErrRuleMissingParameter, validation.RuleOneOf, nil)
 }
 
 func assertInvalidParameter(t *testing.T, err error, ruleName, paramName, paramValue string) {
 	t.Helper()
 
-	assertRuleErrorHas(t, err, modelerrors.ErrRuleInvalidParameter, ruleName, map[keysLib.Key]string{
+	assertRuleErrorHas(t, err, errors.ErrRuleInvalidParameter, ruleName, map[keysLib.Key]string{
 		keys.RuleParamName:  paramName,
 		keys.RuleParamValue: paramValue,
 	})
@@ -166,9 +166,8 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "string min/max pass",
 			run: func(t *testing.T) error {
 				obj := strOK{S: "ok"}
-				_, err := New(&obj, WithValidation[strOK](context.Background()))
-				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+				if err := model.Validate(context.Background(), &obj); err != nil {
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -178,23 +177,43 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := strOK{S: "this string is definitely too long"}
-				_, err := New(&obj, WithValidation[strOK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMax, "length", "10")
+				var vErr *validation.Error
+				if !nativeerrors.As(err, &vErr) {
+					t.Fatalf("expected Validate to return ValidationError, but got %T: %v", err, err)
+				}
+
+				if vErr.Len() != 1 {
+					t.Fatalf("expected 1 field error, but got %d", vErr.Len())
+				}
+				fErr := vErr.ForField("S")
+				if len(fErr) != 1 {
+					t.Fatalf("expected 1 field error, but got %d", len(fErr))
+				}
+				if fErr[0].Path != "S" {
+					t.Fatalf("expected field Path S, but got %s", fErr[0].Path)
+				}
+				if fErr[0].Err == nil || !errors.Is(fErr[0].Err, errors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, but got %v", fErr[0].Err)
+				}
+				expectedFErr := "rule constraint violated, rule.name: max, rule.param.name: length, rule.param.value: 10"
+				if fErr[0].Err.Error() != expectedFErr {
+					t.Fatalf("expected error message %q, but got %q", expectedFErr, fErr[0].Err.Error())
+				}
 			},
 		},
 		{
 			name: "int min/max/nonzero pass",
 			run: func(t *testing.T) error {
 				obj := intOK{NMin: 5, NMax: 5, NZ: 1}
-				_, err := New(&obj, WithValidation[intOK](context.Background()))
-				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+				if err := model.Validate(context.Background(), &obj); err != nil {
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -204,14 +223,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOK{NMin: 0}
-				_, err := New(&obj, WithValidation[intOK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMin, "value", "1")
+				assertConstraintViolation(t, err, validation.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -219,23 +238,22 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOK{NMax: 20}
-				_, err := New(&obj, WithValidation[intOK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMax, "value", "10")
+				assertConstraintViolation(t, err, validation.RuleMax, "value", "10")
 			},
 		},
 		{
 			name: "int64 min/max/nonzero pass",
 			run: func(t *testing.T) error {
 				obj := int64OK{NMin: 5, NMax: 5, NZ: 1}
-				_, err := New(&obj, WithValidation[int64OK](context.Background()))
-				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+				if err := model.Validate(context.Background(), &obj); err != nil {
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -245,14 +263,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := int64OK{NMin: 0}
-				_, err := New(&obj, WithValidation[int64OK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMin, "value", "1")
+				assertConstraintViolation(t, err, validation.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -260,21 +278,21 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := int64OK{NMax: 20}
-				_, err := New(&obj, WithValidation[int64OK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMax, "value", "10")
+				assertConstraintViolation(t, err, validation.RuleMax, "value", "10")
 			},
 		},
 		{
 			name: "float64 min/max/nonzero pass",
 			run: func(t *testing.T) error {
 				obj := float64OK{NMin: 1.5, NMax: 1.5, NZ: 2.3}
-				_, err := New(&obj, WithValidation[float64OK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err != nil {
 					t.Fatalf("New returned error: %v", err)
 				}
@@ -286,14 +304,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := float64OK{NMin: 0.1}
-				_, err := New(&obj, WithValidation[float64OK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMin, "value", "0.5")
+				assertConstraintViolation(t, err, validation.RuleMin, "value", "0.5")
 			},
 		},
 		{
@@ -301,14 +319,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := float64OK{NMax: 3.0}
-				_, err := New(&obj, WithValidation[float64OK](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleMax, "value", "2.5")
+				assertConstraintViolation(t, err, validation.RuleMax, "value", "2.5")
 			},
 		},
 
@@ -317,12 +335,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "string oneof passes",
 			run: func(t *testing.T) error {
 				obj := strOneOf{S: "green"}
-				_, err := New(
-					&obj,
-					WithValidation[strOneOf](context.Background()),
-				)
+				err := model.Validate(context.Background(), &obj)
 				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -332,17 +347,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := strOneOf{S: "yellow"}
-				_, err := New(
-					&obj,
-					WithValidation[strOneOf](context.Background()),
-				)
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "red,green,blue")
+				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "red,green,blue")
 			},
 		},
 		{
@@ -350,9 +362,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := strOneOfNoParams{S: "x"}
-				_, err := New(&obj, WithValidation[strOneOfNoParams](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
@@ -366,9 +378,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "int oneof passes",
 			run: func(t *testing.T) error {
 				obj := intOneOf{N: 2}
-				_, err := New(&obj, WithValidation[intOneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -378,14 +390,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOneOf{N: 5}
-				_, err := New(&obj, WithValidation[intOneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "1,2,3")
+				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "1,2,3")
 			},
 		},
 		{
@@ -393,9 +405,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOneOfNoParams{N: 1}
-				_, err := New(&obj, WithValidation[intOneOfNoParams](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
@@ -408,14 +420,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := intOneOfBadParam{N: 2} // use value not matching first valid param to reach invalid 'a'
-				_, err := New(&obj, WithValidation[intOneOfBadParam](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -424,9 +436,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "int64 oneof passes",
 			run: func(t *testing.T) error {
 				obj := int64OneOf{N: 20}
-				_, err := New(&obj, WithValidation[int64OneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -436,14 +448,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := int64OneOf{N: 5}
-				_, err := New(&obj, WithValidation[int64OneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "10,20,30")
+				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "10,20,30")
 			},
 		},
 		{
@@ -451,9 +463,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := int64OneOfNoParams{N: 1}
-				_, err := New(&obj, WithValidation[int64OneOfNoParams](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
@@ -466,14 +478,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := int64OneOfBadParam{N: 1}
-				_, err := New(&obj, WithValidation[int64OneOfBadParam](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -482,9 +494,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			name: "float64 oneof passes",
 			run: func(t *testing.T) error {
 				obj := float64OneOf{F: 1.0}
-				_, err := New(&obj, WithValidation[float64OneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err != nil {
-					t.Fatalf("New returned error: %v", err)
+					t.Fatalf("Validate returned error: %v", err)
 				}
 				return nil
 			},
@@ -494,14 +506,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := float64OneOf{F: 3.3}
-				_, err := New(&obj, WithValidation[float64OneOf](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, constants.RuleOneOf, "allowed", "0.5,1.0,2.5")
+				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "0.5,1.0,2.5")
 			},
 		},
 		{
@@ -509,9 +521,9 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := float64OneOfNoParams{F: 1.0}
-				_, err := New(&obj, WithValidation[float64OneOfNoParams](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
@@ -524,14 +536,14 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			wantError: true,
 			run: func(t *testing.T) error {
 				obj := float64OneOfBadParam{F: 1.0}
-				_, err := New(&obj, WithValidation[float64OneOfBadParam](context.Background()))
+				err := model.Validate(context.Background(), &obj)
 				if err == nil {
-					t.Fatalf("expected error, got nil")
+					t.Fatalf("expected Validate to return an error, but got nil")
 				}
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, constants.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
 			},
 		},
 	}
@@ -541,7 +553,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			err := tt.run(t)
 			if tt.wantError && err == nil {
 				// error expected
-				t.Fatalf("expected error, got nil")
+				t.Fatalf("expected error, but got nil")
 			}
 			if !tt.wantError && err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -553,11 +565,81 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 	}
 }
 
+func TestBuiltinRules_WithValidation_ExtendedNumericCoverage(t *testing.T) {
+	type numericCoverageOK struct {
+		I8    int8    `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		I16   int16   `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		I32   int32   `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		U     uint    `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		U8    uint8   `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		U16   uint16  `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		U32   uint32  `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		U64   uint64  `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		UP    uintptr `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		F32   float32 `validate:"min(0.5),max(2.5),nonzero,oneof(0.5,1.5,2.5)"`
+		PRune rune    `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+		PByte byte    `validate:"min(3),max(10),nonzero,oneof(3,4,5)"`
+	}
+
+	t.Run("pass", func(t *testing.T) {
+		obj := numericCoverageOK{
+			I8: 5, I16: 5, I32: 5,
+			U: 5, U8: 5, U16: 5, U32: 5, U64: 5, UP: 5,
+			F32:   1.5,
+			PRune: 5,
+			PByte: 5,
+		}
+
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate returned error: %v", err)
+		}
+	})
+
+	t.Run("signed integer rule resolves for int8", func(t *testing.T) {
+		type signedFail struct {
+			V int8 `validate:"min(3)"`
+		}
+
+		err := model.Validate(context.Background(), &signedFail{V: 2})
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(t, err, validation.RuleMin, "value", "3")
+	})
+
+	t.Run("unsigned integer rule resolves for uintptr", func(t *testing.T) {
+		type unsignedFail struct {
+			V uintptr `validate:"oneof(3,4,5)"`
+		}
+
+		err := model.Validate(context.Background(), &unsignedFail{V: 6})
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "3,4,5")
+	})
+
+	t.Run("float rule resolves for float32", func(t *testing.T) {
+		type floatFail struct {
+			V float32 `validate:"max(2.5)"`
+		}
+
+		err := model.Validate(context.Background(), &floatFail{V: 3.5})
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(t, err, validation.RuleMax, "value", "2.5")
+	})
+}
+
 func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
 	type Obj struct{ S string }
 	obj := Obj{}
-	if _, err := New(&obj, WithValidation[Obj](context.Background())); err != nil {
-		t.Fatalf("WithValidation should not error for valid builtins, got: %v", err)
+	if err := model.Validate(context.Background(), &obj); err != nil {
+		t.Fatalf("Validate should not error for valid builtins, but got: %v", err)
 	}
 }
 
@@ -592,7 +674,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 					t.Fatalf("expected error, got nil")
 				}
 				fe := firstFieldErrorFor(t, err, "Email")
-				if !errors.Is(fe.Err, modelerrors.ErrRuleConstraintViolated) {
+				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
 				msg := fe.Err.Error()
@@ -613,7 +695,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 					t.Fatalf("expected error, got nil")
 				}
 				fe := firstFieldErrorFor(t, err, "ID")
-				if !errors.Is(fe.Err, modelerrors.ErrRuleConstraintViolated) {
+				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
 				msg := fe.Err.Error()
@@ -627,9 +709,119 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			obj := tt.obj
-			_, err := New(&obj, WithValidation[emailUUID](context.Background()))
+			err := model.Validate(context.Background(), &obj)
 			if tt.wantError && err == nil {
-				t.Fatalf("expected error, got nil")
+				t.Fatalf("expected Validate to return an error, but got nil")
+			}
+			if !tt.wantError && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.checkErr != nil {
+				tt.checkErr(t, err)
+			}
+		})
+	}
+}
+
+func TestBuiltinStringSemver(t *testing.T) {
+	type semverStruct struct {
+		Semver string `validate:"semver"`
+	}
+
+	tests := []struct {
+		name      string
+		obj       semverStruct
+		wantError bool
+		checkErr  func(t *testing.T, err error)
+	}{
+		{
+			name: "1.0.0",
+			obj: semverStruct{
+				Semver: "1.0.0",
+			},
+		},
+		{
+			name: "1.0.0-alpha",
+			obj: semverStruct{
+				Semver: "1.0.0-alpha",
+			},
+		},
+		{
+			name: "1.0.0-alpha.1",
+			obj: semverStruct{
+				Semver: "1.0.0-alpha.1",
+			},
+		},
+		{
+			name: "1.0.0-0.3.7",
+			obj: semverStruct{
+				Semver: "1.0.0-0.3.7",
+			},
+		},
+		{
+			name: "1.0.0-x.7.z.92",
+			obj: semverStruct{
+				Semver: "1.0.0-x.7.z.92",
+			},
+		},
+		{
+			name: "1.0.0-x-y-z.--",
+			obj: semverStruct{
+				Semver: "1.0.0-x-y-z.--",
+			},
+		},
+		{
+			name: "1.0.0-alpha+001",
+			obj: semverStruct{
+				Semver: "1.0.0-alpha+001",
+			},
+		},
+		{
+			name: "1.0.0+20130313144700",
+			obj: semverStruct{
+				Semver: "1.0.0+20130313144700",
+			},
+		},
+		{
+			name: "1.0.0-beta+exp.sha.5114f85",
+			obj: semverStruct{
+				Semver: "1.0.0-beta+exp.sha.5114f85",
+			},
+		},
+		{
+			name: "1.0.0+21AF26D3----117B344092BD",
+			obj: semverStruct{
+				Semver: "1.0.0+21AF26D3----117B344092BD",
+			},
+		},
+		{
+			name: "invalid semver fails",
+			obj: semverStruct{
+				Semver: "v1.0.0",
+			},
+			wantError: true,
+			checkErr: func(t *testing.T, err error) {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				fe := firstFieldErrorFor(t, err, "Semver")
+				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
+					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
+				}
+				msg := fe.Err.Error()
+				if !strings.Contains(msg, string(keys.RuleName)+": semver") {
+					t.Fatalf("expected semver rule metadata in field error, got %q", msg)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := tt.obj
+			err := model.Validate(context.Background(), &obj)
+			if tt.wantError && err == nil {
+				t.Fatalf("expected Validate to return an error, but got nil")
 			}
 			if !tt.wantError && err != nil {
 				t.Fatalf("unexpected error: %v", err)

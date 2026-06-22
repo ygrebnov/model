@@ -3,12 +3,408 @@ package core
 import (
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/ygrebnov/model/validation"
 )
 
 // Helper types for defaults testing
 type innerDef struct {
 	S string `default:"x"`
 	N int    `default:"42"`
+}
+
+type envNestedConfig struct {
+	Host    string        `json:"host"`
+	Port    int           `json:"port" default:"8080"`
+	Timeout time.Duration `json:"timeout" env:"request_timeout"`
+}
+
+type envNestedConfigNoDefaults struct {
+	Host    string        `json:"host"`
+	Port    int           `json:"port"`
+	Timeout time.Duration `json:"timeout" env:"request_timeout"`
+}
+
+type envMapValueConfig struct {
+	URL     string        `json:"url"`
+	Timeout time.Duration `json:"timeout"`
+}
+
+type envConfig struct {
+	Name       string `json:"name"`
+	Explicit   string `json:"ignored" env:"custom_name"`
+	Fallback   string
+	Enabled    bool                         `json:"enabled"`
+	Server     envNestedConfig              `json:"server"`
+	PServer    *envNestedConfig             `json:"p_server"`
+	EServer    *envNestedConfigNoDefaults   `json:"e_server"`
+	Services   map[string]envMapValueConfig `json:"services"`
+	Numbers    []int                        `json:"numbers"`
+	SkipMe     string                       `env:"-" json:"skip_me"`
+	DefaultVal string                       `json:"default_val" default:"from-default"`
+}
+
+func TestSetDefaultsStruct_EnvironmentValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		setEnv func(t *testing.T)
+		obj    envConfig
+		verify func(t *testing.T, got envConfig)
+	}{
+		{
+			name: "uses json tag as env name fallback",
+			setEnv: func(t *testing.T) {
+				t.Setenv("NAME", "from-env")
+			},
+			obj: envConfig{Name: "from-config"},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Name != "from-env" {
+					t.Fatalf("expected Name from env, got %q", got.Name)
+				}
+			},
+		},
+		{
+			name: "env tag wins over json tag",
+			setEnv: func(t *testing.T) {
+				t.Setenv("CUSTOM_NAME", "from-env-tag")
+				t.Setenv("IGNORED", "from-json-tag")
+			},
+			obj: envConfig{Explicit: "from-config"},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Explicit != "from-env-tag" {
+					t.Fatalf("expected Explicit from env tag, got %q", got.Explicit)
+				}
+			},
+		},
+		{
+			name: "uses uppercase field name when tags are missing",
+			setEnv: func(t *testing.T) {
+				t.Setenv("FALLBACK", "from-field-name")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Fallback != "from-field-name" {
+					t.Fatalf("expected Fallback from field name, got %q", got.Fallback)
+				}
+			},
+		},
+		{
+			name: "parses bool env values",
+			setEnv: func(t *testing.T) {
+				t.Setenv("ENABLED", "true")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if !got.Enabled {
+					t.Fatalf("expected Enabled to be true")
+				}
+			},
+		},
+		{
+			name: "environment overrides non-zero value",
+			setEnv: func(t *testing.T) {
+				t.Setenv("NAME", "from-env")
+			},
+			obj: envConfig{Name: "from-config"},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Name != "from-env" {
+					t.Fatalf("expected env to override config value, got %q", got.Name)
+				}
+			},
+		},
+		{
+			name:   "default fills only zero value when env is absent",
+			setEnv: func(t *testing.T) {},
+			obj:    envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.DefaultVal != "from-default" {
+					t.Fatalf("expected default value, got %q", got.DefaultVal)
+				}
+			},
+		},
+		{
+			name: "environment overrides default tag",
+			setEnv: func(t *testing.T) {
+				t.Setenv("DEFAULT_VAL", "from-env")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.DefaultVal != "from-env" {
+					t.Fatalf("expected env value to override default, got %q", got.DefaultVal)
+				}
+			},
+		},
+		{
+			name: "environment zero value overrides default tag",
+			setEnv: func(t *testing.T) {
+				t.Setenv("DEFAULT_VAL", "")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.DefaultVal != "" {
+					t.Fatalf("expected env zero value to override default, got %q", got.DefaultVal)
+				}
+			},
+		},
+		{
+			name: "env dash tag skips field",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SKIP_ME", "from-env")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.SkipMe != "" {
+					t.Fatalf("expected SkipMe to remain empty, got %q", got.SkipMe)
+				}
+			},
+		},
+		{
+			name: "pointer to struct without defaults give nil",
+			obj:  envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.EServer != nil {
+					t.Fatalf("expected EServer to remain nil, got %+v", got.EServer)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setEnv != nil {
+				tc.setEnv(t)
+			}
+
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			tc.verify(t, got)
+		})
+	}
+}
+
+func TestSetDefaultsStruct_EnvironmentNestedValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		setEnv func(t *testing.T)
+		obj    envConfig
+		verify func(t *testing.T, got envConfig)
+	}{
+		{
+			name: "joins nested struct env path with underscore",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SERVER_HOST", "localhost")
+				t.Setenv("SERVER_PORT", "9090")
+				t.Setenv("SERVER_REQUEST_TIMEOUT", "5s")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Server.Host != "localhost" {
+					t.Fatalf("expected Server.Host from env, got %q", got.Server.Host)
+				}
+				if got.Server.Port != 9090 {
+					t.Fatalf("expected Server.Port from env, got %d", got.Server.Port)
+				}
+				if got.Server.Timeout != 5*time.Second {
+					t.Fatalf("expected Server.Timeout from env, got %v", got.Server.Timeout)
+				}
+			},
+		},
+		{
+			name: "nested environment zero value overrides default tag",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SERVER_PORT", "0")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Server.Port != 0 {
+					t.Fatalf("expected nested env zero value to override default, got %d", got.Server.Port)
+				}
+			},
+		},
+		{
+			name: "allocates nil pointer to struct for nested env value",
+			setEnv: func(t *testing.T) {
+				t.Setenv("P_SERVER_HOST", "pointer-host")
+				t.Setenv("P_SERVER_PORT", "7070")
+			},
+			obj: envConfig{PServer: nil},
+			verify: func(t *testing.T, got envConfig) {
+				if got.PServer == nil {
+					t.Fatalf("expected PServer to be allocated")
+				}
+				if got.PServer.Host != "pointer-host" {
+					t.Fatalf("expected PServer.Host from env, got %q", got.PServer.Host)
+				}
+				if got.PServer.Port != 7070 {
+					t.Fatalf("expected PServer.Port from env, got %d", got.PServer.Port)
+				}
+			},
+		},
+		{
+			name: "walks map struct values using map key path segment",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SERVICES_API_URL", "https://api.example.com")
+				t.Setenv("SERVICES_API_TIMEOUT", "3s")
+			},
+			obj: envConfig{Services: map[string]envMapValueConfig{"api": {}}},
+			verify: func(t *testing.T, got envConfig) {
+				service := got.Services["api"]
+				if service.URL != "https://api.example.com" {
+					t.Fatalf("expected service URL from env, got %q", service.URL)
+				}
+				if service.Timeout != 3*time.Second {
+					t.Fatalf("expected service Timeout from env, got %v", service.Timeout)
+				}
+			},
+		},
+		{
+			name: "skips slices for environment traversal",
+			setEnv: func(t *testing.T) {
+				t.Setenv("NUMBERS_0", "99")
+			},
+			obj: envConfig{Numbers: []int{1, 2}},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Numbers[0] != 1 || got.Numbers[1] != 2 {
+					t.Fatalf("expected Numbers unchanged, got %#v", got.Numbers)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setEnv(t)
+
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			tc.verify(t, got)
+		})
+	}
+}
+
+func TestSetDefaultsStruct_EnvironmentPrefix(t *testing.T) {
+	tests := []struct {
+		name      string
+		envPrefix string
+		setEnv    func(t *testing.T)
+		obj       envConfig
+		verify    func(t *testing.T, got envConfig)
+	}{
+		{
+			name:      "uses env prefix for root field",
+			envPrefix: "app",
+			setEnv: func(t *testing.T) {
+				t.Setenv("APP_NAME", "prefixed-name")
+				t.Setenv("NAME", "unprefixed-name")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Name != "prefixed-name" {
+					t.Fatalf("expected prefixed env value, got %q", got.Name)
+				}
+			},
+		},
+		{
+			name:      "uses env prefix for nested struct field",
+			envPrefix: "app",
+			setEnv: func(t *testing.T) {
+				t.Setenv("APP_SERVER_HOST", "prefixed-host")
+				t.Setenv("SERVER_HOST", "unprefixed-host")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Server.Host != "prefixed-host" {
+					t.Fatalf("expected prefixed nested env value, got %q", got.Server.Host)
+				}
+			},
+		},
+		{
+			name:      "uses env prefix for map value field",
+			envPrefix: "app",
+			setEnv: func(t *testing.T) {
+				t.Setenv("APP_SERVICES_API_URL", "https://prefixed.example.com")
+				t.Setenv("SERVICES_API_URL", "https://unprefixed.example.com")
+			},
+			obj: envConfig{Services: map[string]envMapValueConfig{"api": {}}},
+			verify: func(t *testing.T, got envConfig) {
+				service := got.Services["api"]
+				if service.URL != "https://prefixed.example.com" {
+					t.Fatalf("expected prefixed map env value, got %q", service.URL)
+				}
+			},
+		},
+		{
+			name:      "normalizes env prefix",
+			envPrefix: "_my_app_",
+			setEnv: func(t *testing.T) {
+				t.Setenv("MY_APP_NAME", "normalized-prefix")
+			},
+			obj: envConfig{},
+			verify: func(t *testing.T, got envConfig) {
+				if got.Name != "normalized-prefix" {
+					t.Fatalf("expected normalized prefix env value, got %q", got.Name)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setEnv(t)
+
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+			if err := newServiceWithEnvPrefix(&got, tc.envPrefix).SetDefaultsStruct(rv); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			tc.verify(t, got)
+		})
+	}
+}
+
+func TestSetDefaultsStruct_EnvironmentValueErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		setEnv func(t *testing.T)
+		obj    envConfig
+	}{
+		{
+			name: "returns error for invalid int env value",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SERVER_PORT", "not-an-int")
+			},
+			obj: envConfig{},
+		},
+		{
+			name: "returns error for invalid duration env value",
+			setEnv: func(t *testing.T) {
+				t.Setenv("SERVER_REQUEST_TIMEOUT", "not-a-duration")
+			},
+			obj: envConfig{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setEnv(t)
+
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+			if err := newService(&got).SetDefaultsStruct(rv); err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+		})
+	}
 }
 
 type outerDef struct {
@@ -21,9 +417,21 @@ type outerDef struct {
 }
 
 func newService[T any](obj *T) *Service {
-	return &Service{
-		reflectType: reflect.TypeOf(obj),
-	}
+	return NewService(
+		reflect.TypeOf(obj).Elem(),
+		validation.NewRulesRegistry(),
+		validation.NewRulesMapping(),
+		"",
+	)
+}
+
+func newServiceWithEnvPrefix[T any](obj *T, envPrefix string) *Service {
+	return NewService(
+		reflect.TypeOf(obj).Elem(),
+		validation.NewRulesRegistry(),
+		validation.NewRulesMapping(),
+		envPrefix,
+	)
 }
 
 func TestApplyDefaultTag(t *testing.T) {

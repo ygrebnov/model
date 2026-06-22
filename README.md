@@ -4,38 +4,21 @@
 
 # model — defaults & validation for Go structs
 
-`model` is a tiny helper that binds a **Model** (and optionally a reusable **Binding**) to your structs. It can:
+`model` creates reusable **Bindings** for your structs. It can:
 
-- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"`.
+- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"` as well as environment variables.
 - **Validate** fields using named rules from `validate:"…"` and `validateElem:"…"`.
 - Accumulate all issues into a single `*validation.Error` (no fail-fast).
-- Recurse through nested structs, pointers, slices/arrays, and map values.
+- Recurse through nested structs, pointers, slices/arrays, and map values, including cycle-safe validation of pointer graphs.
 
-It’s designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). For reusable validation across many values of the same type, you can use `Binding[T]` as a shared engine for defaults and validation.
+Library is designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). `Binding[T]` is a shared engine you can use for defaults and validation across many values of the same type. Library provides a set of convenient wrappers for one-off use cases, too. `DynamicBinding` is available for cases where you need to validate arbitrary types at runtime.
 
-## Table of Contents
-- [Install](#install)
-- [Why use this?](#why-use-this)
-- [Quick start](#quick-start)
-- [Binding[T] – reusable defaults and validation](#bindingt--reusable-defaults-and-validation)
-- [Constructor: `New`](#constructor-new)
-- [Why no MustNew?](#why-no-mustnew)
-- [Functional options](#functional-options)
-- [Model methods](#model-methods)
-- [Struct tags (how it works)](#struct-tags-how-it-works)
-- [Built-in rules](#built-in-rules)
-- [Structured errors: errorc, sentinels, and structured keys](#structured-errors-errorc-sentinels-and-structured-keys)
-- [Overriding a builtin rule](#overriding-a-builtin-rule)
-- [Custom rules (with parameters)](#custom-rules-with-parameters)
-- [Error types](#error-types)
-- [Performance & benchmarks](#performance--benchmarks)
-  - [Performance tuning tips](#performance-tuning-tips)
-- [Behavior notes](#behavior-notes)
-- [Integration example: validation failure with sorted available types](#integration-example-validation-failure-with-sorted-available-types)
-- [Missing rule vs missing overload](#missing-rule-vs-missing-overload)
-- [Minimal example](#minimal-example)
-- [Examples](#examples)
-- [License](#license)
+## Features
+
+- **Simple API**: a constructor and three main methods on `Binding[T]` and `DynamicBinding`: `SetDefaults()`, `Validate(ctx)`, and `ValidateWithDefaults(ctx)`. Convenience wrappers correspond to main methods for one-off use cases.
+- **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
+- **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
+- **Structured errors**: built-in rules and many internal errors use sentinel values plus structured key/value metadata (via `errorc`), making it easier to inspect and transform validation failures.
 
 ---
 
@@ -44,15 +27,6 @@ It’s designed to be **small, explicit, and type-safe** (uses generics). You re
 ```bash
 go get github.com/ygrebnov/model
 ```
-
----
-
-## Why use this?
-
-- **Simple API**: one constructor and two main methods on `Model[T]`: `SetDefaults()` and `Validate(ctx)`. For reusable engines, use `Binding[T]` to apply the same defaults/validation to many instances.
-- **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
-- **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
-- **Structured errors**: built-in rules and many internal errors use sentinel values plus structured key/value metadata (via `errorc`), making it easier to inspect and transform validation failures.
 
 ---
 
@@ -69,7 +43,7 @@ import (
     "time"
 
     "github.com/ygrebnov/model"
-    modelvalidation "github.com/ygrebnov/model/validation"
+    "github.com/ygrebnov/model/validation"
 )
 
 type Address struct {
@@ -84,17 +58,32 @@ type User struct {
     Home     Address       `default:"dive"`           // recurse into nested struct
     Aliases  []string      `validateElem:"min(3)"`   // validate each element
     Profiles map[string]Address `default:"alloc" defaultElem:"dive"`
+	Email string `validate:"email,omitempty"` // skip validation if empty
 }
 
 func main() {
-    u := User{Aliases: []string{"", "ok"}} // index 0 will fail validation
+	customRule, _ := validation.NewRule("email", func(s string, _ ...string) error {
+	    if s != "user@company.com" {
+	        return fmt.Errorf("must be 'user@company.com'")
+	    }
+	    return nil
+	})
+	b, err := model.NewBinding[User]( // reusable engine for User
+	    model.WithRules(customRule),
+	)
+	if err != nil {
+	    fmt.Println("binding error:", err)
+	    return
+    }
 
-    m, err := model.New(&u,
-        model.WithDefaults[User](),                       // apply defaults during construction
-        model.WithValidation[User](context.Background()), // run validation during construction (cancellable)
-    )
+    u1 := User{Aliases: []string{"", "ok"}} // will fail validation
+		
+    err = b.ValidateWithDefaults( // apply defaults and validate in one call
+		context.Background(), // context-aware validation with cancellation support
+		&u1,
+	)
     if err != nil {
-        var ve *modelvalidation.Error
+        var ve *validation.Error
         if errors.As(err, &ve) {
             b, _ := json.MarshalIndent(ve, "", "  ")
             fmt.Println(string(b))
@@ -104,228 +93,159 @@ func main() {
         return
     }
 
-    fmt.Printf("User after defaults: %+v\n", u)
+    fmt.Printf("User1 after defaults: %+v\n", u1)
 
-    // You can also call them later:
-    _ = m.SetDefaults()                  // guarded by sync.Once — no double work
-    _ = m.Validate(context.Background()) // returns *validation.Error on failure
+    // You can also set defaults and validate separately:
+    u2 := User{Aliases: []string{"pass"}} // will pass validation
+    _ = b.ApplyDefaults(&u2)
+    _ = b.Validate(context.Background(), &u2) // returns *validation.Error on failure
+
+    // Custom rules are passed during binding construction via WithRules:
+    u3 := User{
+		Aliases: []string{"pass"}, 
+		Email: "user@company.com", // will pass validation with custom rule
+	}
+	_ = b.ValidateWithDefaults(context.Background(), &u3)
+	
+	// If you do not need reusable binding, you can use wrappers:
+    u4 := User{Aliases: []string{"pass"}} // will pass validation
+	_ = model.SetDefaults(&u4) // apply defaults
+    _ = model.Validate(context.Background(), &u4) // returns *validation.Error on failure
+	_ = model.ValidateWithDefaults(context.Background(), &u4) // apply defaults and validate in one call
 }
 ```
 
 ---
 
-## Binding[T] – reusable defaults and validation
+## Setting defaults
 
-`Model[T]` binds a single struct instance; sometimes you want a reusable engine for a type that you can apply to many instances. That is what `Binding[T]` is for.
+Library supports setting defaults for exported fields via struct tags and environment variables.
+
+### `default:"…"` struct tag
+
+Supported forms:
+  - `default:"<literal>"` sets the field if it is zero
+  - `default:"dive"` on a struct or pointer-to-struct recurses into its fields
+  - `default:"alloc"` allocates an empty map/slice when the field is nil
+
+Supported literal types:
+- string
+- bool
+- int, int8, int16, int32, int64
+- uint, uint8, uint16, uint32, uint64
+- float32, float64
+- complex64, complex128
+- time.Duration, types.Duration (from `github.com/ygrebnov/model/pkg/types`)
+
+Defaults are applied only to **zero values**. Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal defaults when nil. Pointer-to-complex types (struct/map/slice) are **not** auto-allocated for literals. Use `dive` to recurse into struct or `*struct` elements (allocating a new struct for nil pointers). Use `alloc` to allocate an empty slice/map if nil.
+
+---
+
+### `defaultElem:"…"` struct tag
+
+Applies a default to elements of a slice/array or values of a map. Supported literal types are the same as for `default:"…"`. `defaultElem:"dive"` recurses into slice/array elements or map values that are structs.
+
+---
+
+### environment variables
+
+Top-level struct field can be populated from an environment variable corresponding to the field uppercase name. For example, `Name string` field value can be set via `NAME` environment variable. 
+
+Nested struct fields can be populated via `PARENT_CHILD` style environment variable names. For example, `Parent struct { Child string }` field value can be set via `PARENT_CHILD` environment variable. 
+
+You can also use `env:"ENV_VAR_NAME"` struct tag to specify a custom environment variable name for a field.
+
+Library also supports environment variables names prefixes, which can be set via `WithEnvPrefix` option.
 
 ```go
-import (
-    "context"
-
-    "github.com/ygrebnov/model"
-)
-
-type Payload struct {
-    ID      string `validate:"uuid"`
-    Email   string `validate:"email"`
-    Retries int    `validate:"min(0),max(5)"`
+type S struct {
+    Name string `env:"CUSTOM_NAME"`
+    Age  int
 }
 
-func validatePayload(ctx context.Context, p *Payload) error {
-    // Construct once per process (or cache it) and reuse.
-    b, err := model.NewBinding[Payload]()
-    if err != nil {
-        return err
-    }
-    // If you have custom rules:
-    //   customRule, _ := model.NewRule[Payload](...)
-    //   _ = b.RegisterRules(customRule)
+_ = os.Setenv("MYAPP_CUSTOM_NAME", "Alice")
 
-    // Apply defaults (from `default` tags) and then validate.
-    if err := b.ValidateWithDefaults(ctx, p); err != nil {
-        return err
-    }
-    return nil
-}
+var s S
+_ = model.SetDefaults(&s, model.WithEnvPrefix("MYAPP"))
+
+fmt.Printf("S after defaults: %+v\n", s) 
+// Output: S after defaults: {Name:Alice Age:0}
 ```
 
-Key points:
+Values from environment variables are applied **after** literal defaults, so they can override them.
+Reusable `Binding[T]` and `DynamicBinding` instances snapshot environment variables when they are
+constructed, so later process env changes are not observed by that binding. Convenience wrappers
+such as `SetDefaults` and `ValidateWithDefaults` create a fresh binding per call and therefore read
+the current environment each time.
 
-- `NewBinding[T]` builds a reusable binding for the type `T` using a fresh `RulesRegistry` and `RulesMapping`.
-- `Binding[T].ApplyDefaults(*T)` applies `default` / `defaultElem` tags to a concrete instance.
-- `Binding[T].Validate(ctx, *T)` validates a concrete instance using `validate` / `validateElem` tags.
-- `Binding[T].ValidateWithDefaults(ctx, *T)` combines both in a single call.
-- `Binding[T].RegisterRules(...)` lets you register custom validation rules for that binding’s type; these participate alongside the built-ins.
+---
 
-A typical service pattern is to construct a `Binding[T]` once at startup and reuse it in handlers:
+## Validation
+
+Validation is driven by `validate` and `validateElem` tags plus built-in and custom rules. Validation gathers **all** field errors and returns a `*validation.Error` on failure. Cancellation/deadlines follow the provided context. Nested structs and non-nil pointers to structs are traversed recursively, and pointer cycles are skipped on the current traversal path so self-referential object graphs terminate safely. Shared subgraphs can still be validated through each reachable field path.
+
+### `validate:"…"` and `validateElem:"…"` struct tags
+
+It supports rule parameters via the syntax "rule" or "rule(p1,p2)" and multiple rules separated by commas. Empty tokens are skipped (`,email,` → `email`). `validateElem:"dive"` recurses into struct elements, non-struct or nil pointer elements produce a misuse error under rule name `dive`. Shared nodes can still be validated through multiple field paths; only the active recursion path is cycle-guarded.
+
+If you want to skip validation for zero values, you can use `omitempty` in the `validate` tag. For example:
 
 ```go
-var payloadBinding *model.Binding[Payload]
-
-func init() {
-    var err error
-    payloadBinding, err = model.NewBinding[Payload]()
-    if err != nil {
-        panic(err) // or return a startup error from main
-    }
-}
-
-func handleRequest(ctx context.Context, p *Payload) error {
-    if err := payloadBinding.ValidateWithDefaults(ctx, p); err != nil {
-        return err
-    }
-    // p is now defaulted and validated
-    return nil
+type User struct {
+    Name string `validate:"omitempty,min(3),max(50)"`
 }
 ```
 
 ---
 
-## Constructor: `New`
-
-```go
-ctx := context.Background()
-m, err := model.New(&user,
-    model.WithDefaults[User](),
-    model.WithValidation[User](ctx),  // run validation during New() with cancellation support
-)
-if err != nil {
-    var ve *validation.Error
-    switch {
-    case errors.Is(err, modelerrors.ErrNilObject):
-        // handle nil object
-    case errors.Is(err, modelerrors.ErrNotStructPtr):
-        // handle pointer to non-struct
-    case errors.As(err, &ve):
-        // handle field validation failures
-    default:
-        // defaults parsing or other errors
-    }
-}
-```
-
-To validate later explicitly, call `m.Validate(ctx)` with a context appropriate for the request.
-
----
-
-## Why no MustNew?
-
-`MustNew` (a variant that panics on configuration errors) is intentionally omitted:
-
-- Panics hinder graceful startup error reporting in services / CLIs.
-- All failure modes (`nil` object, non-struct pointer, duplicate rule overload, validation failures when requested) are ordinary and recoverable.
-- Returning `error` keeps initialization explicit and test-friendly (you can assert exact sentinel errors or unwrap `*validation.Error`).
-- If you truly want a panic wrapper, you can write a 2‑line helper in your own code:
-  ```go
-  func MustNew[T any](o *T, opts ...model.Option[T]) *model.Model[T] {
-      m, err := model.New(o, opts...); if err != nil { panic(err) }; return m
-  }
-  ```
-
-If enough users request it, a helper can be added later—keeping the core API minimal for now.
-
----
-
-## Functional options
-
-All options run in the order provided. If an option returns an error (e.g., attempting to register a duplicate overload for the same type & name), `New` stops and returns that error.
-
-### `WithDefaults[T]()` — apply defaults during construction
-
-```go
-m, err := model.New(&u, model.WithDefaults[User]())
-```
-
-- Runs once per `Model` (guarded by `sync.Once`).
-- Writes only zero values.
-
-### `WithValidation[T](ctx context.Context)` — run validation during construction
-
-```go
-ctx := context.Background()
-m, err := model.New(&u,
-    model.WithValidation[User](ctx),
-)
-```
-
-- Gathers **all** field errors; returns a `*validation.Error` on failure.
-- Built-ins are always considered first for matching types.
-- Cancellation/deadlines follow the provided context.
-- To override a built-in rule, register a custom rule *before* `WithValidation`:
-
-```go
-minCustom, _ := model.NewRule[string]("min", func(s string, _ ...string) error {
-    if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
-    return nil
-})
-
-m, err := model.New(&u,
-    model.WithRules[User](minCustom), // override
-    model.WithValidation[User](ctx),
-)
-```
-
-### `WithRules[T](rules ...Rule)` — register one or many rules
+### Rules
 
 Create rules with `NewRule` and pass them. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call. Duplicate exact overloads (same rule name & identical field type) are rejected.
 
 ```go
-maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) error {
+maxLen, _ := validation.NewRule[string]("maxLen", func(s string, params ...string) error {
     if len(params) < 1 { return fmt.Errorf("maxLen requires 1 param") }
     n, _ := strconv.Atoi(params[0])
     if len(s) > n { return fmt.Errorf("must be <= %d chars", n) }
     return nil
 })
 
-positive64, _ := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
+positive64, _ := validation.NewRule[int64]("positive", func(v int64, _ ...string) error {
     if v <= 0 { return fmt.Errorf("must be > 0") }
     return nil
 })
 
-m, _ := model.New(&u,
-    model.WithRules[User](maxLen, positive64), // different names & types allowed
+b, _ := model.NewBinding[User](
+    model.WithRules(maxLen, positive64), // different names & types allowed
 )
 ```
 
-Duplicate exact overloads (same rule name & identical field type) are **rejected at registration time** with `ErrDuplicateOverloadRule`. This prevents later runtime ambiguity.
+To override a built-in rule, register a custom rule *before* running validation:
+
+```go
+type S struct {
+    Name string `validate:"min(1)"`
+}
+
+minCustom, _ := validation.NewRule[string]("min", func(s string, _ ...string) error {
+    if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
+    return nil
+})
+
+b, _ := model.NewBinding[S](
+    model.WithRules(minCustom), // override builtin string min
+)
+
+s := S{Name: "  "}
+
+_ = b.Validate(context.Background(), &s) // returns *validation.Error with rule "min" failure
+```
+
+Duplicate exact registrations for the same name & type are rejected. Interface-based rules still participate via assignable matching when no exact rule exists.
 
 ---
 
-## Model methods
-
-### `SetDefaults() error`
-
-Apply `default:"…"` / `defaultElem:"…"` recursively. Safe to call multiple times (subsequent calls no-op).
-
-### `Validate(ctx context.Context) error`
-
-Walk fields and apply rules from `validate:"…"` / `validateElem:"…"` tags. Returns `*validation.Error` on failure.
-
-- Returns `ctx.Err()` immediately if the context is canceled or its deadline is exceeded.
-
----
-
-## Struct tags (how it works)
-
-### Defaults: `default:"…"` and `defaultElem:"…"`
-
-- **Literals**: string, bool, ints/uints, floats, `time.Duration`.
-- **`dive`**: recurse into struct or `*struct` (allocating a new struct for nil pointers).
-- **`alloc`**: allocate empty slice/map if nil.
-- **`defaultElem:"dive"`**: recurse into struct elements (slice/array) or map values.
-
-Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal defaults when nil. Pointer-to-complex types (struct/map/slice) are **not** auto-allocated for literals.
-
-### Validation: `validate:"…"` and `validateElem:"…"`
-
-- Comma-separated top-level rules.
-- Parameters in parentheses: `rule(p1,p2)`.
-- Empty tokens skipped (`,email,` → `email`).
-- `validateElem:"dive"` recurses into struct elements; non-struct or nil pointer elements produce a misuse error under rule name `dive`.
-
----
-
-## Built-in rules
+### Built-in rules
 
 Built-in rules are always implicitly available (you do **not** need to register or import anything for them):
 
@@ -335,49 +255,18 @@ Built-in rules are always implicitly available (you do **not** need to register 
   - `oneof(v1,v2,...)` – value must be exactly one of the listed strings.
   - `email` – lightweight email check (single `@`, non-empty local/domain, domain contains `.`, no whitespace).
   - `uuid` – canonical UUID string (`8-4-4-4-12` hex format with hyphens).
-- Int / Int64 / Float64:
+  - `semver` – semantic version string (e.g., `1.2.3`, `1.2.3-alpha`, `1.2.3-beta+exp.sha.5114f85`).
+- Numeric (`int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`, `uintptr`, `float32`, `float64`):
   - `min(V)` – value must be **>= V**.
   - `max(V)` – value must be **<= V**.
   - `nonzero` – value must not be zero.
   - `oneof(v1,v2,...)` – value must be equal to one of the listed values.
 
-Overriding: if you register a custom rule with the same name and exact type **before** validation runs, your rule is chosen (duplicate exact registrations for the same name & type are rejected). Interface-based rules still participate via assignable matching when no exact rule exists.
-
 > The library lazy-loads built-ins on first use, so unused numeric/string sets impose no startup cost.
 
 ---
 
-### Numeric min / max examples
-
-```go
-type Limits struct {
-    Port    int     `validate:"min(1),max(65535)"`
-    Retries int64   `validate:"min(0),max(10)"`
-    Ratio   float64 `validate:"min(0.0),max(1.0)"`
-}
-```
-
-- `Port` must be between 1 and 65535.
-- `Retries` must be between 0 and 10.
-- `Ratio` must be between 0.0 and 1.0 inclusive.
-
-### String max and uuid examples
-
-```go
-type Account struct {
-    ID    string `validate:"uuid"`
-    Name  string `validate:"min(3),max(100)"`
-    Email string `validate:"email"`
-}
-```
-
-- `ID` must be a canonical UUID string (e.g. `123e4567-e89b-12d3-a456-426614174000`).
-- `Name` must be between 3 and 100 characters.
-- `Email` must satisfy a simple email heuristic (single `@`, etc.).
-
----
-
-## Structured errors: errorc, sentinels, and structured keys
+### Structured errors: errorc, sentinels, and structured keys
 
 Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. Sentinel errors live in `github.com/ygrebnov/model/errors`, and strongly-typed keys live in `github.com/ygrebnov/model/keys`:
 
@@ -405,7 +294,7 @@ return errorc.With(
 )
 ```
 
-Validation formatting keeps the top-level `*validation.Error` concise (for example: `- Field "Name": rule "min": constraint violated (length=3)`), while the underlying `FieldError.Err` values still preserve the raw structured metadata for inspection and mapping.
+Validation formatting keeps the top-level `*validation.Error` concise for built-in and internal structured errors (for example: `- Field "Name": rule "min": constraint violated (length=3)`), while the underlying `FieldError.Err` values still preserve the raw structured metadata for inspection and mapping. Errors returned by custom rules are left as-is so their original messages are not rewritten heuristically.
 
 From your code, you can inspect these errors using `errors.Is`, inspect the wrapped `FieldError.Err`, or use `errors.As` into `*validation.Error` for field-level failures.
 
@@ -428,69 +317,11 @@ if err != nil {
 
 If you need to work directly with the structured error metadata (for example, to localize messages), inspect `FieldError.Err` and use the keys exposed by `github.com/ygrebnov/model/keys` together with the sentinels from `github.com/ygrebnov/model/errors`.
 
----
+## Contributing
 
-## Overriding a builtin rule
+Contributions are welcome!
+Please open an [issue](https://github.com/ygrebnov/model/issues) or submit a [pull request](https://github.com/ygrebnov/model/pulls).
 
-You can override a builtin rule by registering a custom rule with the same name and exact field type before validation runs. For example, to replace the builtin string `min` rule with a whitespace-aware version:
+## License
 
-```go
-package main
-
-import (
-    "context"
-    "errors"
-    "fmt"
-    "strconv"
-    "strings"
-
-    "github.com/ygrebnov/model"
-    modelvalidation "github.com/ygrebnov/model/validation"
-)
-
-type Comment struct {
-    Text string `validate:"min(3)"`
-}
-
-func main() {
-    trimMin, err := model.NewRule[string]("min", func(s string, params ...string) error {
-        // Treat leading/trailing whitespace as insignificant.
-        s = strings.TrimSpace(s)
-        if len(params) == 0 {
-            return fmt.Errorf("min requires a length parameter")
-        }
-        n, err := strconv.Atoi(params[0])
-        if err != nil {
-            return fmt.Errorf("min requires an integer parameter: %w", err)
-        }
-        if len(s) < n {
-            return fmt.Errorf("must be at least %d characters after trimming", n)
-        }
-        return nil
-    })
-    if err != nil {
-        panic(err)
-    }
-
-    c := Comment{Text: "  x "}
-
-    m, err := model.New(&c,
-        model.WithRules[Comment](trimMin),           // override builtin string min
-        model.WithValidation[Comment](context.Background()),
-    )
-    if err != nil {
-        var ve *modelvalidation.Error
-        if errors.As(err, &ve) {
-            fmt.Println("validation error:", ve)
-        } else {
-            fmt.Println("error:", err)
-        }
-        return
-    }
-
-    _ = m
-    fmt.Println("comment is valid")
-}
-```
-
-In this example, tag `validate:"min(3)"` for `Comment.Text` uses the overridden rule because it shares the same name and exact field type (`string`) as the builtin.
+Distributed under the BSD 3-Clause License. See the [LICENSE](LICENSE) file for details.

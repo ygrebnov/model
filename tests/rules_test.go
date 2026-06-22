@@ -1,4 +1,4 @@
-package model
+package tests
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ygrebnov/model/constants"
+	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -17,9 +17,9 @@ type bv struct {
 	ID    int64   `validate:"nonzero"`
 }
 
-func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
+func TestValidate_ImplicitBuiltinRulesApplied(t *testing.T) {
 	obj := bv{}
-	_, err := New(&obj, WithValidation[bv](context.Background()))
+	err := model.Validate(context.Background(), &obj)
 	if err == nil {
 		t.Fatalf("expected validation error due to implicit builtin rules")
 	}
@@ -38,7 +38,7 @@ func TestWithValidation_ImplicitBuiltinRulesApplied(t *testing.T) {
 
 func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	obj := bv{}
-	customEmail, err := validation.NewRule[string](constants.RuleEmail, func(s string, _ ...string) error {
+	customEmail, err := validation.NewRule[string](validation.RuleEmail, func(s string, _ ...string) error {
 		if s == "" {
 			return errors.New("custom email empty")
 		}
@@ -47,7 +47,7 @@ func TestWithValidation_CustomRuleOverrides_WhenRegisteredBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
-	_, err = New(&obj, WithRules[bv](customEmail), WithValidation[bv](context.Background()))
+	err = model.Validate(context.Background(), &obj, model.WithRules(customEmail))
 	if err == nil {
 		t.Fatalf("expected validation error")
 	}

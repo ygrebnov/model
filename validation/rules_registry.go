@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
-	"github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	"github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // RulesRegistry stores validation rules and resolves the best matching overload by name and type.

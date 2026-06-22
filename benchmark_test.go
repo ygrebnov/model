@@ -87,14 +87,14 @@ func BenchmarkMediumValidate(b *testing.B) {
 		b.Fatalf("failed to create medium rule: %v", err)
 	}
 
-	m, err := New(&obj, WithRules[mediumStruct](rule), WithValidation[mediumStruct](context.Background()))
+	binding, err := NewBinding[mediumStruct](WithRules(rule))
 	if err != nil {
-		b.Fatalf("failed to create model: %v", err)
+		b.Fatalf("failed to register rules: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := m.Validate(context.Background()); err != nil {
+		if err := binding.Validate(context.Background(), &obj); err != nil {
 			b.Fatalf("validation failed: %v", err)
 		}
 	}

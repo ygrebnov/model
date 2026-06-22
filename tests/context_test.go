@@ -1,4 +1,4 @@
-package model
+package tests
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -20,13 +21,13 @@ type ctxObj struct {
 func TestValidate_ContextCanceled_ReturnsEarly(t *testing.T) {
 	t.Parallel()
 	obj := ctxObj{A: "", B: "", C: ""}
-	m, err := New(&obj) // rely on built-in min rules at Validate time
+	b, err := model.NewBinding[ctxObj]() // rely on built-in min rules at Validate time
 	if err != nil {
 		t.Fatalf("New error: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := m.Validate(ctx); !errors.Is(err, context.Canceled) {
+	if err := b.Validate(ctx, &obj); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
@@ -38,9 +39,8 @@ func TestNew_WithValidationContext_ValidateDuringNewCanceled(t *testing.T) {
 	defer cancel()
 	// Sleep a tick to ensure timeout expires before New runs validation
 	time.Sleep(time.Millisecond)
-	_, err := New(&obj,
-		WithValidation[ctxObj](ctx),
-	)
+	err := model.Validate(ctx, &obj)
+
 	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context deadline/cancel error, got %v", err)
 	}
@@ -65,7 +65,7 @@ func TestValidate_LongRunning_CanceledMidway(t *testing.T) {
 	}
 
 	obj := LR{Items: make([]string, 200)} // many elements
-	m, err := New(&obj, WithRules[LR](slowRule))
+	b, err := model.NewBinding[LR](model.WithRules(slowRule))
 	if err != nil {
 		t.Fatalf("New error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestValidate_LongRunning_CanceledMidway(t *testing.T) {
 		cancel()
 	}()
 
-	err = m.Validate(ctx)
+	err = b.Validate(ctx, &obj)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}

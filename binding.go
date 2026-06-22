@@ -4,8 +4,8 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/ygrebnov/model/errors"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -21,35 +21,57 @@ type service interface {
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
 
-func newService(typ reflect.Type, rr validation.RulesRegistry, rm validation.RulesMapping) (service, error) {
-	return core.NewService(typ, rr, rm)
+func newService(
+	typ reflect.Type,
+	rr validation.RulesRegistry,
+	rm validation.RulesMapping,
+	envPrefix string,
+) service {
+	return core.NewService(typ, rr, rm, envPrefix)
 }
 
-// NewBinding constructs a Binding for the type parameter T using the default
-// rules registry and mapping configuration.
-func NewBinding[T any]() (*Binding[T], error) {
+// NewBinding constructs a Binding for the type parameter T. T must be a struct.
+//
+// Use WithEnvPrefix option to add environment variables names prefix. Environment variables are
+// snapshotted when the binding is constructed.
+//
+// Builtin rules are applied implicitly.
+//
+// Use WithRules option to register custom validation rules at construction time.
+// See [validation.Rule] and [validation.NewRule] for details on creating rules.
+func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 	// Obtain the reflect.Type for T. The zero value of *T is never dereferenced.
 	var zero *T
 	t := reflect.TypeOf(zero).Elem()
 	if t.Kind() != reflect.Struct {
 		// Mirror New's constraint that only struct types are supported.
-		return nil, errors.ErrNotStructPtr
+		return nil, errors.ErrTypeParamNotStruct
+	}
+
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
 	}
 
 	rulesRegistry := validation.NewRulesRegistry()
 	rulesMapping := validation.NewRulesMapping()
 
-	s, err := newService(t, rulesRegistry, rulesMapping)
-	if err != nil {
-		return nil, err
+	s := newService(t, rulesRegistry, rulesMapping, o.envPrefix)
+
+	b := &Binding[T]{service: s}
+
+	if len(o.rules) > 0 {
+		if err := registerRules(s, o.rules...); err != nil {
+			return nil, err
+		}
 	}
-	return &Binding[T]{service: s}, nil
+
+	return b, nil
 }
 
-// ApplyDefaults applies default values to zero fields of obj according to
-// its `default` / `defaultElem` tags. It is safe to call multiple times.
-// ApplyDefaults applies defaults each time it is called.
-// It is idempotent, but not once-guarded; callers control how often to invoke it.
+// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags
+// and environment variables. ApplyDefaults applies defaults each time it is called.
+// It is idempotent, but not once-guarded.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	if obj == nil {
 		return errors.ErrNilObject
@@ -65,10 +87,10 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	return b.service.SetDefaultsStruct(elem)
 }
 
-// Validate runs validation rules declared via `validate` / `validateElem`
-// tags on obj with the provided context. If validation fails, a
-// *Error is returned; if the context is canceled, ctx.Err() is
-// returned.
+// Validate runs validation rules declared via `validate` / `validateElem` tags on obj
+// with the provided context.
+//
+// If validation fails, a *validation.Error is returned; if the context is canceled, ctx.Err() is returned.
 func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	if obj == nil {
 		return errors.ErrNilObject
@@ -94,9 +116,8 @@ func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	return ve
 }
 
-// ValidateWithDefaults first applies defaults to obj and then runs
-// validation. This is a convenience for service-level flows that expect
-// defaulted inputs before validation.
+// ValidateWithDefaults first applies defaults to obj and then runs validation. This is a convenience
+// for service-level flows that expect defaulted inputs before validation.
 func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 	if err := b.ApplyDefaults(obj); err != nil {
 		return err
@@ -104,13 +125,9 @@ func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 	return b.Validate(ctx, obj)
 }
 
-// RegisterRules registers one or many named custom validation rules of the same field type
-// into the registry.
-//
-// See the validation.Rule type and validation.NewRule function for details on creating rules.
-func (b *Binding[T]) RegisterRules(rules ...validation.Rule) error {
+func registerRules(s service, rules ...validation.Rule) error {
 	for _, r := range rules {
-		if err := b.service.AddRule(r); err != nil {
+		if err := s.AddRule(r); err != nil {
 			return err
 		}
 	}

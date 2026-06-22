@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	errorsPkg "github.com/ygrebnov/model/errors"
+	errorsPkg "github.com/ygrebnov/model/pkg/errors"
 )
 
 // helper types for interface assignability tests

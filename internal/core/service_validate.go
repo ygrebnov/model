@@ -8,23 +8,72 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
+type validationState struct {
+	activePointers map[validationVisit]struct{}
+}
+
+type validationVisit struct {
+	typ  reflect.Type
+	addr uintptr
+}
+
+func (vs *validationState) enterStruct(rv reflect.Value) (b bool, f func()) {
+	if rv.Kind() != reflect.Struct || !rv.CanAddr() {
+		return true, func() {}
+	}
+
+	visit := validationVisit{
+		typ:  rv.Type(),
+		addr: rv.Addr().Pointer(),
+	}
+	if _, exists := vs.activePointers[visit]; exists {
+		return false, func() {}
+	}
+
+	vs.activePointers[visit] = struct{}{}
+	return true, func() {
+		delete(vs.activePointers, visit)
+	}
+}
+
 // AddRule registers a validation rule in the service's rules registry.
 func (s *Service) AddRule(r validation.Rule) error {
 	return s.rulesRegistry.Add(r)
 }
 
 // ValidateStruct walks a struct value and applies rules on each field according to its `validate` tag.
-// Nested structs and pointers to structs are traversed recursively. The `path` argument tracks the
-// dotted field path for clearer error messages.
+// Nested structs and pointers to structs are traversed recursively. Cycles in pointer graphs are
+// skipped on the current traversal path so validation terminates even for self-referential data.
+// The `path` argument tracks the dotted field path for clearer error messages.
 func (s *Service) ValidateStruct(
 	ctx context.Context,
 	rv reflect.Value,
 	path string,
 	ve *validation.Error,
 ) error {
+	state := &validationState{
+		activePointers: make(map[validationVisit]struct{}),
+	}
+	return s.validateStruct(ctx, rv, path, ve, state)
+}
+
+func (s *Service) validateStruct(
+	ctx context.Context,
+	rv reflect.Value,
+	path string,
+	ve *validation.Error,
+	state *validationState,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	entered, leave := state.enterStruct(rv)
+	if !entered {
+		return nil
+	}
+	defer leave()
+
 	typ := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
 		if err := ctx.Err(); err != nil {
@@ -43,14 +92,14 @@ func (s *Service) ValidateStruct(
 
 		// Recurse into pointers to structs
 		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
-			if err := s.ValidateStruct(ctx, fv.Elem(), fpath, ve); err != nil {
+			if err := s.validateStruct(ctx, fv.Elem(), fpath, ve, state); err != nil {
 				return err
 			}
 		}
 
 		// Recurse into embedded/inline structs
 		if fv.Kind() == reflect.Struct {
-			if err := s.ValidateStruct(ctx, fv, fpath, ve); err != nil {
+			if err := s.validateStruct(ctx, fv, fpath, ve, state); err != nil {
 				return err
 			}
 		}
@@ -61,7 +110,7 @@ func (s *Service) ValidateStruct(
 		}
 
 		// Process `validateElem` tag for slices, arrays, and maps
-		if err := s.processValidateElemTag(ctx, &field, fpath, fv, typ, i, ve); err != nil {
+		if err := s.processValidateElemTag(ctx, &field, fpath, fv, typ, i, ve, state); err != nil {
 			return err
 		}
 	}
@@ -93,7 +142,7 @@ func (s *Service) processValidateTag(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := s.applyRule(r.Name, fieldValue, r.Params...); err != nil {
+		if err := s.applyRule(r.Name, fieldValue, r.Optional, r.Params...); err != nil {
 			ve.Add(validation.FieldError{Path: fieldPath, Rule: r.Name, Params: r.Params, Err: err})
 		}
 	}
@@ -109,6 +158,7 @@ func (s *Service) processValidateElemTag(
 	structType reflect.Type,
 	fieldIndex int,
 	ve *validation.Error,
+	state *validationState,
 ) error {
 	elemRaw := field.Tag.Get(tagValidateElem)
 	if elemRaw == "" || elemRaw == "-" {
@@ -122,21 +172,20 @@ func (s *Service) processValidateElemTag(
 		s.rulesMapping.Add(structType, fieldIndex, tagValidateElem, elemRules)
 	}
 
-	if err := s.validateElements(ctx, fieldValue, fieldPath, elemRules, ve); err != nil {
+	if err := s.validateElements(ctx, fieldValue, fieldPath, elemRules, ve, state); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// validateElements applies validation rules to elements of a slice, array, or map
-// using pre-parsed rules (e.g., retrieved from the cache).
 func (s *Service) validateElements(
 	ctx context.Context,
 	fv reflect.Value,
 	fpath string,
 	rules []validation.RuleNameParams,
 	ve *validation.Error,
+	state *validationState,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -159,7 +208,7 @@ func (s *Service) validateElements(
 			}
 			elem := cont.Index(i)
 			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
-			if err := s.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve); err != nil {
+			if err := s.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve, state); err != nil {
 				return err
 			}
 		}
@@ -170,7 +219,7 @@ func (s *Service) validateElements(
 			}
 			elem := cont.MapIndex(key)
 			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-			if err := s.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve); err != nil {
+			if err := s.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve, state); err != nil {
 				return err
 			}
 		}
@@ -186,6 +235,7 @@ func (s *Service) validateSingleElement(
 	rules []validation.RuleNameParams,
 	isDiveOnly bool,
 	ve *validation.Error,
+	state *validationState,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -196,7 +246,7 @@ func (s *Service) validateSingleElement(
 			dv = dv.Elem()
 		}
 		if dv.Kind() == reflect.Struct {
-			return s.ValidateStruct(ctx, dv, path, ve)
+			return s.validateStruct(ctx, dv, path, ve, state)
 		}
 		ve.Add(
 			validation.FieldError{
@@ -212,7 +262,7 @@ func (s *Service) validateSingleElement(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := s.applyRule(r.Name, elem, r.Params...); err != nil {
+		if err := s.applyRule(r.Name, elem, r.Optional, r.Params...); err != nil {
 			ve.Add(validation.FieldError{Path: path, Rule: r.Name, Params: r.Params, Err: err})
 		}
 	}
@@ -222,7 +272,11 @@ func (s *Service) validateSingleElement(
 // applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
 // passing any additional string parameters.
 // If the rule is not found or fails, an error is returned.
-func (s *Service) applyRule(name string, v reflect.Value, params ...string) error {
+func (s *Service) applyRule(name string, v reflect.Value, optional bool, params ...string) error {
+	isZero := v.IsZero()
+	if optional && isZero {
+		return nil
+	}
 	r, err := s.rulesRegistry.Get(name, v)
 	if err != nil {
 		return err

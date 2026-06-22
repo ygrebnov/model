@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
-	modelerrors "github.com/ygrebnov/model/errors"
-	"github.com/ygrebnov/model/keys"
+	modelerrors "github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
 )
 
 // helper constructor
@@ -267,8 +267,26 @@ func TestFieldError_Error(t *testing.T) {
 					errorc.Error(keys.Cause, errors.New("strconv.Atoi: invalid syntax")),
 				),
 			},
-			wantHas: []string{"Field \"Retries\"", "rule \"max\"", "invalid rule parameter (value=oops)"},
+			wantHas: []string{"Field \"Retries\"", "rule \"max\"", "rule parameter is invalid (value=oops)"},
 			wantNot: []string{string(keys.Cause), string(keys.RuleParamName), string(keys.RuleParamValue)},
+		},
+		{
+			name: "custom structured errors keep original message",
+			fe: FieldError{
+				Path: "Config",
+				Rule: "custom",
+				Err: errorc.With(
+					errors.New("invalid config"),
+					errorc.String(keys.RuleParamName, "secretKey"),
+					errorc.String(keys.RuleParamValue, "hunter2"),
+				),
+			},
+			wantHas: []string{
+				"Field \"Config\"",
+				"rule \"custom\"",
+				"invalid config, rule.param.name: secretKey, rule.param.value: hunter2",
+			},
+			wantNot: []string{"invalid config (secretKey=hunter2)"},
 		},
 		{
 			name: "without rule and non-nil error",
