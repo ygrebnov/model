@@ -2,7 +2,10 @@ package core
 
 import (
 	"reflect"
+	"sync"
 
+	fieldPkg "github.com/ygrebnov/model/field"
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -13,7 +16,8 @@ type Service struct {
 	rulesRegistry validation.RulesRegistry
 	rulesMapping  validation.RulesMapping
 	envPrefix     string
-	envValues     map[string]string
+	envSource     fieldPkg.EnvSource
+	schemas       sync.Map
 }
 
 // NewService creates a Service for the given struct type using the
@@ -24,11 +28,17 @@ func NewService(
 	m validation.RulesMapping,
 	envPrefix string,
 ) *Service {
-	return &Service{
+	s := &Service{
 		reflectType:   t,
 		rulesRegistry: r,
 		rulesMapping:  m,
 		envPrefix:     envPrefix,
-		envValues:     snapshotEnv(),
+		envSource:     snapshotEnvSource(),
 	}
+
+	if compiled, err := schema.Compile(t); err == nil {
+		s.schemas.Store(t, compiled)
+	}
+
+	return s
 }

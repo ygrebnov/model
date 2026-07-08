@@ -5,6 +5,8 @@ import (
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
+
+	"github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/validation"
@@ -18,8 +20,8 @@ type DynamicBinding struct {
 
 // NewDynamicBinding constructs a DynamicBinding instance resolving type from the given object pointer.
 //
-// Use WithEnvPrefix option to add environment variables names prefix. Environment variables are
-// snapshotted when the binding is constructed.
+// Use WithEnvPrefix option to add an environment variable name prefix for ApplyEnv
+// and ValidateWithDefaults.
 //
 // Builtin rules are applied implicitly.
 //
@@ -81,8 +83,8 @@ func (b *DynamicBinding) validateTarget(obj any) (reflect.Value, error) {
 	return elem, nil
 }
 
-// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags
-// and environment variables. ApplyDefaults applies defaults each time it is called.
+// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags.
+// ApplyDefaults applies defaults each time it is called.
 // It is idempotent, but not once-guarded.
 func (b *DynamicBinding) ApplyDefaults(obj any) error {
 	v, err := b.validateTarget(obj)
@@ -91,6 +93,16 @@ func (b *DynamicBinding) ApplyDefaults(obj any) error {
 	}
 
 	return b.service.SetDefaultsStruct(v)
+}
+
+// ApplyEnv applies environment-backed values from source to obj using compiled field metadata.
+func (b *DynamicBinding) ApplyEnv(obj any, source field.EnvSource) error {
+	v, err := b.validateTarget(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.ApplyEnvStruct(v, source)
 }
 
 // Validate runs validation rules declared via `validate` / `validateElem` tags on obj
@@ -117,10 +129,19 @@ func (b *DynamicBinding) Validate(ctx context.Context, obj any) error {
 	return ve
 }
 
-// ValidateWithDefaults first applies defaults to obj and then runs validation. This is a convenience
-// for service-level flows that expect defaulted inputs before validation.
+// ValidateWithDefaults first applies defaults and snapshotted environment-backed values to obj,
+// then runs validation. This is a convenience for service-level flows that expect resolved inputs
+// before validation.
 func (b *DynamicBinding) ValidateWithDefaults(ctx context.Context, obj any) error {
-	if err := b.ApplyDefaults(obj); err != nil {
+	v, err := b.validateTarget(obj)
+	if err != nil {
+		return err
+	}
+
+	if err := b.service.SetDefaultsStruct(v); err != nil {
+		return err
+	}
+	if err := b.service.ApplySnapshotEnvStruct(v); err != nil {
 		return err
 	}
 	return b.Validate(ctx, obj)

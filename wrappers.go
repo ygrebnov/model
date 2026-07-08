@@ -6,8 +6,6 @@ import (
 
 // SetDefaults creates a new Binding for type TObject and applies default values
 // to the provided object.
-//
-// Use WithEnvPrefix option to add environment variables names prefix.
 func SetDefaults[TObject any](obj *TObject, opts ...Option) error {
 	b, err := NewBinding[TObject](opts...)
 	if err != nil {
@@ -34,11 +32,9 @@ func Validate[TObject any](ctx context.Context, obj *TObject, opts ...Option) er
 	return b.Validate(ctx, obj)
 }
 
-// ValidateWithDefaults creates a new Binding for type TObject, applies default values to the provided object,
-// and then validates the object according to the registered rules.
-//
-// Use WithEnvPrefix option to add environment variables names prefix.
-//
+// ValidateWithDefaults creates a new Binding for type TObject, applies default values and snapshotted
+// environment-backed values to the provided object, and then validates the object according to the
+// registered rules.
 // Builtin rules are applied implicitly.
 //
 // Use WithRules option to register custom validation rules.
@@ -54,8 +50,6 @@ func ValidateWithDefaults[TObject any](ctx context.Context, obj *TObject, opts .
 }
 
 // SetDefaultsAny creates a new DynamicBinding and applies default values to the provided object.
-//
-// Use WithEnvPrefix option to add environment variables names prefix.
 func SetDefaultsAny(obj any, opts ...Option) error {
 	b, err := NewDynamicBinding(obj, opts...)
 	if err != nil {
@@ -82,11 +76,9 @@ func ValidateAny(ctx context.Context, obj any, opts ...Option) error {
 	return b.Validate(ctx, obj)
 }
 
-// ValidateWithDefaultsAny creates a new DynamicBinding, applies default values to the provided object,
-// and then validates the object according to the registered rules.
-//
-// Use WithEnvPrefix option to add environment variables names prefix.
-//
+// ValidateWithDefaultsAny creates a new DynamicBinding, applies default values and snapshotted
+// environment-backed values to the provided object, and then validates the object according to the
+// registered rules.
 // Builtin rules are applied implicitly.
 //
 // Use WithRules option to register custom validation rules.

@@ -5,10 +5,9 @@
 //     to multiple instances of the same type,
 //   - SetDefaults[T], Validate[T], and ValidateWithDefaults[T] convenience wrappers for one-time operations.
 //
-// Defaults are driven by `default`, `defaultElem` tags and environment variables.
+// Defaults are driven by `default` and `defaultElem` tags.
 //
-// Setting defaults walks the object and applies defaults according to `default`, `defaultElem` tags and
-// environment variables.
+// Setting defaults walks the object and applies defaults according to `default` and `defaultElem` tags.
 // Supported forms:
 //   - `default:"<literal>"` sets the field if it is zero
 //   - `default:"dive"` on a struct or pointer-to-struct recurses into its fields
@@ -18,7 +17,9 @@
 // Notes:
 //   - Literals are parsed by kind: string, bool, int/uint, float, time.Duration, rune, complex.
 //   - For pointer scalar fields, nil pointers are allocated when a literal default is present.
-//   - Reusable bindings snapshot environment variables when they are constructed.
+//
+// Environment-backed values can be applied explicitly via ApplyEnv using a source,
+// or implicitly by ValidateWithDefaults using the binding's constructor-time env snapshot.
 //
 // Validation is driven by `validate` and `validateElem` tags plus built-in and custom rules.
 // It supports rule parameters via the syntax "rule" or "rule(p1,p2)" and multiple rules separated by commas.

@@ -6,7 +6,8 @@
 
 `model` creates reusable **Bindings** for your structs. It can:
 
-- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"` as well as environment variables.
+- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"`.
+- **Apply environment values** separately when you want env-backed overrides.
 - **Validate** fields using named rules from `validate:"…"` and `validateElem:"…"`.
 - Accumulate all issues into a single `*validation.Error` (no fail-fast).
 - Recurse through nested structs, pointers, slices/arrays, and map values, including cycle-safe validation of pointer graphs.
@@ -15,7 +16,7 @@ Library is designed to be **small, explicit, and type-safe** (uses generics). Yo
 
 ## Features
 
-- **Simple API**: a constructor and three main methods on `Binding[T]` and `DynamicBinding`: `SetDefaults()`, `Validate(ctx)`, and `ValidateWithDefaults(ctx)`. Convenience wrappers correspond to main methods for one-off use cases.
+- **Simple API**: constructors plus `ApplyDefaults()`, `ApplyEnv()`, `Validate(ctx)`, and `ValidateWithDefaults(ctx)` on bindings.
 - **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
 - **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
 - **Structured errors**: built-in rules and many internal errors use sentinel values plus structured key/value metadata (via `errorc`), making it easier to inspect and transform validation failures.
@@ -78,7 +79,7 @@ func main() {
 
     u1 := User{Aliases: []string{"", "ok"}} // will fail validation
 		
-    err = b.ValidateWithDefaults( // apply defaults and validate in one call
+    err = b.ValidateWithDefaults( // apply defaults, env snapshot, and validate in one call
 		context.Background(), // context-aware validation with cancellation support
 		&u1,
 	)
@@ -111,7 +112,7 @@ func main() {
     u4 := User{Aliases: []string{"pass"}} // will pass validation
 	_ = model.SetDefaults(&u4) // apply defaults
     _ = model.Validate(context.Background(), &u4) // returns *validation.Error on failure
-	_ = model.ValidateWithDefaults(context.Background(), &u4) // apply defaults and validate in one call
+	_ = model.ValidateWithDefaults(context.Background(), &u4) // apply defaults, env snapshot, and validate in one call
 }
 ```
 
@@ -119,7 +120,7 @@ func main() {
 
 ## Setting defaults
 
-Library supports setting defaults for exported fields via struct tags and environment variables.
+Library supports setting defaults for exported fields via struct tags.
 
 ### `default:"…"` struct tag
 
@@ -163,20 +164,26 @@ type S struct {
     Age  int
 }
 
+type osEnvSource struct{}
+
+func (osEnvSource) Lookup(name string) (string, bool) {
+    return os.LookupEnv(name)
+}
+
 _ = os.Setenv("MYAPP_CUSTOM_NAME", "Alice")
 
+b, _ := model.NewBinding[S](model.WithEnvPrefix("MYAPP"))
 var s S
-_ = model.SetDefaults(&s, model.WithEnvPrefix("MYAPP"))
+_ = b.ApplyEnv(&s, osEnvSource{})
 
-fmt.Printf("S after defaults: %+v\n", s) 
-// Output: S after defaults: {Name:Alice Age:0}
+fmt.Printf("S after env apply: %+v\n", s) 
+// Output: S after env apply: {Name:Alice Age:0}
 ```
 
-Values from environment variables are applied **after** literal defaults, so they can override them.
-Reusable `Binding[T]` and `DynamicBinding` instances snapshot environment variables when they are
-constructed, so later process env changes are not observed by that binding. Convenience wrappers
-such as `SetDefaults` and `ValidateWithDefaults` create a fresh binding per call and therefore read
-the current environment each time.
+Environment-backed values are applied separately from literal defaults. If you want the
+"defaults, then env overrides" flow explicitly, call `ApplyDefaults` first and `ApplyEnv`
+second. `ValidateWithDefaults` also performs that sequence internally using the binding's
+constructor-time environment snapshot.
 
 ---
 

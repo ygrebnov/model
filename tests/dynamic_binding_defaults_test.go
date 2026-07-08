@@ -31,7 +31,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualStrings(t, o, expected)
@@ -43,7 +43,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualStrings(t, o, expected2)
@@ -83,7 +83,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualInts(t, o, expected)
@@ -103,7 +103,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualInts(t, o, expected2)
@@ -131,7 +131,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualFloats(t, o, expected)
@@ -145,7 +145,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualFloats(t, o, expected2)
@@ -169,7 +169,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualBools(t, o, expected)
@@ -181,7 +181,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualBools(t, o, expected2)
@@ -221,7 +221,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualUints(t, o, expected)
@@ -241,7 +241,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualUints(t, o, expected2)
@@ -265,7 +265,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualUintPtrs(t, o, expected)
@@ -277,7 +277,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualUintPtrs(t, o, expected2)
@@ -301,7 +301,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualBytes(t, o, expected)
@@ -313,7 +313,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualBytes(t, o, expected2)
@@ -337,7 +337,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualRunes(t, o, expected)
@@ -349,7 +349,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualRunes(t, o, expected2)
@@ -377,7 +377,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualComplexes(t, o, expected)
@@ -391,7 +391,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualComplexes(t, o, expected2)
@@ -419,7 +419,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDurations(t, o, expected)
@@ -433,7 +433,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDurations(t, o, expected2)
@@ -467,7 +467,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultAlloc(t, o, expected)
@@ -485,7 +485,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultAlloc(t, o, expected2)
@@ -519,7 +519,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemAlloc(t, o, expected)
@@ -537,7 +537,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemAlloc(t, o, expected2)
@@ -585,7 +585,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDive(t, o, expected)
@@ -605,7 +605,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDive(t, o, expected2)
@@ -648,7 +648,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollections(t, o, expected)
@@ -668,7 +668,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollections(t, o, expected2)
@@ -711,7 +711,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollectionsDefaultEmpty(t, o, expected)
@@ -731,7 +731,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollectionsDefaultEmpty(t, o, expected2)
@@ -774,7 +774,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollectionsDefaultElemEmpty(t, o, expected)
@@ -794,7 +794,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualCollectionsDefaultElemEmpty(t, o, expected2)
@@ -822,7 +822,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualNoEnvTag(t, o, expected)
@@ -833,7 +833,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualNoEnvTag(t, o, expected2)
@@ -861,7 +861,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvPrefix(t, o, expected)
@@ -872,7 +872,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvPrefix(t, o, expected2)
@@ -889,7 +889,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvDisabled(t, o, expected)
@@ -899,7 +899,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvDisabled(t, o, expected)
@@ -917,7 +917,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualJSONCommaTag(t, o, expected)
@@ -927,7 +927,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualJSONCommaTag(t, o, expected2)
@@ -945,7 +945,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvZeroValues(t, o, expected)
@@ -957,7 +957,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualEnvZeroValues(t, o, expected2)
@@ -975,7 +975,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapLiteralEnv(t, o, expected)
@@ -985,7 +985,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapLiteralEnv(t, o, expected2)
@@ -1003,7 +1003,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapStructEnv(t, o, expected)
@@ -1014,7 +1014,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapStructEnv(t, o, expected2)
@@ -1032,7 +1032,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapPtrStructEnv(t, o, expected)
@@ -1044,7 +1044,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualMapPtrStructEnv(t, o, expected2)
@@ -1061,7 +1061,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemSlice(t, o, expected)
@@ -1078,7 +1078,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemPtrSlice(t, o, expected)
@@ -1095,7 +1095,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemArray(t, o, expected)
@@ -1112,7 +1112,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemMap(t, o, expected)
@@ -1129,7 +1129,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemPtrMap(t, o, expected)
@@ -1150,7 +1150,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemPtrCollection(t, o, expected)
@@ -1167,7 +1167,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDefaultElemUnsupported(t, o, expected)
@@ -1184,7 +1184,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualAllocNoop(t, o, expected)
@@ -1201,7 +1201,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualDiveIgnored(t, o, expected)
@@ -1218,7 +1218,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualNamedScalars(t, o, expected)
@@ -1239,7 +1239,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					err = b.ApplyDefaults(&o)
+					err = applyDynamicDefaultsAndEnv(b, &o)
 					if err == nil {
 						t.Fatal("expected error")
 					}
@@ -1263,7 +1263,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					err = b.ApplyDefaults(&o)
+					err = applyDynamicDefaultsAndEnv(b, &o)
 					if err == nil {
 						t.Fatal("expected error")
 					}
@@ -1283,7 +1283,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualUnexported(t, o, expected)
@@ -1300,7 +1300,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualWrappedUnexported(t, o, expected)
@@ -1317,7 +1317,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualInterface(t, o, expected)
@@ -1334,7 +1334,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected error: %v", err)
 					}
 					checkEqualInterface(t, o, expected)
@@ -1350,7 +1350,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					err = b.ApplyDefaults(&o)
+					err = applyDynamicDefaultsAndEnv(b, &o)
 					if err == nil {
 						t.Fatal("expected error")
 					}
@@ -1403,12 +1403,12 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected err: %v", err)
 					}
 					checkEqualDefaultAlloc(t, o, expected)
 					// run again (idempotent)
-					if err = b.ApplyDefaults(&o); err != nil {
+					if err = applyDynamicDefaultsAndEnv(b, &o); err != nil {
 						t.Fatalf("unexpected err on second run: %v", err)
 					}
 					checkEqualDefaultAlloc(t, o, expected)
@@ -1427,7 +1427,7 @@ func TestDynamicBinding_Defaults(t *testing.T) {
 					t.Fatal(err)
 				}
 				return func(t *testing.T) {
-					err = b.ApplyDefaults(&o)
+					err = applyDynamicDefaultsAndEnv(b, &o)
 					if err == nil {
 						t.Fatal("expected error")
 					}

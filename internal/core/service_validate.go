@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -74,16 +75,16 @@ func (s *Service) validateStruct(
 	}
 	defer leave()
 
-	typ := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
+	compiled, err := s.schemaFor(rv.Type())
+	if err != nil {
+		return err
+	}
+
+	for _, field := range compiled.Root.Children {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		field := typ.Field(i)
-		if field.PkgPath != "" { // Skip unexported fields
-			continue
-		}
-		fv := rv.Field(i)
+		fv := rv.FieldByIndex(field.Index)
 
 		fpath := field.Name
 		if path != "" {
@@ -105,12 +106,12 @@ func (s *Service) validateStruct(
 		}
 
 		// Process `validate` tag
-		if err := s.processValidateTag(ctx, &field, fpath, fv, typ, i, ve); err != nil {
+		if err := s.processValidateTag(ctx, field, fpath, fv, rv.Type(), ve); err != nil {
 			return err
 		}
 
 		// Process `validateElem` tag for slices, arrays, and maps
-		if err := s.processValidateElemTag(ctx, &field, fpath, fv, typ, i, ve, state); err != nil {
+		if err := s.processValidateElemTag(ctx, field, fpath, fv, rv.Type(), ve, state); err != nil {
 			return err
 		}
 	}
@@ -120,17 +121,18 @@ func (s *Service) validateStruct(
 
 func (s *Service) processValidateTag(
 	ctx context.Context,
-	field *reflect.StructField,
+	field *schema.Node,
 	fieldPath string,
 	fieldValue reflect.Value,
 	structType reflect.Type,
-	fieldIndex int,
 	ve *validation.Error,
 ) error {
-	rawTag := field.Tag.Get(tagValidate)
-	if rawTag == "" || rawTag == "-" {
+	rawTag := field.ValidateTag
+	if rawTag == "" {
 		return nil
 	}
+
+	fieldIndex := fieldRulesIndex(field)
 	// Check cache for parsed rules
 	rules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidate)
 	if !exists {
@@ -152,18 +154,19 @@ func (s *Service) processValidateTag(
 
 func (s *Service) processValidateElemTag(
 	ctx context.Context,
-	field *reflect.StructField,
+	field *schema.Node,
 	fieldPath string,
 	fieldValue reflect.Value,
 	structType reflect.Type,
-	fieldIndex int,
 	ve *validation.Error,
 	state *validationState,
 ) error {
-	elemRaw := field.Tag.Get(tagValidateElem)
-	if elemRaw == "" || elemRaw == "-" {
+	elemRaw := field.ValidateElemTag
+	if elemRaw == "" {
 		return nil
 	}
+
+	fieldIndex := fieldRulesIndex(field)
 
 	// Check cache for parsed rules
 	elemRules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidateElem)
@@ -225,6 +228,14 @@ func (s *Service) validateElements(
 		}
 	}
 	return nil
+}
+
+func fieldRulesIndex(field *schema.Node) int {
+	if field == nil || len(field.Index) == 0 {
+		return 0
+	}
+
+	return field.Index[0]
 }
 
 // validateSingleElement handles validation for a single item from a collection.

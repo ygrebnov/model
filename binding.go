@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/core"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/validation"
@@ -17,6 +18,10 @@ type Binding[T any] struct {
 
 type service interface {
 	SetDefaultsStruct(v reflect.Value) error
+	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
+	ApplyEnvStruct(v reflect.Value, source field.EnvSource) error
+	ApplySnapshotEnvStruct(v reflect.Value) error
+	WriteValuesStruct(v reflect.Value, sink field.ValueSink) error
 	AddRule(r validation.Rule) error
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
@@ -32,8 +37,8 @@ func newService(
 
 // NewBinding constructs a Binding for the type parameter T. T must be a struct.
 //
-// Use WithEnvPrefix option to add environment variables names prefix. Environment variables are
-// snapshotted when the binding is constructed.
+// Use WithEnvPrefix option to add an environment variable name prefix for ApplyEnv
+// and ValidateWithDefaults.
 //
 // Builtin rules are applied implicitly.
 //
@@ -69,22 +74,36 @@ func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 	return b, nil
 }
 
-// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags
-// and environment variables. ApplyDefaults applies defaults each time it is called.
+// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags.
+// ApplyDefaults applies defaults each time it is called.
 // It is idempotent, but not once-guarded.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
-	if obj == nil {
-		return errors.ErrNilObject
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
 	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return errors.ErrNotStructPtr
-	}
-	elem := v.Elem()
-	if elem.Kind() != reflect.Struct {
-		return errors.ErrNotStructPtr
-	}
+
 	return b.service.SetDefaultsStruct(elem)
+}
+
+// ApplyValues applies field values supplied by source to obj using compiled field metadata.
+func (b *Binding[T]) ApplyValues(obj *T, source field.ValueSource) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.ApplyValuesStruct(elem, source)
+}
+
+// ApplyEnv applies environment-backed values from source to obj using compiled field metadata.
+func (b *Binding[T]) ApplyEnv(obj *T, source field.EnvSource) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.ApplyEnvStruct(elem, source)
 }
 
 // Validate runs validation rules declared via `validate` / `validateElem` tags on obj
@@ -92,19 +111,12 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 //
 // If validation fails, a *validation.Error is returned; if the context is canceled, ctx.Err() is returned.
 func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
-	if obj == nil {
-		return errors.ErrNilObject
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return errors.ErrNotStructPtr
-	}
-	elem := v.Elem()
-	if elem.Kind() != reflect.Struct {
-		return errors.ErrNotStructPtr
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
 	}
 	ve := &validation.Error{}
 	if err := b.service.ValidateStruct(ctx, elem, "", ve); err != nil {
@@ -116,10 +128,18 @@ func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	return ve
 }
 
-// ValidateWithDefaults first applies defaults to obj and then runs validation. This is a convenience
-// for service-level flows that expect defaulted inputs before validation.
+// ValidateWithDefaults first applies defaults and snapshotted environment-backed values to obj,
+// then runs validation. This is a convenience for service-level flows that expect resolved inputs
+// before validation.
 func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 	if err := b.ApplyDefaults(obj); err != nil {
+		return err
+	}
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+	if err := b.service.ApplySnapshotEnvStruct(elem); err != nil {
 		return err
 	}
 	return b.Validate(ctx, obj)
@@ -132,4 +152,21 @@ func registerRules(s service, rules ...validation.Rule) error {
 		}
 	}
 	return nil
+}
+
+func (b *Binding[T]) WriteValues(obj *T, sink field.ValueSink) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.WriteValuesStruct(elem, sink)
+}
+
+func bindingTargetValue[T any](obj *T) (reflect.Value, error) {
+	if obj == nil {
+		return reflect.Value{}, errors.ErrNilObject
+	}
+
+	return reflect.ValueOf(obj).Elem(), nil
 }

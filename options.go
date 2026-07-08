@@ -10,7 +10,8 @@ type options struct {
 // Option customizes Binding, DynamicBinding or wrappers behavior.
 type Option func(o *options)
 
-// WithEnvPrefix adds non-empty environment variables names prefix.
+// WithEnvPrefix adds a non-empty environment variable name prefix for ApplyEnv
+// and ValidateWithDefaults.
 func WithEnvPrefix(prefix string) Option {
 	return func(o *options) {
 		if prefix != "" {

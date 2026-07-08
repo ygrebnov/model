@@ -1,10 +1,12 @@
 package core
 
 import (
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	fieldPkg "github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -45,7 +47,15 @@ type envConfig struct {
 	DefaultVal string                       `json:"default_val" default:"from-default"`
 }
 
-func TestSetDefaultsStruct_EnvironmentValues(t *testing.T) {
+type osEnvSource struct{}
+
+func (osEnvSource) Lookup(name string) (string, bool) {
+	return os.LookupEnv(name)
+}
+
+var _ fieldPkg.EnvSource = osEnvSource{}
+
+func TestApplyEnvStruct_EnvironmentValues(t *testing.T) {
 	tests := []struct {
 		name   string
 		setEnv func(t *testing.T)
@@ -181,13 +191,16 @@ func TestSetDefaultsStruct_EnvironmentValues(t *testing.T) {
 			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			tc.verify(t, got)
 		})
 	}
 }
 
-func TestSetDefaultsStruct_EnvironmentNestedValues(t *testing.T) {
+func TestApplyEnvStruct_EnvironmentNestedValues(t *testing.T) {
 	tests := []struct {
 		name   string
 		setEnv func(t *testing.T)
@@ -285,13 +298,16 @@ func TestSetDefaultsStruct_EnvironmentNestedValues(t *testing.T) {
 			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			tc.verify(t, got)
 		})
 	}
 }
 
-func TestSetDefaultsStruct_EnvironmentPrefix(t *testing.T) {
+func TestApplyEnvStruct_EnvironmentPrefix(t *testing.T) {
 	tests := []struct {
 		name      string
 		envPrefix string
@@ -366,13 +382,16 @@ func TestSetDefaultsStruct_EnvironmentPrefix(t *testing.T) {
 			if err := newServiceWithEnvPrefix(&got, tc.envPrefix).SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			if err := newServiceWithEnvPrefix(&got, tc.envPrefix).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			tc.verify(t, got)
 		})
 	}
 }
 
-func TestSetDefaultsStruct_EnvironmentValueErrors(t *testing.T) {
+func TestApplyEnvStruct_EnvironmentValueErrors(t *testing.T) {
 	tests := []struct {
 		name   string
 		setEnv func(t *testing.T)
@@ -400,7 +419,10 @@ func TestSetDefaultsStruct_EnvironmentValueErrors(t *testing.T) {
 
 			got := tc.obj
 			rv := reflect.ValueOf(&got).Elem()
-			if err := newService(&got).SetDefaultsStruct(rv); err == nil {
+			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err == nil {
 				t.Fatalf("expected error, got nil")
 			}
 		})

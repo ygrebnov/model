@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,28 +13,12 @@ import (
 	"github.com/ygrebnov/model/pkg/types"
 )
 
-// SetDefaultsStruct walks the struct value and applies environment overrides and defaults.
+// SetDefaultsStruct walks the struct value and applies default tags.
 //
-// Environment variable names are built from `env` tags when present, otherwise from
-// `json` tags, and finally from the Go field name. Nested names are joined with `_`.
-// Environment values are snapshotted when the Service is created, override already-loaded values,
-// and `default` tags still only fill zero values.
+// The `default` tag fills zero values only. The `defaultElem` tag applies
+// element defaults to supported collections.
 func (s *Service) SetDefaultsStruct(rv reflect.Value) error {
-	return s.setDefaultsStruct(rv, envPrefixPath(s.envPrefix))
-}
-
-func snapshotEnv() map[string]string {
-	env := os.Environ()
-	snapshot := make(map[string]string, len(env))
-	for _, entry := range env {
-		if idx := strings.IndexByte(entry, '='); idx >= 0 {
-			snapshot[entry[:idx]] = entry[idx+1:]
-			continue
-		}
-		snapshot[entry] = ""
-	}
-
-	return snapshot
+	return s.setDefaultsStruct(rv)
 }
 
 func envPrefixPath(prefix string) []string {
@@ -65,197 +48,39 @@ func envPrefixPath(prefix string) []string {
 	return path
 }
 
-func (s *Service) setDefaultsStruct(rv reflect.Value, envPath []string) error {
-	typ := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
-		field := typ.Field(i)
-		// Skip unexported fields
-		if field.PkgPath != "" {
-			continue
-		}
+func (s *Service) setDefaultsStruct(rv reflect.Value) error {
+	compiled, err := s.schemaFor(rv.Type())
+	if err != nil {
+		return err
+	}
 
-		fv := rv.Field(i)
-		fieldEnvPath, useEnv := appendFieldEnvPath(envPath, field)
+	for _, field := range compiled.Root.Children {
+		fv := rv.FieldByIndex(field.Index)
 
 		// Handle default tag first. Defaults only fill zero values.
-		if dtag := field.Tag.Get(tagDefault); dtag != "" && dtag != "-" {
-			if err := s.applyDefaultTag(fv, dtag, field.Name); err != nil {
+		if field.DefaultTag != "" {
+			if err := s.applyDefaultTag(fv, field.DefaultTag, field.Name); err != nil {
 				return err
 			}
 		}
 
-		// Then apply environment values. Environment variables override both
-		// provided object values and default tag values, even when the env value
-		// itself is the type's zero value.
-		if useEnv {
-			if err := s.applyEnvValue(fv, fieldEnvPath, field.Name); err != nil {
-				return err
-			}
-		}
-
-		if useEnv {
-			if err := s.applyNestedEnvValues(fv, fieldEnvPath); err != nil {
-				return err
-			}
+		if err := s.applyNestedDefaultValues(fv); err != nil {
+			return err
 		}
 
 		// Element defaults for collections
-		if etag := field.Tag.Get(tagDefaultElem); etag != "" && etag != "-" {
-			if err := s.applyDefaultElemTag(fv, etag); err != nil {
+		if field.DefaultElemTag != "" {
+			if err := s.applyDefaultElemTag(fv, field.DefaultElemTag); err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
-}
-
-func appendFieldEnvPath(parent []string, field reflect.StructField) ([]string, bool) {
-	part, ok := fieldEnvNamePart(field)
-	if !ok {
-		return parent, false
-	}
-
-	path := make([]string, 0, len(parent)+1)
-	path = append(path, parent...)
-	path = append(path, part)
-	return path, true
-}
-
-func fieldEnvNamePart(field reflect.StructField) (string, bool) {
-	if tag := field.Tag.Get("env"); tag != "" {
-		if tag == "-" {
-			return "", false
-		}
-		return strings.ToUpper(tag), true
-	}
-
-	if tag := field.Tag.Get("json"); tag != "" {
-		name := tagName(tag)
-		if name != "" && name != "-" {
-			return strings.ToUpper(name), true
-		}
-	}
-
-	return strings.ToUpper(field.Name), true
-}
-
-func tagName(tag string) string {
-	if idx := strings.IndexByte(tag, ','); idx >= 0 {
-		return tag[:idx]
-	}
-	return tag
 }
 
 func joinEnvPath(path []string) string {
 	return strings.Join(path, "_")
-}
-
-func (s *Service) lookupEnv(name string) (string, bool) {
-	if s == nil || s.envValues == nil {
-		return "", false
-	}
-
-	value, ok := s.envValues[name]
-	return value, ok
-}
-
-func (s *Service) applyEnvValue(fv reflect.Value, envPath []string, fieldName string) error {
-	if !canSetLiteralValue(fv) {
-		return nil
-	}
-
-	name := joinEnvPath(envPath)
-	value, ok := s.lookupEnv(name)
-	if !ok {
-		return nil
-	}
-
-	if err := setLiteralValue(fv, value, false); err != nil {
-		return errorc.With(
-			errors.ErrSetDefault,
-			errorc.String(keys.FieldName, fieldName),
-			errorc.String("env", name),
-			errorc.Error(keys.Cause, err),
-		)
-	}
-
-	return nil
-}
-
-func (s *Service) applyNestedEnvValues(fv reflect.Value, envPath []string) error {
-	value := fv
-
-	if value.Kind() == reflect.Ptr {
-		if value.IsNil() {
-			if value.Type().Elem().Kind() != reflect.Struct {
-				return nil
-			}
-
-			if !s.hasNestedEnvValue(value.Type().Elem(), envPath) {
-				return nil
-			}
-
-			value.Set(reflect.New(value.Type().Elem()))
-		}
-		value = value.Elem()
-	}
-
-	switch value.Kind() {
-	case reflect.Struct:
-		if isDurationType(value.Type()) {
-			return nil
-		}
-		return s.setDefaultsStruct(value, envPath)
-
-	case reflect.Map:
-		return s.applyMapEnvValues(value, envPath)
-
-	case reflect.Slice, reflect.Array:
-		// Environment variable support for slices is intentionally skipped.
-		return nil
-	}
-
-	return nil
-}
-
-func (s *Service) hasNestedEnvValue(typ reflect.Type, envPath []string) bool {
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-
-	if typ.Kind() != reflect.Struct || isDurationType(typ) {
-		return false
-	}
-
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		if field.PkgPath != "" {
-			continue
-		}
-
-		fieldEnvPath, useEnv := appendFieldEnvPath(envPath, field)
-		if !useEnv {
-			continue
-		}
-
-		if isSupportedLiteralType(field.Type) {
-			if _, ok := s.lookupEnv(joinEnvPath(fieldEnvPath)); ok {
-				return true
-			}
-			continue
-		}
-
-		fieldType := field.Type
-		if fieldType.Kind() == reflect.Ptr {
-			fieldType = fieldType.Elem()
-		}
-
-		if fieldType.Kind() == reflect.Struct && s.hasNestedEnvValue(fieldType, fieldEnvPath) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func isSupportedLiteralType(typ reflect.Type) bool {
@@ -264,57 +89,6 @@ func isSupportedLiteralType(typ reflect.Type) bool {
 	}
 
 	return isSupportedLiteralKind(typ)
-}
-
-func (s *Service) applyMapEnvValues(mapValue reflect.Value, envPath []string) error {
-	if mapValue.IsNil() {
-		return nil
-	}
-
-	for _, key := range mapValue.MapKeys() {
-		mapElemValue := mapValue.MapIndex(key)
-		keyPath := appendEnvPart(envPath, fmt.Sprint(key.Interface()))
-
-		if canSetLiteralValue(mapElemValue) {
-			name := joinEnvPath(keyPath)
-			value, ok := s.lookupEnv(name)
-			if !ok {
-				continue
-			}
-
-			updated := reflect.New(mapElemValue.Type()).Elem()
-			updated.Set(mapElemValue)
-			if err := setLiteralValue(updated, value, false); err != nil {
-				return errorc.With(
-					errors.ErrSetDefault,
-					errorc.String("env", name),
-					errorc.Error(keys.Cause, err),
-				)
-			}
-			mapValue.SetMapIndex(key, updated)
-			continue
-		}
-
-		if mapElemValue.Kind() == reflect.Ptr {
-			if !mapElemValue.IsNil() && mapElemValue.Elem().Kind() == reflect.Struct {
-				if err := s.setDefaultsStruct(mapElemValue.Elem(), keyPath); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-
-		if mapElemValue.Kind() == reflect.Struct {
-			structValue := reflect.New(mapElemValue.Type()).Elem()
-			structValue.Set(mapElemValue)
-			if err := s.setDefaultsStruct(structValue, keyPath); err != nil {
-				return err
-			}
-			mapValue.SetMapIndex(key, structValue)
-		}
-	}
-
-	return nil
 }
 
 func appendEnvPart(parent []string, part string) []string {
@@ -383,6 +157,28 @@ func (s *Service) applyDefaultTag(fv reflect.Value, tag, fieldName string) error
 	}
 }
 
+func (s *Service) applyNestedDefaultValues(fv reflect.Value) error {
+	value := fv
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() || value.Type().Elem().Kind() != reflect.Struct {
+			return nil
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Struct:
+		if isDurationType(value.Type()) {
+			return nil
+		}
+		return s.setDefaultsStruct(value)
+	case reflect.Map:
+		return s.setMapElementsDefaultValues(value)
+	default:
+		return nil
+	}
+}
+
 // diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
 // For nil *struct, it allocates the struct before diving. Non-structs are ignored.
 func (s *Service) diveDefaultsIntoValue(fv reflect.Value) error {
@@ -396,11 +192,11 @@ func (s *Service) diveDefaultsIntoValue(fv reflect.Value) error {
 			}
 		}
 		if fv.Elem().Kind() == reflect.Struct {
-			return s.setDefaultsStruct(fv.Elem(), envPrefixPath(s.envPrefix))
+			return s.setDefaultsStruct(fv.Elem())
 		}
 		return nil
 	case reflect.Struct:
-		return s.setDefaultsStruct(fv, envPrefixPath(s.envPrefix))
+		return s.setDefaultsStruct(fv)
 	default:
 		return nil
 	}
@@ -442,7 +238,7 @@ func (s *Service) setSliceArrayElementsDefaultValues(value reflect.Value) error 
 		}
 
 		if dv.Kind() == reflect.Struct {
-			if err := s.setDefaultsStruct(dv, envPrefixPath(s.envPrefix)); err != nil {
+			if err := s.setDefaultsStruct(dv); err != nil {
 				return err
 			}
 		}
@@ -458,7 +254,7 @@ func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
 		// Pointer-to-struct map values: mutate in place
 		if mapElemValue.Kind() == reflect.Ptr {
 			if !mapElemValue.IsNil() && mapElemValue.Elem().Kind() == reflect.Struct {
-				if err := s.setDefaultsStruct(mapElemValue.Elem(), envPrefixPath(s.envPrefix)); err != nil {
+				if err := s.setDefaultsStruct(mapElemValue.Elem()); err != nil {
 					return err
 				}
 			}
@@ -469,7 +265,7 @@ func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
 		if mapElemValue.Kind() == reflect.Struct {
 			structValue := reflect.New(mapElemValue.Type()).Elem()
 			structValue.Set(mapElemValue)
-			if err := s.setDefaultsStruct(structValue, envPrefixPath(s.envPrefix)); err != nil {
+			if err := s.setDefaultsStruct(structValue); err != nil {
 				return err
 			}
 			mapValue.SetMapIndex(key, structValue)
