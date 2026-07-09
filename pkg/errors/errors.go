@@ -8,11 +8,14 @@ import (
 
 // Sentinel errors for constructor misuses. Use errors.Is to match.
 var (
+	ErrNilContext = errorc.New("nil context")
 	// ErrNilObject reports that a required object pointer was nil.
-	ErrNilObject = errorc.New("nil object")
+	ErrNilObject    = errorc.New("nil object")
+	ErrNilEnvSource = errorc.New("nil env source")
 	// ErrNotStructPtr reports that a value expected to be a non-nil pointer to a struct was not.
-	ErrNotStructPtr       = errorc.New("object must be a non-nil pointer to struct")
-	ErrTypeParamNotStruct = errorc.New("type parameter must be a struct")
+	ErrNotStructPtr        = errorc.New("object must be a non-nil pointer to struct")
+	ErrCannotCompileSchema = errorc.New("cannot compile schema")
+	ErrTypeParamNotStruct  = errorc.New("type parameter must be a struct")
 	// ErrTypeMismatch reports that a value's type did not match the expected type.
 	ErrTypeMismatch = errorc.New("type mismatch")
 	// ErrInvalidRule reports that a rule definition is missing a name or validation function.

@@ -18,11 +18,7 @@ import (
 // descendant environment values are present.
 func (s *Service) ApplyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource) error {
 	if source == nil {
-		return errorc.With(
-			errors.ErrInvalidValue,
-			errorc.String(keys.Phase, "apply_env"),
-			errorc.String(keys.ValueType, "<nil>"),
-		)
+		return errors.ErrNilEnvSource
 	}
 
 	return s.applyEnvStruct(rv, source, envPrefixPath(s.envPrefix))

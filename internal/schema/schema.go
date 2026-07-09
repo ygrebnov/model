@@ -7,13 +7,6 @@ import (
 	modelerrors "github.com/ygrebnov/model/pkg/errors"
 )
 
-const (
-	tagValidate     = "validate"
-	tagValidateElem = "validateElem"
-	tagDefault      = "default"
-	tagDefaultElem  = "defaultElem"
-)
-
 // Schema is a compiled field tree for a struct type.
 type Schema struct {
 	Type  reflect.Type

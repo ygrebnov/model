@@ -112,7 +112,7 @@ func (b *Binding[T]) ApplyEnv(obj *T, source field.EnvSource) error {
 // If validation fails, a *validation.Error is returned; if the context is canceled, ctx.Err() is returned.
 func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
 	if ctx == nil {
-		ctx = context.Background()
+		return errors.ErrNilContext
 	}
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
