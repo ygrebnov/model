@@ -15,312 +15,18 @@ import (
 	"github.com/ygrebnov/model/pkg/types"
 )
 
-/*
-// SetDefaultsStruct walks the struct value and applies default tags.
+// SetDefaultsStruct walks the struct value and applies default tags using the
+// compiled schema controller.
 //
-// The `default` tag fills zero values only. The `defaultElem` tag applies
-// element defaults to supported collections.
-func (s *Service) SetDefaultsStruct(rv reflect.Value) error {
-	return s.setDefaultsStruct(rv)
-}
-
-func envPrefixPath(prefix string) []string {
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return nil
-	}
-
-	prefix = strings.Trim(prefix, "_")
-	if prefix == "" {
-		return nil
-	}
-
-	parts := strings.Split(prefix, "_")
-	path := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		path = append(path, strings.ToUpper(part))
-	}
-
-	if len(path) == 0 {
-		return nil
-	}
-	return path
-}
-
-func (s *Service) setDefaultsStruct(rv reflect.Value) error {
-	compiled, err := s.schemaFor(rv.Type())
-	if err != nil {
-		return err
-	}
-
-	for _, field := range compiled.Root.Children {
-		fv := rv.FieldByIndex(field.Index)
-
-		// Handle default tag first. Defaults only fill zero values.
-		if field.DefaultTag != "" {
-			if err := s.applyDefaultTag(fv, field.DefaultTag, field.Name); err != nil {
-				return err
-			}
-		}
-
-		if err := s.applyNestedDefaultValues(fv); err != nil {
-			return err
-		}
-
-		// Element defaults for collections
-		if field.DefaultElemTag != "" {
-			if err := s.applyDefaultElemTag(fv, field.DefaultElemTag); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func joinEnvPath(path []string) string {
-	return strings.Join(path, "_")
-}
-
-func isSupportedLiteralType(typ reflect.Type) bool {
-	for typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-
-	return isSupportedLiteralKind(typ)
-}
-
-func appendEnvPart(parent []string, part string) []string {
-	path := make([]string, 0, len(parent)+1)
-	path = append(path, parent...)
-	path = append(path, strings.ToUpper(part))
-	return path
-}
-
-func canSetLiteralValue(value reflect.Value) bool {
-	if !value.IsValid() {
-		return false
-	}
-
-	for value.Kind() == reflect.Ptr {
-		if value.IsNil() {
-			return isSupportedLiteralKind(value.Type().Elem())
-		}
-		value = value.Elem()
-	}
-
-	return isSupportedLiteralKind(value.Type())
-}
-
-func isSupportedLiteralKind(typ reflect.Type) bool {
-	if isDurationType(typ) {
-		return true
-	}
-
-	switch typ.Kind() {
-	case reflect.String,
-		reflect.Bool,
-		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
-		reflect.Float32, reflect.Float64,
-		reflect.Complex64, reflect.Complex128:
-		return true
-	default:
-		return false
-	}
-}
-
-// applyDefaultTag applies the `default` tag semantics to a single field value.
-// Supported values: "dive", "alloc", or a literal (delegated to setLiteralDefault).
-func (s *Service) applyDefaultTag(fv reflect.Value, tag, fieldName string) error {
-	switch tag {
-	case tagDive:
-		return s.diveDefaultsIntoValue(fv)
-	case tagAlloc:
-		// Allocate empty slice/map if nil
-		if fv.Kind() == reflect.Slice && fv.IsNil() {
-			fv.Set(reflect.MakeSlice(fv.Type(), 0, 0))
-		} else if fv.Kind() == reflect.Map && fv.IsNil() {
-			fv.Set(reflect.MakeMap(fv.Type()))
-		}
-		return nil
-	default:
-		if err := setLiteralDefault(fv, tag); err != nil {
-			return errorc.With(
-				errors.ErrSetDefault,
-				errorc.String(keys.FieldName, fieldName),
-				errorc.Error(keys.Cause, err),
-			)
-		}
-		return nil
-	}
-}
-
-func (s *Service) applyNestedDefaultValues(fv reflect.Value) error {
-	value := fv
-	if value.Kind() == reflect.Ptr {
-		if value.IsNil() || value.Type().Elem().Kind() != reflect.Struct {
-			return nil
-		}
-		value = value.Elem()
-	}
-
-	switch value.Kind() {
-	case reflect.Struct:
-		if isDurationType(value.Type()) {
-			return nil
-		}
-		return s.setDefaultsStruct(value)
-	case reflect.Map:
-		return s.setMapElementsDefaultValues(value)
-	default:
-		return nil
-	}
-}
-
-// diveDefaultsIntoValue recurses into a struct or *struct field to apply nested defaults.
-// For nil *struct, it allocates the struct before diving. Non-structs are ignored.
-func (s *Service) diveDefaultsIntoValue(fv reflect.Value) error {
-	switch fv.Kind() {
-	case reflect.Ptr:
-		if fv.IsNil() {
-			if fv.Type().Elem().Kind() == reflect.Struct {
-				fv.Set(reflect.New(fv.Type().Elem()))
-			} else {
-				return nil // ignore dive for non-struct pointers
-			}
-		}
-		if fv.Elem().Kind() == reflect.Struct {
-			return s.setDefaultsStruct(fv.Elem())
-		}
-		return nil
-	case reflect.Struct:
-		return s.setDefaultsStruct(fv)
-	default:
-		return nil
-	}
-}
-
-// applyDefaultElemTag applies defaults to elements/values of collections based on `defaultElem`.
-// Currently supports: defaultElem:"dive".
-func (s *Service) applyDefaultElemTag(fv reflect.Value, tag string) error {
-	if tag != tagDive {
-		return nil
-	}
-	cont := fv
-	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-		cont = cont.Elem()
-	}
-	switch cont.Kind() {
-	case reflect.Slice, reflect.Array:
-		if err := s.setSliceArrayElementsDefaultValues(cont); err != nil {
-			return err
-		}
-	case reflect.Map:
-		if err := s.setMapElementsDefaultValues(cont); err != nil {
-			return err
-		}
-	default:
-		// ignore for non-collections
-	}
-	return nil
-}
-
-func (s *Service) setSliceArrayElementsDefaultValues(value reflect.Value) error {
-	l := value.Len()
-	for j := 0; j < l; j++ {
-		ev := value.Index(j)
-		dv := ev
-
-		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-			dv = dv.Elem()
-		}
-
-		if dv.Kind() == reflect.Struct {
-			if err := s.setDefaultsStruct(dv); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
-	for _, key := range mapValue.MapKeys() {
-		mapElemValue := mapValue.MapIndex(key)
-
-		// Pointer-to-struct map values: mutate in place
-		if mapElemValue.Kind() == reflect.Ptr {
-			if !mapElemValue.IsNil() && mapElemValue.Elem().Kind() == reflect.Struct {
-				if err := s.setDefaultsStruct(mapElemValue.Elem()); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-
-		// Value-typed struct map values: copy-modify-write-back
-		if mapElemValue.Kind() == reflect.Struct {
-			structValue := reflect.New(mapElemValue.Type()).Elem()
-			structValue.Set(mapElemValue)
-			if err := s.setDefaultsStruct(structValue); err != nil {
-				return err
-			}
-			mapValue.SetMapIndex(key, structValue)
-		}
-	}
-
-	return nil
-}
-
-// setLiteralDefault sets a literal default value into fv if it is zero.
-// For pointer-to-scalar fields, it allocates and sets the pointed value.
-func setLiteralDefault(fv reflect.Value, lit string) error {
-	return setLiteralValue(fv, lit, true)
-}
-*/
-
-// ApplyDefaultsUsingSchema applies `default` tags using a compiled schema controller.
-
-//
-
 // Precedence:
-
 //   - existing non-zero field value wins;
-
 //   - `default` is applied only when the field is zero;
-
-//   - collection element defaults are applied to existing elements only;
-
-//   - nil slices/maps are not allocated here;
-
-//   - nil pointer-to-struct values are allocated only when nested defaults need to be applied.
-
+//   - slice and array element defaults require `defaultElem:"dive"`;
+//   - map value defaults are applied to existing entries;
+//   - nil slices/maps are not allocated unless `default:"alloc"` is used;
+//   - nil pointer-to-struct values are allocated only when nested defaults or
+//     `default:"dive"` require them.
 func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
-	/*
-		if obj == nil {
-			return fmt.Errorf("defaults target is nil")
-		}
-		if c == nil || c.Tree == nil {
-			return fmt.Errorf("schema controller is nil")
-		}
-		root := reflect.ValueOf(obj)
-		for root.Kind() == reflect.Ptr {
-			if root.IsNil() {
-				return fmt.Errorf("defaults target is nil")
-			}
-			root = root.Elem()
-		}
-		if root.Kind() != reflect.Struct {
-			return fmt.Errorf("defaults target must point to struct, got %s", root.Kind())
-		}
-
-	*/
 	for _, child := range s.schemaController.GetRoot().Children {
 		if err := applyDefaultNode(root, child); err != nil {
 			return err
@@ -336,53 +42,73 @@ func applyDefaultNode(base reflect.Value, node *schema.N) error {
 	if !ok {
 		return nil
 	}
+
 	if err := applyFieldDefault(field, node); err != nil {
 		return fmt.Errorf("apply default for %s: %w", node.GetName("."), err)
 	}
+
 	if len(node.Children) == 0 {
 		return nil
 	}
-	return applyDefaultChildren(field, node)
+
+	return applyDefaultChildren(base, field, node)
 }
 
 // applyDefaultChildren applies child defaults below a struct, pointer-to-struct,
 // slice/array of structs, or map of structs.
-func applyDefaultChildren(field reflect.Value, node *schema.N) error {
+func applyDefaultChildren(base reflect.Value, field reflect.Value, node *schema.N) error {
 	field = unwrapInterface(field)
+
 	switch field.Kind() {
 	case reflect.Ptr:
 		if field.IsNil() {
 			if field.Type().Elem().Kind() != reflect.Struct {
 				return nil
 			}
-			// Allocate pointer-to-struct only when the schema has child defaults.
-			// This lets nested defaults materialize optional nested config blocks.
-			if hasDefaults(node.Children) && field.CanSet() {
+
+			if (node.DefaultTag == tagDive || hasDefaults(node.Children)) && field.CanSet() {
 				field.Set(reflect.New(field.Type().Elem()))
 			} else {
 				return nil
 			}
 		}
-		return applyDefaultChildren(field.Elem(), node)
+
+		return applyDefaultChildren(base, field.Elem(), node)
+
 	case reflect.Struct:
+		if isDurationType(field.Type()) {
+			return nil
+		}
+
+		// Important: children of ordinary nested structs keep root-based indexes,
+		// so they must be resolved against base, not against field.
 		for _, child := range node.Children {
-			if err := applyDefaultNode(field, child); err != nil {
+			if err := applyDefaultNode(base, child); err != nil {
 				return err
 			}
 		}
 		return nil
+
 	case reflect.Slice, reflect.Array:
+		if node.DefaultElemTag != tagDive {
+			return nil
+		}
+
 		for i := 0; i < field.Len(); i++ {
 			elem := unwrapInterface(field.Index(i))
+
 			if elem.Kind() == reflect.Ptr {
 				if elem.IsNil() {
 					continue
 				}
 				elem = elem.Elem()
 			}
-			if elem.Kind() != reflect.Struct {
+
+			if elem.Kind() != reflect.Struct || isDurationType(elem.Type()) {
 				continue
 			}
+
+			// Collection child indexes are relative to the concrete element.
 			for _, child := range node.Children {
 				if err := applyDefaultNode(elem, child); err != nil {
 					return err
@@ -390,18 +116,22 @@ func applyDefaultChildren(field reflect.Value, node *schema.N) error {
 			}
 		}
 		return nil
+
 	case reflect.Map:
 		if field.IsNil() {
 			return nil
 		}
+
 		for _, key := range field.MapKeys() {
 			value := unwrapInterface(field.MapIndex(key))
 			if !value.IsValid() {
 				continue
 			}
+
 			// Map values are not directly settable. Work on a copy, then write it back.
 			updated := reflect.New(value.Type()).Elem()
 			updated.Set(value)
+
 			target := updated
 			if target.Kind() == reflect.Ptr {
 				if target.IsNil() {
@@ -409,35 +139,76 @@ func applyDefaultChildren(field reflect.Value, node *schema.N) error {
 				}
 				target = target.Elem()
 			}
-			if target.Kind() != reflect.Struct {
+
+			if target.Kind() != reflect.Struct || isDurationType(target.Type()) {
 				continue
 			}
+
+			// Collection child indexes are relative to the concrete map value.
 			for _, child := range node.Children {
 				if err := applyDefaultNode(target, child); err != nil {
 					return err
 				}
 			}
+
 			field.SetMapIndex(key, updated)
 		}
 		return nil
+
 	default:
 		return nil
 	}
 }
 
-// applyFieldDefault applies the node's DefaultTag to field when field is zero.
+// applyFieldDefault applies the node's DefaultTag to field.
 func applyFieldDefault(field reflect.Value, node *schema.N) error {
 	if node.DefaultTag == "" {
 		return nil
 	}
+
 	field = unwrapInterface(field)
 	if !field.IsValid() || !field.CanSet() {
 		return nil
 	}
-	if !field.IsZero() {
+
+	return applyDefaultTag(field, node.DefaultTag)
+}
+
+// applyDefaultTag applies one `default` tag to a field value.
+//
+// Supported values are:
+//   - `dive`, which allocates nil pointer-to-struct fields before child defaults
+//     are applied by applyDefaultChildren;
+//   - `alloc`, which allocates nil slices and maps;
+//   - literal scalar values, which are delegated to setLiteralValue and are set
+//     only when the target value is zero.
+func applyDefaultTag(field reflect.Value, tag string) error {
+	switch tag {
+	case tagDive:
+		if field.Kind() == reflect.Ptr &&
+			field.IsNil() &&
+			field.Type().Elem().Kind() == reflect.Struct &&
+			field.CanSet() {
+			field.Set(reflect.New(field.Type().Elem()))
+		}
 		return nil
+
+	case tagAlloc:
+		switch field.Kind() {
+		case reflect.Slice:
+			if field.IsNil() {
+				field.Set(reflect.MakeSlice(field.Type(), 0, 0))
+			}
+		case reflect.Map:
+			if field.IsNil() {
+				field.Set(reflect.MakeMap(field.Type()))
+			}
+		}
+		return nil
+
+	default:
+		return setLiteralValue(field, tag, true)
 	}
-	return setLiteralValue(field, node.DefaultTag, true)
 }
 
 // hasDefaults reports whether this subtree contains any default tags.
@@ -459,8 +230,10 @@ func hasDefaults(nodes []*schema.N) bool {
 // For collection element fields, node.I is relative to the concrete element.
 func fieldByIndex(base reflect.Value, index []int) (reflect.Value, bool) {
 	v := base
+
 	for _, i := range index {
 		v = unwrapInterface(v)
+
 		if v.Kind() == reflect.Ptr {
 			if v.IsNil() {
 				if !v.CanSet() || v.Type().Elem().Kind() != reflect.Struct {
@@ -470,14 +243,18 @@ func fieldByIndex(base reflect.Value, index []int) (reflect.Value, bool) {
 			}
 			v = v.Elem()
 		}
+
 		if v.Kind() != reflect.Struct {
 			return reflect.Value{}, false
 		}
+
 		if i < 0 || i >= v.NumField() {
 			return reflect.Value{}, false
 		}
+
 		v = v.Field(i)
 	}
+
 	return v, true
 }
 
@@ -488,80 +265,6 @@ func unwrapInterface(v reflect.Value) reflect.Value {
 	}
 	return v
 }
-
-/*
-// setLiteralValue sets a scalar field from a string literal.
-
-//
-
-// This is intentionally small. You can replace it with your existing
-
-// setLiteralValue implementation from model.
-
-func setLiteralValue(v reflect.Value, lit string) error {
-
-	if !v.CanSet() {
-		return nil
-	}
-	if v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			v.Set(reflect.New(v.Type().Elem()))
-		}
-		return setLiteralValue(v.Elem(), lit)
-	}
-	if v.Type() == reflect.TypeOf(time.Duration(0)) {
-		d, err := time.ParseDuration(lit)
-		if err != nil {
-			return err
-		}
-		v.SetInt(int64(d))
-		return nil
-	}
-	switch v.Kind() {
-	case reflect.String:
-		v.SetString(lit)
-		return nil
-	case reflect.Bool:
-		parsed, err := strconv.ParseBool(lit)
-		if err != nil {
-			return err
-		}
-		v.SetBool(parsed)
-		return nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		parsed, err := strconv.ParseInt(lit, 0, v.Type().Bits())
-		if err != nil {
-			return err
-		}
-		v.SetInt(parsed)
-		return nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		parsed, err := strconv.ParseUint(lit, 0, v.Type().Bits())
-		if err != nil {
-			return err
-		}
-		v.SetUint(parsed)
-		return nil
-	case reflect.Float32, reflect.Float64:
-		parsed, err := strconv.ParseFloat(lit, v.Type().Bits())
-		if err != nil {
-			return err
-		}
-		v.SetFloat(parsed)
-		return nil
-	case reflect.Complex64, reflect.Complex128:
-		parsed, err := strconv.ParseComplex(lit, v.Type().Bits())
-		if err != nil {
-			return err
-		}
-		v.SetComplex(parsed)
-		return nil
-	default:
-		return fmt.Errorf("unsupported default target type %s", v.Type())
-	}
-
-}
-*/
 
 func isDurationType(typ reflect.Type) bool {
 	return typ == reflect.TypeOf(types.Duration(0)) || typ == reflect.TypeOf(time.Duration(0))

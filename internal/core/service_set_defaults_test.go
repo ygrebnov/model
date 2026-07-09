@@ -7,8 +7,6 @@ import (
 	"time"
 
 	fieldPkg "github.com/ygrebnov/model/field"
-	"github.com/ygrebnov/model/internal/schema"
-	"github.com/ygrebnov/model/validation"
 )
 
 // Helper types for defaults testing
@@ -189,10 +187,14 @@ func TestApplyEnvStruct_EnvironmentValues(t *testing.T) {
 
 			got := tc.obj
 			rv := reflect.ValueOf(&got).Elem()
-			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+			svc, err := newService[envConfig]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+			if err := svc.ApplyEnvStruct(rv, osEnvSource{}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -296,10 +298,14 @@ func TestApplyEnvStruct_EnvironmentNestedValues(t *testing.T) {
 
 			got := tc.obj
 			rv := reflect.ValueOf(&got).Elem()
-			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+			svc, err := newService[envConfig]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+			if err := svc.ApplyEnvStruct(rv, osEnvSource{}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -380,10 +386,14 @@ func TestApplyEnvStruct_EnvironmentPrefix(t *testing.T) {
 
 			got := tc.obj
 			rv := reflect.ValueOf(&got).Elem()
-			if err := newServiceWithEnvPrefix(&got, tc.envPrefix).SetDefaultsStruct(rv); err != nil {
+			svc, err := newService[envConfig]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if err := newServiceWithEnvPrefix(&got, tc.envPrefix).ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+			if err := svc.ApplyEnvStruct(rv, osEnvSource{}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -420,181 +430,99 @@ func TestApplyEnvStruct_EnvironmentValueErrors(t *testing.T) {
 
 			got := tc.obj
 			rv := reflect.ValueOf(&got).Elem()
-			if err := newService(&got).SetDefaultsStruct(rv); err != nil {
+			svc, err := newService[envConfig]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if err := newService(&got).ApplyEnvStruct(rv, osEnvSource{}); err == nil {
-				t.Fatalf("expected error, got nil")
+			if err := svc.ApplyEnvStruct(rv, osEnvSource{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
 }
 
 type outerDef struct {
-	Inner  innerDef
-	PInner *innerDef
-	N      int
-	S      []string
-	M      map[string]int
-	PInt   *int
+	Inner  innerDef       `default:"dive"`
+	PInner *innerDef      `default:"dive"`
+	N      int            `default:"9"`
+	S      []string       `default:"alloc"`
+	M      map[string]int `default:"alloc"`
+	PInt   *int           `default:"7"`
 }
 
-func newService[T any]() (*Service[T], error) {
-	sc, err := schema.NewController[T]()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewService[T](
-		validation.NewRulesRegistry(),
-		validation.NewRulesMapping(),
-		sc,
-		"",
-	), nil
+type nonStructDiveDef struct {
+	N int `default:"dive"`
 }
 
-func newServiceWithEnvPrefix[T any](obj *T, envPrefix string) *Service[T] {
-	return NewService[T](
-		validation.NewRulesRegistry(),
-		validation.NewRulesMapping(),
-		envPrefix,
-	)
-}
-
-func TestApplyDefaultTag(t *testing.T) {
+func TestSetDefaultsStruct_DefaultTags(t *testing.T) {
 	tests := []struct {
 		name   string
-		prep   func() (obj *outerDef, fv reflect.Value)
-		act    func(*Service, reflect.Value) error
-		verify func(t *testing.T, obj *outerDef)
+		obj    outerDef
+		verify func(t *testing.T, got outerDef)
 	}{
 		{
 			name: "dive on struct field applies inner defaults",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{}
-				rv := reflect.ValueOf(obj).Elem()
-				fv := rv.FieldByName("Inner")
-				return obj, fv
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "dive", "Inner")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.Inner.S != "x" || obj.Inner.N != 42 {
-					t.Fatalf("expected inner defaults applied, got %+v", obj.Inner)
+			obj:  outerDef{},
+			verify: func(t *testing.T, got outerDef) {
+				if got.Inner.S != "x" || got.Inner.N != 42 {
+					t.Fatalf("expected inner defaults applied, got %+v", got.Inner)
 				}
 			},
 		},
 		{
-			name: "dive on nil *struct allocates and applies defaults",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{PInner: nil}
-				rv := reflect.ValueOf(obj).Elem()
-				fv := rv.FieldByName("PInner")
-				return obj, fv
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "dive", "PInner")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.PInner == nil || obj.PInner.S != "x" || obj.PInner.N != 42 {
-					t.Fatalf("expected allocated PInner with defaults, got %+v", obj.PInner)
-				}
-			},
-		},
-		{
-			name: "dive on non-struct is no-op",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("N")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "dive", "N")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.N != 0 {
-					t.Fatalf("expected N unchanged, got %d", obj.N)
+			name: "dive on nil pointer to struct allocates and applies defaults",
+			obj:  outerDef{PInner: nil},
+			verify: func(t *testing.T, got outerDef) {
+				if got.PInner == nil || got.PInner.S != "x" || got.PInner.N != 42 {
+					t.Fatalf("expected allocated PInner with defaults, got %+v", got.PInner)
 				}
 			},
 		},
 		{
 			name: "alloc on nil slice allocates empty slice",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{S: nil}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("S")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "alloc", "S")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.S == nil || len(obj.S) != 0 {
-					t.Fatalf("expected allocated empty slice, got %#v", obj.S)
+			obj:  outerDef{S: nil},
+			verify: func(t *testing.T, got outerDef) {
+				if got.S == nil || len(got.S) != 0 {
+					t.Fatalf("expected allocated empty slice, got %#v", got.S)
 				}
 			},
 		},
 		{
 			name: "alloc on nil map allocates empty map",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{M: nil}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("M")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "alloc", "M")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.M == nil || len(obj.M) != 0 {
-					t.Fatalf("expected allocated empty map, got %#v", obj.M)
+			obj:  outerDef{M: nil},
+			verify: func(t *testing.T, got outerDef) {
+				if got.M == nil || len(got.M) != 0 {
+					t.Fatalf("expected allocated empty map, got %#v", got.M)
 				}
 			},
 		},
 		{
-			name: "literal default on nil *int allocates and sets",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{PInt: nil}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("PInt")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "7", "PInt")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.PInt == nil || *obj.PInt != 7 {
-					t.Fatalf("expected allocated *int==7, got %#v", obj.PInt)
+			name: "literal default on nil pointer to scalar allocates and sets",
+			obj:  outerDef{PInt: nil},
+			verify: func(t *testing.T, got outerDef) {
+				if got.PInt == nil || *got.PInt != 7 {
+					t.Fatalf("expected allocated *int==7, got %#v", got.PInt)
 				}
 			},
 		},
 		{
 			name: "literal default on non-zero int leaves it unchanged",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{N: 5}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("N")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "9", "N")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.N != 5 {
-					t.Fatalf("expected N to remain 5, got %d", obj.N)
+			obj:  outerDef{N: 5},
+			verify: func(t *testing.T, got outerDef) {
+				if got.N != 5 {
+					t.Fatalf("expected N to remain 5, got %d", got.N)
 				}
 			},
 		},
 		{
 			name: "literal default on zero int sets value",
-			prep: func() (*outerDef, reflect.Value) {
-				obj := &outerDef{N: 0}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("N")
-			},
-			act: func(tb *Service, fv reflect.Value) error {
-				return tb.applyDefaultTag(fv, "9", "N")
-			},
-			verify: func(t *testing.T, obj *outerDef) {
-				if obj.N != 9 {
-					t.Fatalf("expected N to be 9, got %d", obj.N)
+			obj:  outerDef{N: 0},
+			verify: func(t *testing.T, got outerDef) {
+				if got.N != 9 {
+					t.Fatalf("expected N to be 9, got %d", got.N)
 				}
 			},
 		},
@@ -602,13 +530,36 @@ func TestApplyDefaultTag(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			obj, fv := tc.prep()
-			tb := newService(obj)
-			if err := tc.act(tb, fv); err != nil {
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+
+			svc, err := newService[outerDef]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			tc.verify(t, obj)
+
+			tc.verify(t, got)
 		})
+	}
+}
+
+func TestSetDefaultsStruct_DiveOnNonStructIsNoop(t *testing.T) {
+	got := nonStructDiveDef{}
+	rv := reflect.ValueOf(&got).Elem()
+
+	svc, err := newService[nonStructDiveDef]()
+	if err != nil {
+		t.Fatalf("unexpected service error: %v", err)
+	}
+	if err := svc.SetDefaultsStruct(rv); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.N != 0 {
+		t.Fatalf("expected N unchanged, got %d", got.N)
 	}
 }
 
@@ -619,113 +570,86 @@ type innerElem struct {
 }
 
 type elemHolder struct {
-	People []innerElem
-	Ptrs   []*innerElem
-	Arr    [2]innerElem
-	Mv     map[string]innerElem
-	Mp     map[string]*innerElem
-	Not    string
+	People []innerElem           `defaultElem:"dive"`
+	Ptrs   []*innerElem          `defaultElem:"dive"`
+	Arr    [2]innerElem          `defaultElem:"dive"`
+	Mv     map[string]innerElem  `defaultElem:"dive"`
+	Mp     map[string]*innerElem `defaultElem:"dive"`
+	Not    string                `defaultElem:"dive"`
 }
 
-func TestApplyDefaultElemTag(t *testing.T) {
+func TestSetDefaultsStruct_DefaultElemTags(t *testing.T) {
 	tests := []struct {
 		name   string
-		prep   func() (obj *elemHolder, fv reflect.Value)
-		verify func(t *testing.T, obj *elemHolder)
+		obj    elemHolder
+		verify func(t *testing.T, got elemHolder)
 	}{
 		{
 			name: "slice of struct elements dive",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{People: []innerElem{{}, {S: "ok"}}}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("People")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.People[0].S != "x" || obj.People[0].N != 42 {
-					t.Fatalf("expected defaults on People[0], got %+v", obj.People[0])
+			obj:  elemHolder{People: []innerElem{{}, {S: "ok"}}},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.People[0].S != "x" || got.People[0].N != 42 {
+					t.Fatalf("expected defaults on People[0], got %+v", got.People[0])
 				}
-				if obj.People[1].S != "ok" || obj.People[1].N != 42 {
-					t.Fatalf("expected partial defaults on People[1], got %+v", obj.People[1])
+				if got.People[1].S != "ok" || got.People[1].N != 42 {
+					t.Fatalf("expected partial defaults on People[1], got %+v", got.People[1])
 				}
 			},
 		},
 		{
-			name: "slice of *struct elements dive (nil stays nil)",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{Ptrs: []*innerElem{nil, {}}}
-				rv := reflect.ValueOf(obj).Elem()
-				// fix composite literal: replace {} with &innerElem{}
-				obj.Ptrs[1] = &innerElem{}
-				return obj, rv.FieldByName("Ptrs")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.Ptrs[0] != nil {
+			name: "slice of pointer to struct elements dive with nil skipped",
+			obj:  elemHolder{Ptrs: []*innerElem{nil, {}}},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.Ptrs[0] != nil {
 					t.Fatalf("expected Ptrs[0] to remain nil")
 				}
-				if obj.Ptrs[1] == nil || obj.Ptrs[1].S != "x" || obj.Ptrs[1].N != 42 {
-					t.Fatalf("expected defaults on Ptrs[1], got %#v", obj.Ptrs[1])
+				if got.Ptrs[1] == nil || got.Ptrs[1].S != "x" || got.Ptrs[1].N != 42 {
+					t.Fatalf("expected defaults on Ptrs[1], got %#v", got.Ptrs[1])
 				}
 			},
 		},
 		{
 			name: "array of struct elements dive",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{Arr: [2]innerElem{{}, {S: "ok"}}}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("Arr")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.Arr[0].S != "x" || obj.Arr[0].N != 42 {
-					t.Fatalf("expected defaults on Arr[0], got %+v", obj.Arr[0])
+			obj:  elemHolder{Arr: [2]innerElem{{}, {S: "ok"}}},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.Arr[0].S != "x" || got.Arr[0].N != 42 {
+					t.Fatalf("expected defaults on Arr[0], got %+v", got.Arr[0])
 				}
-				if obj.Arr[1].S != "ok" || obj.Arr[1].N != 42 {
-					t.Fatalf("expected partial defaults on Arr[1], got %+v", obj.Arr[1])
+				if got.Arr[1].S != "ok" || got.Arr[1].N != 42 {
+					t.Fatalf("expected partial defaults on Arr[1], got %+v", got.Arr[1])
 				}
 			},
 		},
 		{
-			name: "map[string]struct values dive (copy-write-back)",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{Mv: map[string]innerElem{"a": {}, "b": {S: "ok"}}}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("Mv")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.Mv["a"].S != "x" || obj.Mv["a"].N != 42 {
-					t.Fatalf("expected defaults on Mv[a], got %+v", obj.Mv["a"])
+			name: "map of struct values dive with copy write back",
+			obj:  elemHolder{Mv: map[string]innerElem{"a": {}, "b": {S: "ok"}}},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.Mv["a"].S != "x" || got.Mv["a"].N != 42 {
+					t.Fatalf("expected defaults on Mv[a], got %+v", got.Mv["a"])
 				}
-				if obj.Mv["b"].S != "ok" || obj.Mv["b"].N != 42 {
-					t.Fatalf("expected partial defaults on Mv[b], got %+v", obj.Mv["b"])
+				if got.Mv["b"].S != "ok" || got.Mv["b"].N != 42 {
+					t.Fatalf("expected partial defaults on Mv[b], got %+v", got.Mv["b"])
 				}
 			},
 		},
 		{
-			name: "map[string]*struct values dive (in-place)",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{Mp: map[string]*innerElem{"p1": {}, "p2": nil}}
-				rv := reflect.ValueOf(obj).Elem()
-				obj.Mp["p1"] = &innerElem{}
-				return obj, rv.FieldByName("Mp")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.Mp["p1"] == nil || obj.Mp["p1"].S != "x" || obj.Mp["p1"].N != 42 {
-					t.Fatalf("expected defaults on Mp[p1], got %#v", obj.Mp["p1"])
+			name: "map of pointer to struct values dive with nil skipped",
+			obj:  elemHolder{Mp: map[string]*innerElem{"p1": {}, "p2": nil}},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.Mp["p1"] == nil || got.Mp["p1"].S != "x" || got.Mp["p1"].N != 42 {
+					t.Fatalf("expected defaults on Mp[p1], got %#v", got.Mp["p1"])
 				}
-				if obj.Mp["p2"] != nil {
+				if got.Mp["p2"] != nil {
 					t.Fatalf("expected Mp[p2] to remain nil")
 				}
 			},
 		},
 		{
-			name: "non-collection field ignored",
-			prep: func() (*elemHolder, reflect.Value) {
-				obj := &elemHolder{Not: ""}
-				rv := reflect.ValueOf(obj).Elem()
-				return obj, rv.FieldByName("Not")
-			},
-			verify: func(t *testing.T, obj *elemHolder) {
-				if obj.Not != "" {
-					t.Fatalf("expected Not unchanged, got %q", obj.Not)
+			name: "defaultElem on non-collection field ignored",
+			obj:  elemHolder{Not: ""},
+			verify: func(t *testing.T, got elemHolder) {
+				if got.Not != "" {
+					t.Fatalf("expected Not unchanged, got %q", got.Not)
 				}
 			},
 		},
@@ -733,12 +657,18 @@ func TestApplyDefaultElemTag(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			obj, fv := tc.prep()
-			tb := newService(obj)
-			if err := tb.applyDefaultElemTag(fv, tagDive); err != nil {
+			got := tc.obj
+			rv := reflect.ValueOf(&got).Elem()
+
+			svc, err := newService[elemHolder]()
+			if err != nil {
+				t.Fatalf("unexpected service error: %v", err)
+			}
+			if err := svc.SetDefaultsStruct(rv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			tc.verify(t, obj)
+
+			tc.verify(t, got)
 		})
 	}
 }
