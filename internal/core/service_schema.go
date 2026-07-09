@@ -6,7 +6,7 @@ import (
 	"github.com/ygrebnov/model/internal/schema"
 )
 
-func (s *Service) schemaFor(t reflect.Type) (*schema.Schema, error) {
+func (s *Service[T]) schemaFor(t reflect.Type) (*schema.Schema, error) {
 	for t != nil && t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}

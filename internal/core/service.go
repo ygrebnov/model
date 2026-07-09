@@ -2,7 +2,6 @@ package core
 
 import (
 	"reflect"
-	"sync"
 
 	fieldPkg "github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/schema"
@@ -10,35 +9,43 @@ import (
 )
 
 // Service provides per-struct defaulting and validation operations.
-type Service struct {
-	// reflectType is the underlying struct type this service was initialized for.
-	reflectType   reflect.Type
-	rulesRegistry validation.RulesRegistry
-	rulesMapping  validation.RulesMapping
-	envPrefix     string
-	envSource     fieldPkg.EnvSource
-	schemas       sync.Map
+type Service[T any] struct {
+	rulesRegistry    validation.RulesRegistry
+	rulesMapping     validation.RulesMapping
+	schemaController schemaController[T]
+	envPrefix        string
+	envSource        fieldPkg.EnvSource
+	// schemas       sync.Map
 }
 
 // NewService creates a Service for the given struct type using the
 // provided RulesRegistry and RulesMapping instances.
-func NewService(
-	t reflect.Type,
+func NewService[T any](
 	r validation.RulesRegistry,
 	m validation.RulesMapping,
+	sc schemaController[T],
 	envPrefix string,
-) *Service {
-	s := &Service{
-		reflectType:   t,
-		rulesRegistry: r,
-		rulesMapping:  m,
-		envPrefix:     envPrefix,
-		envSource:     snapshotEnvSource(),
+) *Service[T] {
+	s := &Service[T]{
+		rulesRegistry:    r,
+		rulesMapping:     m,
+		schemaController: sc,
+		envPrefix:        envPrefix,
+		envSource:        snapshotEnvSource(),
 	}
 
-	if compiled, err := schema.Compile(t); err == nil {
-		s.schemas.Store(t, compiled)
-	}
+	/*
+		if compiled, err := schema.Compile(t); err == nil {
+			s.schemas.Store(t, compiled)
+		}
+	*/
 
 	return s
+}
+
+type schemaController[T any] interface {
+	GetRoot() *schema.N
+	GetFieldType(name string) (reflect.Type, bool)
+	GetFieldValue(obj *T, name string) (reflect.Value, bool)
+	SetFieldValue(obj *T, name string, value any) bool
 }

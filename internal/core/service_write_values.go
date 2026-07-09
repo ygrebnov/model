@@ -15,7 +15,7 @@ import (
 // WriteValuesStruct walks the compiled schema for rv and writes reachable field
 // values to sink. Nested pointer-to-struct fields are traversed only when
 // non-nil.
-func (s *Service) WriteValuesStruct(rv reflect.Value, sink fieldPkg.ValueSink) error {
+func (s *Service[T]) WriteValuesStruct(rv reflect.Value, sink fieldPkg.ValueSink) error {
 	if sink == nil {
 		return errorc.With(
 			modelerrors.ErrInvalidValue,
@@ -38,7 +38,7 @@ func (s *Service) WriteValuesStruct(rv reflect.Value, sink fieldPkg.ValueSink) e
 	return nil
 }
 
-func (s *Service) writeNodeValues(parent reflect.Value, node *schema.Node, sink fieldPkg.ValueSink) error {
+func (s *Service[T]) writeNodeValues(parent reflect.Value, node *schema.Node, sink fieldPkg.ValueSink) error {
 	fieldValue := parent.FieldByIndex(node.Index)
 	field := publicField(node)
 

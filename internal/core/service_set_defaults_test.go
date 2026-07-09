@@ -7,6 +7,7 @@ import (
 	"time"
 
 	fieldPkg "github.com/ygrebnov/model/field"
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -438,18 +439,22 @@ type outerDef struct {
 	PInt   *int
 }
 
-func newService[T any](obj *T) *Service {
-	return NewService(
-		reflect.TypeOf(obj).Elem(),
+func newService[T any]() (*Service[T], error) {
+	sc, err := schema.NewController[T]()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewService[T](
 		validation.NewRulesRegistry(),
 		validation.NewRulesMapping(),
+		sc,
 		"",
-	)
+	), nil
 }
 
-func newServiceWithEnvPrefix[T any](obj *T, envPrefix string) *Service {
-	return NewService(
-		reflect.TypeOf(obj).Elem(),
+func newServiceWithEnvPrefix[T any](obj *T, envPrefix string) *Service[T] {
+	return NewService[T](
 		validation.NewRulesRegistry(),
 		validation.NewRulesMapping(),
 		envPrefix,

@@ -38,7 +38,7 @@ func (vs *validationState) enterStruct(rv reflect.Value) (b bool, f func()) {
 }
 
 // AddRule registers a validation rule in the service's rules registry.
-func (s *Service) AddRule(r validation.Rule) error {
+func (s *Service[T]) AddRule(r validation.Rule) error {
 	return s.rulesRegistry.Add(r)
 }
 
@@ -46,7 +46,7 @@ func (s *Service) AddRule(r validation.Rule) error {
 // Nested structs and pointers to structs are traversed recursively. Cycles in pointer graphs are
 // skipped on the current traversal path so validation terminates even for self-referential data.
 // The `path` argument tracks the dotted field path for clearer error messages.
-func (s *Service) ValidateStruct(
+func (s *Service[T]) ValidateStruct(
 	ctx context.Context,
 	rv reflect.Value,
 	path string,
@@ -58,7 +58,7 @@ func (s *Service) ValidateStruct(
 	return s.validateStruct(ctx, rv, path, ve, state)
 }
 
-func (s *Service) validateStruct(
+func (s *Service[T]) validateStruct(
 	ctx context.Context,
 	rv reflect.Value,
 	path string,
@@ -119,7 +119,7 @@ func (s *Service) validateStruct(
 	return nil
 }
 
-func (s *Service) processValidateTag(
+func (s *Service[T]) processValidateTag(
 	ctx context.Context,
 	field *schema.Node,
 	fieldPath string,
@@ -152,7 +152,7 @@ func (s *Service) processValidateTag(
 	return nil
 }
 
-func (s *Service) processValidateElemTag(
+func (s *Service[T]) processValidateElemTag(
 	ctx context.Context,
 	field *schema.Node,
 	fieldPath string,
@@ -182,7 +182,7 @@ func (s *Service) processValidateElemTag(
 	return nil
 }
 
-func (s *Service) validateElements(
+func (s *Service[T]) validateElements(
 	ctx context.Context,
 	fv reflect.Value,
 	fpath string,
@@ -239,7 +239,7 @@ func fieldRulesIndex(field *schema.Node) int {
 }
 
 // validateSingleElement handles validation for a single item from a collection.
-func (s *Service) validateSingleElement(
+func (s *Service[T]) validateSingleElement(
 	ctx context.Context,
 	elem reflect.Value,
 	path string,
@@ -283,7 +283,7 @@ func (s *Service) validateSingleElement(
 // applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
 // passing any additional string parameters.
 // If the rule is not found or fails, an error is returned.
-func (s *Service) applyRule(name string, v reflect.Value, optional bool, params ...string) error {
+func (s *Service[T]) applyRule(name string, v reflect.Value, optional bool, params ...string) error {
 	isZero := v.IsZero()
 	if optional && isZero {
 		return nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/validation"
 )
@@ -13,10 +14,10 @@ import (
 // Binding provides defaulting and validation capabilities for type T.
 type Binding[T any] struct {
 	// service is the underlying core service for type T.
-	service service
+	service service[T]
 }
 
-type service interface {
+type service[T any] interface {
 	SetDefaultsStruct(v reflect.Value) error
 	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
 	ApplyEnvStruct(v reflect.Value, source field.EnvSource) error
@@ -26,13 +27,13 @@ type service interface {
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
 
-func newService(
-	typ reflect.Type,
+func newService[T any](
 	rr validation.RulesRegistry,
 	rm validation.RulesMapping,
+	sc *schema.Controller[T],
 	envPrefix string,
-) service {
-	return core.NewService(typ, rr, rm, envPrefix)
+) service[T] {
+	return core.NewService[T](rr, rm, sc, envPrefix)
 }
 
 // NewBinding constructs a Binding for the type parameter T. T must be a struct.
@@ -60,8 +61,12 @@ func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 
 	rulesRegistry := validation.NewRulesRegistry()
 	rulesMapping := validation.NewRulesMapping()
+	schemaController, err := schema.NewController[T]()
+	if err != nil {
+		return nil, err
+	}
 
-	s := newService(t, rulesRegistry, rulesMapping, o.envPrefix)
+	s := newService(rulesRegistry, rulesMapping, schemaController, o.envPrefix)
 
 	b := &Binding[T]{service: s}
 
@@ -145,7 +150,7 @@ func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 	return b.Validate(ctx, obj)
 }
 
-func registerRules(s service, rules ...validation.Rule) error {
+func registerRules[T any](s service[T], rules ...validation.Rule) error {
 	for _, r := range rules {
 		if err := s.AddRule(r); err != nil {
 			return err

@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/pkg/types"
 )
 
+/*
 // SetDefaultsStruct walks the struct value and applies default tags.
 //
 // The `default` tag fills zero values only. The `defaultElem` tag applies
@@ -275,14 +278,293 @@ func (s *Service) setMapElementsDefaultValues(mapValue reflect.Value) error {
 	return nil
 }
 
-func isDurationType(typ reflect.Type) bool {
-	return typ == reflect.TypeOf(types.Duration(0)) || typ == reflect.TypeOf(time.Duration(0))
-}
-
 // setLiteralDefault sets a literal default value into fv if it is zero.
 // For pointer-to-scalar fields, it allocates and sets the pointed value.
 func setLiteralDefault(fv reflect.Value, lit string) error {
 	return setLiteralValue(fv, lit, true)
+}
+*/
+
+// ApplyDefaultsUsingSchema applies `default` tags using a compiled schema controller.
+
+//
+
+// Precedence:
+
+//   - existing non-zero field value wins;
+
+//   - `default` is applied only when the field is zero;
+
+//   - collection element defaults are applied to existing elements only;
+
+//   - nil slices/maps are not allocated here;
+
+//   - nil pointer-to-struct values are allocated only when nested defaults need to be applied.
+
+func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
+	/*
+		if obj == nil {
+			return fmt.Errorf("defaults target is nil")
+		}
+		if c == nil || c.Tree == nil {
+			return fmt.Errorf("schema controller is nil")
+		}
+		root := reflect.ValueOf(obj)
+		for root.Kind() == reflect.Ptr {
+			if root.IsNil() {
+				return fmt.Errorf("defaults target is nil")
+			}
+			root = root.Elem()
+		}
+		if root.Kind() != reflect.Struct {
+			return fmt.Errorf("defaults target must point to struct, got %s", root.Kind())
+		}
+
+	*/
+	for _, child := range s.schemaController.GetRoot().Children {
+		if err := applyDefaultNode(root, child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyDefaultNode applies defaults for one compiled node and then recurses into
+// its children when the node represents a nested struct or collection of structs.
+func applyDefaultNode(base reflect.Value, node *schema.N) error {
+	field, ok := fieldByIndex(base, node.I)
+	if !ok {
+		return nil
+	}
+	if err := applyFieldDefault(field, node); err != nil {
+		return fmt.Errorf("apply default for %s: %w", node.GetName("."), err)
+	}
+	if len(node.Children) == 0 {
+		return nil
+	}
+	return applyDefaultChildren(field, node)
+}
+
+// applyDefaultChildren applies child defaults below a struct, pointer-to-struct,
+// slice/array of structs, or map of structs.
+func applyDefaultChildren(field reflect.Value, node *schema.N) error {
+	field = unwrapInterface(field)
+	switch field.Kind() {
+	case reflect.Ptr:
+		if field.IsNil() {
+			if field.Type().Elem().Kind() != reflect.Struct {
+				return nil
+			}
+			// Allocate pointer-to-struct only when the schema has child defaults.
+			// This lets nested defaults materialize optional nested config blocks.
+			if hasDefaults(node.Children) && field.CanSet() {
+				field.Set(reflect.New(field.Type().Elem()))
+			} else {
+				return nil
+			}
+		}
+		return applyDefaultChildren(field.Elem(), node)
+	case reflect.Struct:
+		for _, child := range node.Children {
+			if err := applyDefaultNode(field, child); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < field.Len(); i++ {
+			elem := unwrapInterface(field.Index(i))
+			if elem.Kind() == reflect.Ptr {
+				if elem.IsNil() {
+					continue
+				}
+				elem = elem.Elem()
+			}
+			if elem.Kind() != reflect.Struct {
+				continue
+			}
+			for _, child := range node.Children {
+				if err := applyDefaultNode(elem, child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	case reflect.Map:
+		if field.IsNil() {
+			return nil
+		}
+		for _, key := range field.MapKeys() {
+			value := unwrapInterface(field.MapIndex(key))
+			if !value.IsValid() {
+				continue
+			}
+			// Map values are not directly settable. Work on a copy, then write it back.
+			updated := reflect.New(value.Type()).Elem()
+			updated.Set(value)
+			target := updated
+			if target.Kind() == reflect.Ptr {
+				if target.IsNil() {
+					continue
+				}
+				target = target.Elem()
+			}
+			if target.Kind() != reflect.Struct {
+				continue
+			}
+			for _, child := range node.Children {
+				if err := applyDefaultNode(target, child); err != nil {
+					return err
+				}
+			}
+			field.SetMapIndex(key, updated)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// applyFieldDefault applies the node's DefaultTag to field when field is zero.
+func applyFieldDefault(field reflect.Value, node *schema.N) error {
+	if node.DefaultTag == "" {
+		return nil
+	}
+	field = unwrapInterface(field)
+	if !field.IsValid() || !field.CanSet() {
+		return nil
+	}
+	if !field.IsZero() {
+		return nil
+	}
+	return setLiteralValue(field, node.DefaultTag, true)
+}
+
+// hasDefaults reports whether this subtree contains any default tags.
+func hasDefaults(nodes []*schema.N) bool {
+	for _, node := range nodes {
+		if node.DefaultTag != "" || node.DefaultElemTag != "" {
+			return true
+		}
+		if hasDefaults(node.Children) {
+			return true
+		}
+	}
+	return false
+}
+
+// fieldByIndex resolves a field from base using a compiled index path.
+//
+// For ordinary nested structs, node.I is root-based.
+// For collection element fields, node.I is relative to the concrete element.
+func fieldByIndex(base reflect.Value, index []int) (reflect.Value, bool) {
+	v := base
+	for _, i := range index {
+		v = unwrapInterface(v)
+		if v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				if !v.CanSet() || v.Type().Elem().Kind() != reflect.Struct {
+					return reflect.Value{}, false
+				}
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return reflect.Value{}, false
+		}
+		if i < 0 || i >= v.NumField() {
+			return reflect.Value{}, false
+		}
+		v = v.Field(i)
+	}
+	return v, true
+}
+
+// unwrapInterface unwraps interface values when they contain a concrete value.
+func unwrapInterface(v reflect.Value) reflect.Value {
+	for v.IsValid() && v.Kind() == reflect.Interface && !v.IsNil() {
+		v = v.Elem()
+	}
+	return v
+}
+
+/*
+// setLiteralValue sets a scalar field from a string literal.
+
+//
+
+// This is intentionally small. You can replace it with your existing
+
+// setLiteralValue implementation from model.
+
+func setLiteralValue(v reflect.Value, lit string) error {
+
+	if !v.CanSet() {
+		return nil
+	}
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		return setLiteralValue(v.Elem(), lit)
+	}
+	if v.Type() == reflect.TypeOf(time.Duration(0)) {
+		d, err := time.ParseDuration(lit)
+		if err != nil {
+			return err
+		}
+		v.SetInt(int64(d))
+		return nil
+	}
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(lit)
+		return nil
+	case reflect.Bool:
+		parsed, err := strconv.ParseBool(lit)
+		if err != nil {
+			return err
+		}
+		v.SetBool(parsed)
+		return nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		parsed, err := strconv.ParseInt(lit, 0, v.Type().Bits())
+		if err != nil {
+			return err
+		}
+		v.SetInt(parsed)
+		return nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		parsed, err := strconv.ParseUint(lit, 0, v.Type().Bits())
+		if err != nil {
+			return err
+		}
+		v.SetUint(parsed)
+		return nil
+	case reflect.Float32, reflect.Float64:
+		parsed, err := strconv.ParseFloat(lit, v.Type().Bits())
+		if err != nil {
+			return err
+		}
+		v.SetFloat(parsed)
+		return nil
+	case reflect.Complex64, reflect.Complex128:
+		parsed, err := strconv.ParseComplex(lit, v.Type().Bits())
+		if err != nil {
+			return err
+		}
+		v.SetComplex(parsed)
+		return nil
+	default:
+		return fmt.Errorf("unsupported default target type %s", v.Type())
+	}
+
+}
+*/
+
+func isDurationType(typ reflect.Type) bool {
+	return typ == reflect.TypeOf(types.Duration(0)) || typ == reflect.TypeOf(time.Duration(0))
 }
 
 // setLiteralValue sets a literal value into fv.

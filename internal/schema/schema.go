@@ -235,13 +235,7 @@ func (s *compileState) buildChildren(parent *Node, typ reflect.Type, envPath []s
 	}
 }
 
-func dereferenceType(t reflect.Type) reflect.Type {
-	for t != nil && t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	return t
-}
-
+/*
 func nestedStructType(t reflect.Type) (reflect.Type, bool) {
 	switch t.Kind() {
 	case reflect.Struct:
@@ -254,6 +248,7 @@ func nestedStructType(t reflect.Type) (reflect.Type, bool) {
 
 	return nil, false
 }
+*/
 
 func effectiveEnvName(field reflect.StructField) (string, bool) {
 	if tag := field.Tag.Get("env"); tag != "" {

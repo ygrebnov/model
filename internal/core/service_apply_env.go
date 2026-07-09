@@ -16,7 +16,7 @@ import (
 // ApplyEnvStruct walks the compiled schema for rv and applies environment-backed
 // values from source. Nested pointer-to-struct fields are allocated when
 // descendant environment values are present.
-func (s *Service) ApplyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource) error {
+func (s *Service[T]) ApplyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource) error {
 	if source == nil {
 		return errors.ErrNilEnvSource
 	}
@@ -26,11 +26,11 @@ func (s *Service) ApplyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource) er
 
 // ApplySnapshotEnvStruct applies environment-backed values from the env snapshot
 // captured when the Service was created.
-func (s *Service) ApplySnapshotEnvStruct(rv reflect.Value) error {
+func (s *Service[T]) ApplySnapshotEnvStruct(rv reflect.Value) error {
 	return s.ApplyEnvStruct(rv, s.envSource)
 }
 
-func (s *Service) applyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource, envPath []string) error {
+func (s *Service[T]) applyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource, envPath []string) error {
 	compiled, err := s.schemaFor(rv.Type())
 	if err != nil {
 		return err
@@ -45,7 +45,7 @@ func (s *Service) applyEnvStruct(rv reflect.Value, source fieldPkg.EnvSource, en
 	return nil
 }
 
-func (s *Service) applyNodeEnv(parent reflect.Value, node *schema.Node, envPath []string, source fieldPkg.EnvSource) error {
+func (s *Service[T]) applyNodeEnv(parent reflect.Value, node *schema.Node, envPath []string, source fieldPkg.EnvSource) error {
 	if !node.EnvEnabled {
 		return nil
 	}
@@ -60,7 +60,7 @@ func (s *Service) applyNodeEnv(parent reflect.Value, node *schema.Node, envPath 
 	return s.applyNestedEnvValues(fieldValue, node, fieldEnvPath, source)
 }
 
-func (s *Service) applyEnvValue(fv reflect.Value, envPath []string, fieldName string, source fieldPkg.EnvSource) error {
+func (s *Service[T]) applyEnvValue(fv reflect.Value, envPath []string, fieldName string, source fieldPkg.EnvSource) error {
 	if !canSetLiteralValue(fv) {
 		return nil
 	}
@@ -83,7 +83,7 @@ func (s *Service) applyEnvValue(fv reflect.Value, envPath []string, fieldName st
 	return nil
 }
 
-func (s *Service) applyNestedEnvValues(fv reflect.Value, node *schema.Node, envPath []string, source fieldPkg.EnvSource) error {
+func (s *Service[T]) applyNestedEnvValues(fv reflect.Value, node *schema.Node, envPath []string, source fieldPkg.EnvSource) error {
 	value := fv
 
 	if value.Kind() == reflect.Ptr {
@@ -123,7 +123,7 @@ func (s *Service) applyNestedEnvValues(fv reflect.Value, node *schema.Node, envP
 	return nil
 }
 
-func (s *Service) hasNestedEnvValue(node *schema.Node, envPath []string, source fieldPkg.EnvSource) bool {
+func (s *Service[T]) hasNestedEnvValue(node *schema.Node, envPath []string, source fieldPkg.EnvSource) bool {
 	for _, child := range node.Children {
 		if !child.EnvEnabled {
 			continue
@@ -145,7 +145,7 @@ func (s *Service) hasNestedEnvValue(node *schema.Node, envPath []string, source 
 	return false
 }
 
-func (s *Service) applyMapEnvValues(mapValue reflect.Value, envPath []string, source fieldPkg.EnvSource) error {
+func (s *Service[T]) applyMapEnvValues(mapValue reflect.Value, envPath []string, source fieldPkg.EnvSource) error {
 	if mapValue.IsNil() {
 		return nil
 	}

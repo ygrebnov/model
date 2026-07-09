@@ -15,7 +15,7 @@ import (
 // ApplyValuesStruct walks the compiled schema for rv and applies values supplied
 // by source to matching fields. Nested pointer-to-struct fields are allocated
 // when descendant field values are present.
-func (s *Service) ApplyValuesStruct(rv reflect.Value, source fieldPkg.ValueSource) error {
+func (s *Service[T]) ApplyValuesStruct(rv reflect.Value, source fieldPkg.ValueSource) error {
 	if source == nil {
 		return errorc.With(
 			modelerrors.ErrInvalidValue,
@@ -54,7 +54,7 @@ func (s *Service) ApplyValuesStruct(rv reflect.Value, source fieldPkg.ValueSourc
 	return nil
 }
 
-func (s *Service) applyNodeValues(parent reflect.Value, node *schema.Node, values map[string]any) error {
+func (s *Service[T]) applyNodeValues(parent reflect.Value, node *schema.Node, values map[string]any) error {
 	fieldValue := parent.FieldByIndex(node.Index)
 
 	if value, ok := values[node.Path]; ok {
