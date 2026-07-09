@@ -39,20 +39,40 @@ func (n *N) GetName(separator string) string {
 	return strings.Join(n.Name, separator)
 }
 
-type Controller struct {
+type Controller[T any] struct {
 	mu sync.RWMutex
 
-	Tree  *N
+	Tree  *N            // for traversals
 	Index map[string]*N // N.fullName (concatenated N.Name) -> *N
 }
 
-func (c *Controller) Add(name string, node *N) {
+func (c *Controller[T]) Add(name string, node *N) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Index[name] = node
 }
 
-func NewN[T any](c *Controller) (*N, error) {
+func (c *Controller[T]) Get(name string) (*N, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	n, ok := c.Index[name]
+	return n, ok
+}
+
+func NewController[T any]() (*Controller[T], error) {
+	c := &Controller[T]{
+		Index: make(map[string]*N),
+	}
+
+	n, err := newN(c)
+	if err != nil {
+		return nil, err
+	}
+	c.Tree = n
+	return c, nil
+}
+
+func newN[T any](c *Controller[T]) (*N, error) {
 	var zero *T // never dereferenced
 
 	v := reflect.ValueOf(zero).Elem()
@@ -72,7 +92,7 @@ func NewN[T any](c *Controller) (*N, error) {
 	return n, nil
 }
 
-func parse(v reflect.Value, n *N, c *Controller) error {
+func parse[T any](v reflect.Value, n *N, c *Controller[T]) error {
 	t := v.Type()
 	for i := 0; i < v.NumField(); i++ {
 		field := t.Field(i)
@@ -100,13 +120,13 @@ func parse(v reflect.Value, n *N, c *Controller) error {
 		switch field.Type.Kind() {
 		case reflect.Struct:
 			// recurse into struct fields
-			if err := parse(v.Field(i), newN, c); err != nil {
+			if err := parse[T](v.Field(i), newN, c); err != nil {
 				return err
 			}
 		case reflect.Ptr:
 			if field.Type.Elem().Kind() == reflect.Struct {
 				// recurse into pointer to struct fields
-				if err := parse(v.Field(i).Elem(), newN, c); err != nil {
+				if err := parse[T](v.Field(i).Elem(), newN, c); err != nil {
 					return err
 				}
 			}
