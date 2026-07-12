@@ -15,7 +15,7 @@ type Field struct {
 }
 
 type ValueSource interface {
-	Get(field Field) (any, bool, error)
+	Get(name string) (any, bool, error)
 }
 
 type EnvSource interface {
