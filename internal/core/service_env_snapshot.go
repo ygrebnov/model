@@ -2,26 +2,53 @@ package core
 
 import (
 	"os"
-	"strings"
+	"reflect"
 
 	fieldPkg "github.com/ygrebnov/model/field"
 )
 
-type envSnapshotSource map[string]string
+// snapshotEnvSource creates an immutable snapshot containing only environment
+// variables represented by scalar fields in the compiled schema.
+func (s *Service[T]) snapshotEnvSource() fieldPkg.EnvSource {
+	snapshot := make(envSnapshotSource)
 
-func snapshotEnvSource() fieldPkg.EnvSource {
-	env := os.Environ()
-	snapshot := make(envSnapshotSource, len(env))
-	for _, entry := range env {
-		if idx := strings.IndexByte(entry, '='); idx >= 0 {
-			snapshot[entry[:idx]] = entry[idx+1:]
-			continue
-		}
-		snapshot[entry] = ""
+	root := reflect.New(reflect.TypeFor[T]()).Elem()
+	policy := walkPolicy{
+		DiveCollection: func(walkContext, reflect.Value) bool {
+			return false
+		},
+		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
+			return ctx.EnvEnabled
+		},
 	}
+
+	_ = walkSchema(
+		root,
+		s.schemaController.GetRoot(),
+		envPrefixPath(s.envPrefix),
+		policy,
+		func(ctx walkContext, field reflect.Value) error {
+			if !ctx.EnvEnabled || !canSetLiteralValue(field) {
+				return nil
+			}
+
+			envName := joinEnvPath(ctx.EnvPath)
+			if envName == "" {
+				return nil
+			}
+
+			if value, ok := os.LookupEnv(envName); ok {
+				snapshot[envName] = value
+			}
+
+			return nil
+		},
+	)
 
 	return snapshot
 }
+
+type envSnapshotSource map[string]string
 
 func (s envSnapshotSource) Lookup(name string) (string, bool) {
 	value, ok := s[name]

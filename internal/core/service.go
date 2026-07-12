@@ -31,8 +31,9 @@ func NewService[T any](
 		rulesMapping:     m,
 		schemaController: sc,
 		envPrefix:        envPrefix,
-		envSource:        snapshotEnvSource(),
 	}
+
+	s.envSource = s.snapshotEnvSource()
 
 	/*
 		if compiled, err := schema.Compile(t); err == nil {

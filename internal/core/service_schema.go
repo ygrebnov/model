@@ -1,11 +1,6 @@
 package core
 
-import (
-	"reflect"
-
-	"github.com/ygrebnov/model/internal/schema"
-)
-
+/*
 func (s *Service[T]) schemaFor(t reflect.Type) (*schema.Schema, error) {
 	for t != nil && t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -23,3 +18,4 @@ func (s *Service[T]) schemaFor(t reflect.Type) (*schema.Schema, error) {
 	actual, _ := s.schemas.LoadOrStore(t, compiled)
 	return actual.(*schema.Schema), nil
 }
+*/
