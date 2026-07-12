@@ -20,8 +20,7 @@ type Binding[T any] struct {
 type service[T any] interface {
 	SetDefaultsStruct(v reflect.Value) error
 	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
-	ApplyEnvStruct(v reflect.Value, source field.EnvSource) error
-	ApplySnapshotEnvStruct(v reflect.Value) error
+	ApplyEnvStruct(v reflect.Value) error
 	WriteValuesStruct(v reflect.Value, sink field.ValueSink) error
 	AddRule(r validation.Rule) error
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
@@ -102,13 +101,13 @@ func (b *Binding[T]) ApplyValues(obj *T, source field.ValueSource) error {
 }
 
 // ApplyEnv applies environment-backed values from source to obj using compiled field metadata.
-func (b *Binding[T]) ApplyEnv(obj *T, source field.EnvSource) error {
+func (b *Binding[T]) ApplyEnv(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
 		return err
 	}
 
-	return b.service.ApplyEnvStruct(elem, source)
+	return b.service.ApplyEnvStruct(elem)
 }
 
 // Validate runs validation rules declared via `validate` / `validateElem` tags on obj
@@ -144,7 +143,7 @@ func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 	if err != nil {
 		return err
 	}
-	if err := b.service.ApplySnapshotEnvStruct(elem); err != nil {
+	if err := b.service.ApplyEnvStruct(elem); err != nil {
 		return err
 	}
 	return b.Validate(ctx, obj)

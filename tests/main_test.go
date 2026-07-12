@@ -2,6 +2,7 @@ package tests
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -9,7 +10,12 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
+
+	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/types"
+	"github.com/ygrebnov/model/validation"
 )
 
 type Strings struct {
@@ -855,4 +861,54 @@ func ruleIntAlwaysErr(_ int, _ ...string) error {
 // Rule for fmt.Stringer (AssignableTo interface)
 func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 	return fmt.Errorf("bad stringer")
+}
+
+func newService[T any]() (*core.Service[T], error) {
+	sc, err := schema.NewController[T]()
+	if err != nil {
+		return nil, err
+	}
+
+	return core.NewService[T](
+		validation.NewRulesRegistry(),
+		validation.NewRulesMapping(),
+		sc,
+		"",
+	), nil
+}
+
+func newServiceWithEnvPrefix[T any](envPrefix string) (*core.Service[T], error) {
+	sc, err := schema.NewController[T]()
+	if err != nil {
+		return nil, err
+	}
+
+	return core.NewService[T](
+		validation.NewRulesRegistry(),
+		validation.NewRulesMapping(),
+		sc,
+		envPrefix,
+	), nil
+}
+
+type osEnvSource struct{}
+
+func (osEnvSource) Lookup(name string) (string, bool) {
+	return os.LookupEnv(name)
+}
+
+func applyBindingDefaultsAndEnv[T any](b *model.Binding[T], obj *T) error {
+	if err := b.ApplyDefaults(obj); err != nil {
+		return err
+	}
+
+	return b.ApplyEnv(obj)
+}
+
+func applyDynamicDefaultsAndEnv(b *model.DynamicBinding, obj any) error {
+	if err := b.ApplyDefaults(obj); err != nil {
+		return err
+	}
+
+	return b.ApplyEnv(obj)
 }
