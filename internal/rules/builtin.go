@@ -1,4 +1,4 @@
-package validation
+package rules
 
 import (
 	"reflect"
@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
+
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
@@ -59,9 +60,9 @@ type key struct {
 // Lazy built-in rule storage.
 var (
 	builtInsOnce        sync.Once
-	builtInMap          map[key]Rule
-	builtinStringRules  []Rule
-	builtinNumericRules []Rule
+	builtInMap          map[key]*Rule
+	builtinStringRules  []*Rule
+	builtinNumericRules []*Rule
 )
 
 const (
@@ -131,7 +132,7 @@ func newRuleConstraintViolationWithParamNameError(ruleName, paramName string) er
 	)
 }
 
-func mustRule(r Rule, err error) Rule {
+func mustRule(r *Rule, err error) *Rule {
 	if err != nil {
 		panic(err)
 	}
@@ -225,7 +226,7 @@ func getStringMinMaxRule(
 	name string,
 	noop func(v int64) bool,
 	compare func(a, b int) bool,
-) (Rule, error) {
+) (*Rule, error) {
 	return NewRule[string](name, func(s string, params ...string) error {
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
@@ -246,7 +247,7 @@ func getStringMinMaxRule(
 }
 
 // min(length): requires one integer parameter. If missing -> error. If <1 -> noop.
-func getStrMinRule() (Rule, error) {
+func getStrMinRule() (*Rule, error) {
 	return getStringMinMaxRule(
 		RuleStringMin,
 		func(v int64) bool { return v < 1 },
@@ -255,7 +256,7 @@ func getStrMinRule() (Rule, error) {
 }
 
 // max(length): requires one integer parameter. If missing -> error. If <0 -> noop.
-func getStrMaxRule() (Rule, error) {
+func getStrMaxRule() (*Rule, error) {
 	return getStringMinMaxRule(
 		RuleStringMax,
 		func(v int64) bool { return v < 0 },
@@ -264,21 +265,21 @@ func getStrMaxRule() (Rule, error) {
 }
 
 // email rule: deliberately simple; not RFC 5322 exhaustive. Provides lightweight validation.
-func getStrEmailRule() (Rule, error) {
+func getStrEmailRule() (*Rule, error) {
 	return NewRule[string](RuleEmail, func(s string, _ ...string) error {
 		return validateBuiltinEmail(s)
 	})
 }
 
 // semver rule: corresponding to version 2.0.0 published at https://semver.org/spec/v2.0.0.html
-func getStrSemverRule() (Rule, error) {
+func getStrSemverRule() (*Rule, error) {
 	return NewRule[string](RuleSemver, func(s string, _ ...string) error {
 		return validateBuiltinSemver(s)
 	})
 }
 
 // oneof rule: value must match one of the provided parameters.
-func getStrOneofRule() (Rule, error) {
+func getStrOneofRule() (*Rule, error) {
 	return NewRule[string](RuleOneOf, func(s string, params ...string) error {
 		if len(params) == 0 {
 			return newRuleMissingParameterError(RuleOneOf)
@@ -298,7 +299,7 @@ func getStrOneofRule() (Rule, error) {
 }
 
 // uuid rule: value must be a valid canonical UUID string (lower/upper hex, 8-4-4-4-12 format).
-func getStrUUIDRule() (Rule, error) {
+func getStrUUIDRule() (*Rule, error) {
 	return NewRule[string](RuleUUID, func(s string, _ ...string) error {
 		return validateBuiltinUUID(s)
 	})
@@ -324,7 +325,7 @@ func getNumericMinMaxRule[T numeric](
 	name string,
 	parse func(string) (T, error),
 	compare func(a, b T) bool,
-) (Rule, error) {
+) (*Rule, error) {
 	return NewRule[T](name, func(n T, params ...string) error {
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
@@ -341,7 +342,7 @@ func getNumericMinMaxRule[T numeric](
 	})
 }
 
-func getNumericNonzeroRule[T numeric](name string) (Rule, error) {
+func getNumericNonzeroRule[T numeric](name string) (*Rule, error) {
 	return NewRule[T](name, func(n T, _ ...string) error {
 		if n == 0 {
 			return newRuleConstraintViolationError(name)
@@ -353,7 +354,7 @@ func getNumericNonzeroRule[T numeric](name string) (Rule, error) {
 func getNumericOneofRule[T numeric](
 	name string,
 	parse func(string) (T, error),
-) (Rule, error) {
+) (*Rule, error) {
 	return NewRule[T](name, func(n T, params ...string) error {
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
@@ -393,8 +394,8 @@ func parseFloatValue[T floatNumeric](bitSize int) func(string) (T, error) {
 	}
 }
 
-func getSignedNumericRules[T signedNumeric](bitSize int) []Rule {
-	return []Rule{
+func getSignedNumericRules[T signedNumeric](bitSize int) []*Rule {
+	return []*Rule{
 		mustRule(getNumericMinMaxRule[T](RuleMin, parseSignedValue[T](bitSize), func(a, b T) bool { return a < b })),
 		mustRule(getNumericMinMaxRule[T](RuleMax, parseSignedValue[T](bitSize), func(a, b T) bool { return a > b })),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
@@ -402,8 +403,8 @@ func getSignedNumericRules[T signedNumeric](bitSize int) []Rule {
 	}
 }
 
-func getUnsignedNumericRules[T unsignedNumeric](bitSize int) []Rule {
-	return []Rule{
+func getUnsignedNumericRules[T unsignedNumeric](bitSize int) []*Rule {
+	return []*Rule{
 		mustRule(getNumericMinMaxRule[T](RuleMin, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a < b })),
 		mustRule(getNumericMinMaxRule[T](RuleMax, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a > b })),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
@@ -411,8 +412,8 @@ func getUnsignedNumericRules[T unsignedNumeric](bitSize int) []Rule {
 	}
 }
 
-func getFloatNumericRules[T floatNumeric](bitSize int) []Rule {
-	return []Rule{
+func getFloatNumericRules[T floatNumeric](bitSize int) []*Rule {
+	return []*Rule{
 		mustRule(getNumericMinMaxRule[T](RuleMin, parseFloatValue[T](bitSize), func(a, b T) bool { return a < b })),
 		mustRule(getNumericMinMaxRule[T](RuleMax, parseFloatValue[T](bitSize), func(a, b T) bool { return a > b })),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
@@ -423,10 +424,10 @@ func getFloatNumericRules[T floatNumeric](bitSize int) []Rule {
 // ensureBuiltIns initializes built-in rules exactly once.
 func ensureBuiltIns() {
 	builtInsOnce.Do(func() {
-		builtInMap = make(map[key]Rule)
+		builtInMap = make(map[key]*Rule)
 
 		// string rules
-		builtinStringRules = []Rule{
+		builtinStringRules = []*Rule{
 			mustRule(getStrMinRule()),
 			mustRule(getStrMaxRule()),
 			mustRule(getStrEmailRule()),
@@ -435,7 +436,7 @@ func ensureBuiltIns() {
 			mustRule(getStrSemverRule()),
 		}
 
-		builtinNumericRules = make([]Rule, 0, 52)
+		builtinNumericRules = make([]*Rule, 0, 52)
 		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int](strconv.IntSize)...)
 		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int8](8)...)
 		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int16](16)...)
@@ -451,7 +452,7 @@ func ensureBuiltIns() {
 		builtinNumericRules = append(builtinNumericRules, getFloatNumericRules[float64](64)...)
 
 		// fill map
-		register := func(rs []Rule) {
+		register := func(rs []*Rule) {
 			for _, r := range rs {
 				builtInMap[key{r.GetName(), r.getFieldType()}] = r
 			}
@@ -462,7 +463,7 @@ func ensureBuiltIns() {
 }
 
 // lookupBuiltin returns a built-in rule by (Name,type) if present.
-func lookupBuiltin(name string, t reflect.Type) (Rule, bool) {
+func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 	ensureBuiltIns()
 	r, ok := builtInMap[key{name, t}]
 	return r, ok

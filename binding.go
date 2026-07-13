@@ -6,6 +6,7 @@ import (
 
 	"github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/validation"
@@ -22,17 +23,18 @@ type service[T any] interface {
 	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
 	ApplyEnvStruct(v reflect.Value) error
 	WriteValuesStruct(v reflect.Value, sink field.ValueSink) error
-	AddRule(r validation.Rule) error
+	//AddRule(r validation.Rule) error
 	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
 }
 
 func newService[T any](
-	rr validation.RulesRegistry,
-	rm validation.RulesMapping,
+	rr *rules.Registry,
+	//rm validation.RulesMapping,
 	sc *schema.Controller[T],
+	cr
 	envPrefix string,
 ) service[T] {
-	return core.NewService[T](rr, rm, sc, envPrefix)
+	return core.NewService[T](rr, sc, envPrefix)
 }
 
 // NewBinding constructs a Binding for the type parameter T. T must be a struct.
@@ -58,24 +60,44 @@ func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 		opt(o)
 	}
 
-	rulesRegistry := validation.NewRulesRegistry()
-	rulesMapping := validation.NewRulesMapping()
+	rulesRegistry := rules.NewRegistry()
+	for _, r := range o.rules {
+		rr := r.(rule)
+		if err := rulesRegistry.Add(rr.r); err != nil {
+			return nil, err
+		}
+	}
+
+	// rulesMapping := validation.NewRulesMapping()
 	schemaController, err := schema.NewController[T]()
 	if err != nil {
 		return nil, err
 	}
 
-	s := newService(rulesRegistry, rulesMapping, schemaController, o.envPrefix)
+	compiledRules, err := rules.Compile(schemaController.GetRoot(), rulesRegistry)
+	if err != nil {
+		return nil, err
+	}
+
+	s := newService(rulesRegistry, schemaController, compiledRules, o.envPrefix)
 
 	b := &Binding[T]{service: s}
 
-	if len(o.rules) > 0 {
-		if err := registerRules(s, o.rules...); err != nil {
-			return nil, err
-		}
-	}
-
 	return b, nil
+}
+
+type Rule interface{}
+
+type rule struct {
+	r *rules.Rule
+}
+
+func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
+	r, err := rules.NewRule(name, fn)
+	if err != nil {
+		return nil, err
+	}
+	return &rule{r: r}, nil
 }
 
 // ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags.
@@ -147,15 +169,6 @@ func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
 		return err
 	}
 	return b.Validate(ctx, obj)
-}
-
-func registerRules[T any](s service[T], rules ...validation.Rule) error {
-	for _, r := range rules {
-		if err := s.AddRule(r); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (b *Binding[T]) WriteValues(obj *T, sink field.ValueSink) error {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ygrebnov/errorc"
+
 	modelerrors "github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )

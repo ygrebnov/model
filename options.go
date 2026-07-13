@@ -1,10 +1,8 @@
 package model
 
-import "github.com/ygrebnov/model/validation"
-
 type options struct {
 	envPrefix string
-	rules     []validation.Rule
+	rules     []Rule
 }
 
 // Option customizes Binding, DynamicBinding or wrappers behavior.
@@ -22,8 +20,8 @@ func WithEnvPrefix(prefix string) Option {
 
 // WithRules registers one or many named custom validation rules during binding construction.
 //
-// See the validation.Rule type and validation.NewRule function for details on creating rules.
-func WithRules(rules ...validation.Rule) Option {
+// See the Rule type and NewRule function for details on creating rules.
+func WithRules(rules ...Rule) Option {
 	return func(o *options) {
 		o.rules = rules
 	}

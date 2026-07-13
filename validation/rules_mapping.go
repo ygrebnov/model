@@ -1,5 +1,6 @@
 package validation
 
+/*
 import (
 	"reflect"
 	"strings"
@@ -139,3 +140,4 @@ func parseTokens(tokens []string) []RuleNameParams {
 	}
 	return rules
 }
+*/
