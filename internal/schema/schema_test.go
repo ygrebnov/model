@@ -1,5 +1,6 @@
 package schema
 
+/*
 import (
 	"errors"
 	"reflect"
@@ -175,3 +176,4 @@ func TestCompileRejectsNonStruct(t *testing.T) {
 		})
 	}
 }
+*/

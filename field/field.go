@@ -1,7 +1,6 @@
 package field
 
-import "reflect"
-
+/*
 type Field struct {
 	Path            string
 	Name            string
@@ -13,6 +12,7 @@ type Field struct {
 	ValidateTag     string
 	ValidateElemTag string
 }
+*/
 
 type ValueSource interface {
 	Get(name string) (any, bool, error)
@@ -23,5 +23,5 @@ type EnvSource interface {
 }
 
 type ValueSink interface {
-	Set(field Field, value any) error
+	Set(name string, value any) error
 }

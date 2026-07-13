@@ -6,16 +6,20 @@ import (
 	"github.com/ygrebnov/errorc"
 
 	fieldPkg "github.com/ygrebnov/model/field"
-
-	"github.com/ygrebnov/model/internal/schema"
 	modelerrors "github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
 
-// WriteValuesStruct walks the compiled schema for rv and writes reachable field
-// values to sink. Nested pointer-to-struct fields are traversed only when
-// non-nil.
-func (s *Service[T]) WriteValuesStruct(rv reflect.Value, sink fieldPkg.ValueSink) error {
+// WriteValuesStruct walks the compiled schema and writes all reachable field
+// values to sink.
+//
+// Existing nested structs and collection elements are traversed. Nil
+// pointer-to-struct fields and nil pointer collection elements are written as
+// fields but are not allocated or traversed.
+func (s *Service[T]) WriteValuesStruct(
+	rv reflect.Value,
+	sink fieldPkg.ValueSink,
+) error {
 	if sink == nil {
 		return errorc.With(
 			modelerrors.ErrInvalidValue,
@@ -24,53 +28,36 @@ func (s *Service[T]) WriteValuesStruct(rv reflect.Value, sink fieldPkg.ValueSink
 		)
 	}
 
-	compiled, err := s.schemaFor(rv.Type())
-	if err != nil {
-		return err
+	policy := walkPolicy{
+		DiveCollection: func(_ walkContext, _ reflect.Value) bool {
+			return true
+		},
+		AllocPtrStruct: func(_ walkContext, _ reflect.Value) bool {
+			return false
+		},
 	}
 
-	for _, node := range compiled.Root.Children {
-		if err := s.writeNodeValues(rv, node, sink); err != nil {
-			return err
-		}
-	}
+	return walkSchema(
+		rv,
+		s.schemaController.GetRoot(),
+		nil,
+		policy,
+		func(ctx walkContext, field reflect.Value) error {
+			field = unwrapInterface(field)
+			if !field.IsValid() || !field.CanInterface() {
+				return nil
+			}
 
-	return nil
-}
+			name := ctx.Node.GetName(".")
+			if err := sink.Set(name, field.Interface()); err != nil {
+				return errorc.With(
+					err,
+					errorc.String(keys.Phase, "write_values"),
+					errorc.String(keys.FieldName, ctx.Path),
+				)
+			}
 
-func (s *Service[T]) writeNodeValues(parent reflect.Value, node *schema.Node, sink fieldPkg.ValueSink) error {
-	fieldValue := parent.FieldByIndex(node.Index)
-	field := publicField(node)
-
-	if err := sink.Set(field, fieldValue.Interface()); err != nil {
-		return errorc.With(
-			err,
-			errorc.String(keys.Phase, "write_values"),
-			errorc.String(keys.FieldName, field.Path),
-		)
-	}
-
-	if len(node.Children) == 0 {
-		return nil
-	}
-
-	nested := fieldValue
-	if nested.Kind() == reflect.Ptr {
-		if nested.IsNil() || nested.Type().Elem().Kind() != reflect.Struct {
 			return nil
-		}
-		nested = nested.Elem()
-	}
-
-	if nested.Kind() != reflect.Struct || isDurationType(nested.Type()) {
-		return nil
-	}
-
-	for _, child := range node.Children {
-		if err := s.writeNodeValues(nested, child, sink); err != nil {
-			return err
-		}
-	}
-
-	return nil
+		},
+	)
 }

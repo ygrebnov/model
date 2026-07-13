@@ -1,5 +1,6 @@
 package schema
 
+/*
 import (
 	"reflect"
 	"strings"
@@ -234,6 +235,7 @@ func (s *compileState) buildChildren(parent *Node, typ reflect.Type, envPath []s
 		s.active[childType]--
 	}
 }
+*/
 
 /*
 func nestedStructType(t reflect.Type) (reflect.Type, bool) {
@@ -250,6 +252,7 @@ func nestedStructType(t reflect.Type) (reflect.Type, bool) {
 }
 */
 
+/*
 func effectiveEnvName(field reflect.StructField) (string, bool) {
 	if tag := field.Tag.Get("env"); tag != "" {
 		if tag == "-" {
@@ -296,3 +299,4 @@ func appendEnvPath(parent []string, part string) []string {
 	path = append(path, part)
 	return path
 }
+*/
