@@ -45,9 +45,8 @@ type walkAction func(ctx walkContext, field reflect.Value) error
 // walkSchema walks root using the compiled schema tree and calls action for each
 // resolved field.
 //
-// The walker intentionally does not know anything about defaults, environment
-// variables, validation rules, or external providers. Those behaviors are
-// supplied through walkPolicy and walkAction.
+// Recursive type references are followed at runtime. activePointers prevents
+// traversal from following an actual pointer cycle in the concrete object.
 func walkSchema(
 	root reflect.Value,
 	rootNode *schema.Node,
@@ -58,6 +57,8 @@ func walkSchema(
 	if rootNode == nil {
 		return nil
 	}
+
+	activePointers := make(map[uintptr]bool)
 
 	for _, child := range rootNode.Children {
 		childEnvPath, childEnvEnabled := applyWalkNodeEnvPath(
@@ -80,6 +81,7 @@ func walkSchema(
 			ctx,
 			policy,
 			action,
+			activePointers,
 		); err != nil {
 			return err
 		}
@@ -88,12 +90,7 @@ func walkSchema(
 	return nil
 }
 
-// walkNode resolves node against parent, calls action, and then recursively
-// walks child values when policy allows it.
-//
-// For ordinary nested struct fields, parent is the root object because compiled
-// node indexes are root-based. For collection element fields, parent is the
-// concrete element because compiled child indexes are element-relative.
+// walkNode resolves node against parent using the node's compiled index.
 func walkNode(
 	root reflect.Value,
 	parent reflect.Value,
@@ -101,8 +98,37 @@ func walkNode(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
-	field, ok := fieldByIndex(parent, node.Index)
+	return walkNodeByIndex(
+		root,
+		parent,
+		node,
+		node.Index,
+		ctx,
+		policy,
+		action,
+		activePointers,
+	)
+}
+
+// walkNodeByIndex resolves node using the provided index, calls action, and then
+// recursively walks child values when policy allows it.
+//
+// The explicit index is needed when traversing collection elements or following
+// recursive schema references because those fields must be resolved relative to
+// the current concrete struct rather than the original root object.
+func walkNodeByIndex(
+	root reflect.Value,
+	parent reflect.Value,
+	node *schema.Node,
+	index []int,
+	ctx walkContext,
+	policy walkPolicy,
+	action walkAction,
+	activePointers map[uintptr]bool,
+) error {
+	field, ok := fieldByIndex(parent, index)
 	if !ok {
 		return nil
 	}
@@ -113,11 +139,63 @@ func walkNode(
 		}
 	}
 
-	if len(node.Children) == 0 {
+	if len(node.Children) == 0 && node.Reference == nil {
 		return nil
 	}
 
-	return walkChildren(root, field, node, ctx, policy, action)
+	trackedPointer, alreadyActive := beginPointerVisit(
+		field,
+		activePointers,
+	)
+	if alreadyActive {
+		return nil
+	}
+
+	if trackedPointer != 0 {
+		defer delete(activePointers, trackedPointer)
+	}
+
+	return walkChildren(
+		root,
+		field,
+		node,
+		ctx,
+		policy,
+		action,
+		activePointers,
+	)
+}
+
+// beginPointerVisit tracks a non-nil pointer-to-struct for one recursive
+// branch. Shared objects reached through another root path are revisited after
+// the current branch unwinds.
+func beginPointerVisit(
+	value reflect.Value,
+	activePointers map[uintptr]bool,
+) (pointer uintptr, alreadyActive bool) {
+	value = unwrapInterface(value)
+	if !value.IsValid() ||
+		value.Kind() != reflect.Ptr ||
+		value.IsNil() {
+		return 0, false
+	}
+
+	if value.Type().Elem().Kind() != reflect.Struct {
+		return 0, false
+	}
+
+	pointer = value.Pointer()
+	if pointer == 0 {
+		return 0, false
+	}
+
+	if activePointers[pointer] {
+		return pointer, true
+	}
+
+	activePointers[pointer] = true
+
+	return pointer, false
 }
 
 // walkChildren dispatches child traversal according to the concrete value kind.
@@ -128,21 +206,55 @@ func walkChildren(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
 	field = unwrapInterface(field)
+	if !field.IsValid() {
+		return nil
+	}
 
 	switch field.Kind() {
 	case reflect.Ptr:
-		return walkPtrChildren(root, field, node, ctx, policy, action)
+		return walkPtrChildren(
+			root,
+			field,
+			node,
+			ctx,
+			policy,
+			action,
+			activePointers,
+		)
 
 	case reflect.Struct:
-		return walkStructChildren(root, field, node, ctx, policy, action)
+		return walkStructChildren(
+			root,
+			field,
+			node,
+			ctx,
+			policy,
+			action,
+			activePointers,
+		)
 
 	case reflect.Slice, reflect.Array:
-		return walkSliceArrayChildren(field, node, ctx, policy, action)
+		return walkSliceArrayChildren(
+			field,
+			node,
+			ctx,
+			policy,
+			action,
+			activePointers,
+		)
 
 	case reflect.Map:
-		return walkMapChildren(field, node, ctx, policy, action)
+		return walkMapChildren(
+			field,
+			node,
+			ctx,
+			policy,
+			action,
+			activePointers,
+		)
 
 	default:
 		return nil
@@ -158,6 +270,7 @@ func walkPtrChildren(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
 	if field.IsNil() {
 		if field.Type().Elem().Kind() != reflect.Struct {
@@ -180,13 +293,15 @@ func walkPtrChildren(
 		ctx,
 		policy,
 		action,
+		activePointers,
 	)
 }
 
 // walkStructChildren walks ordinary nested struct children.
 //
-// Child indexes for ordinary nested structs are root-based, so children are
-// resolved against root rather than against field.
+// Ordinary children use indexes rooted at root. A recursive reference reuses
+// another node's children, whose direct field indexes must instead be resolved
+// against the current concrete struct value.
 func walkStructChildren(
 	root reflect.Value,
 	field reflect.Value,
@@ -194,21 +309,39 @@ func walkStructChildren(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
 	if isDurationType(field.Type()) {
 		return nil
 	}
 
-	for _, child := range node.Children {
+	children := node.Children
+	parent := root
+	relative := false
+
+	if len(children) == 0 && node.Reference != nil {
+		children = node.Reference.Children
+		parent = field
+		relative = true
+	}
+
+	for _, child := range children {
 		childCtx := childWalkContext(ctx, child)
 
-		if err := walkNode(
+		index := child.Index
+		if relative {
+			index = directFieldIndex(child)
+		}
+
+		if err := walkNodeByIndex(
 			root,
-			root,
+			parent,
 			child,
+			index,
 			childCtx,
 			policy,
 			action,
+			activePointers,
 		); err != nil {
 			return err
 		}
@@ -225,43 +358,33 @@ func walkSliceArrayChildren(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
 	if policy.DiveCollection == nil ||
 		!policy.DiveCollection(ctx, collection) {
 		return nil
 	}
 
+	children := schemaNodeChildren(node)
+	if len(children) == 0 {
+		return nil
+	}
+
 	for i := 0; i < collection.Len(); i++ {
-		elem := unwrapInterface(collection.Index(i))
+		elemCtx := collectionElementContext(
+			ctx,
+			fmt.Sprint(i),
+		)
 
-		if elem.Kind() == reflect.Ptr {
-			if elem.IsNil() {
-				continue
-			}
-
-			elem = elem.Elem()
-		}
-
-		if elem.Kind() != reflect.Struct ||
-			isDurationType(elem.Type()) {
-			continue
-		}
-
-		elemCtx := collectionElementContext(ctx, fmt.Sprint(i))
-
-		for _, child := range node.Children {
-			childCtx := childWalkContext(elemCtx, child)
-
-			if err := walkNode(
-				elem,
-				elem,
-				child,
-				childCtx,
-				policy,
-				action,
-			); err != nil {
-				return err
-			}
+		if err := walkCollectionElement(
+			collection.Index(i),
+			children,
+			elemCtx,
+			policy,
+			action,
+			activePointers,
+		); err != nil {
+			return err
 		}
 	}
 
@@ -279,6 +402,7 @@ func walkMapChildren(
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
+	activePointers map[uintptr]bool,
 ) error {
 	if mapValue.IsNil() {
 		return nil
@@ -286,6 +410,11 @@ func walkMapChildren(
 
 	if policy.DiveCollection == nil ||
 		!policy.DiveCollection(ctx, mapValue) {
+		return nil
+	}
+
+	children := schemaNodeChildren(node)
+	if len(children) == 0 {
 		return nil
 	}
 
@@ -298,45 +427,118 @@ func walkMapChildren(
 		updated := reflect.New(value.Type()).Elem()
 		updated.Set(value)
 
-		target := unwrapInterface(updated)
-
-		if target.Kind() == reflect.Ptr {
-			if target.IsNil() {
-				continue
-			}
-
-			target = target.Elem()
-		}
-
-		if target.Kind() != reflect.Struct ||
-			isDurationType(target.Type()) {
-			continue
-		}
-
 		elemCtx := collectionElementContext(
 			ctx,
 			fmt.Sprint(key.Interface()),
 		)
 
-		for _, child := range node.Children {
-			childCtx := childWalkContext(elemCtx, child)
-
-			if err := walkNode(
-				target,
-				target,
-				child,
-				childCtx,
-				policy,
-				action,
-			); err != nil {
-				return err
-			}
+		if err := walkCollectionElement(
+			updated,
+			children,
+			elemCtx,
+			policy,
+			action,
+			activePointers,
+		); err != nil {
+			return err
 		}
 
 		mapValue.SetMapIndex(key, updated)
 	}
 
 	return nil
+}
+
+// walkCollectionElement traverses one concrete struct or pointer-to-struct
+// collection element.
+//
+// Pointer elements participate in the same active-pointer tracking used for
+// ordinary pointer fields, preventing cycles such as a node containing a slice
+// that points back to the node itself.
+func walkCollectionElement(
+	value reflect.Value,
+	children []*schema.Node,
+	ctx walkContext,
+	policy walkPolicy,
+	action walkAction,
+	activePointers map[uintptr]bool,
+) error {
+	value = unwrapInterface(value)
+	if !value.IsValid() {
+		return nil
+	}
+
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return nil
+		}
+
+		pointer := value.Pointer()
+		if pointer != 0 {
+			if activePointers[pointer] {
+				return nil
+			}
+
+			activePointers[pointer] = true
+			defer delete(activePointers, pointer)
+		}
+
+		value = unwrapInterface(value.Elem())
+	}
+
+	if !value.IsValid() ||
+		value.Kind() != reflect.Struct ||
+		isDurationType(value.Type()) {
+		return nil
+	}
+
+	for _, child := range children {
+		childCtx := childWalkContext(ctx, child)
+
+		if err := walkNodeByIndex(
+			value,
+			value,
+			child,
+			directFieldIndex(child),
+			childCtx,
+			policy,
+			action,
+			activePointers,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// schemaNodeChildren returns the directly compiled children or, for a recursive
+// schema node, the children of its referenced type definition.
+func schemaNodeChildren(node *schema.Node) []*schema.Node {
+	if node == nil {
+		return nil
+	}
+
+	if len(node.Children) > 0 {
+		return node.Children
+	}
+
+	if node.Reference != nil {
+		return node.Reference.Children
+	}
+
+	return nil
+}
+
+// directFieldIndex returns the field index relative to the struct represented
+// by the node's immediate parent. It is used when following recursive schema
+// references and when traversing collection element structs.
+func directFieldIndex(node *schema.Node) []int {
+	if node == nil || len(node.Index) == 0 {
+		return nil
+	}
+
+	return node.Index[len(node.Index)-1:]
 }
 
 // childWalkContext returns the runtime context for child below parent.
@@ -360,6 +562,9 @@ func childWalkContext(
 
 // collectionElementContext returns the runtime context for one concrete
 // collection element or map value.
+//
+// The schema collection marker [] is replaced by the concrete element index or
+// map key.
 func collectionElementContext(
 	parent walkContext,
 	key string,
@@ -369,9 +574,14 @@ func collectionElementContext(
 		envPath = appendEnvPart(parent.EnvPath, key)
 	}
 
+	path := parent.Path
+	if strings.HasSuffix(path, "[]") {
+		path = strings.TrimSuffix(path, "[]")
+	}
+
 	return walkContext{
 		Node:       parent.Node,
-		Path:       parent.Path + "[" + key + "]",
+		Path:       path + "[" + key + "]",
 		EnvPath:    envPath,
 		EnvEnabled: parent.EnvEnabled,
 	}

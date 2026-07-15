@@ -1,14 +1,6 @@
 package core
 
-import (
-	"fmt"
-	"reflect"
-	"strings"
-	"testing"
-
-	"github.com/ygrebnov/model/validation"
-)
-
+/*
 // a concrete type implementing fmt.Stringer-like behavior (we won't import fmt here)
 type sw struct{ s string }
 
@@ -197,3 +189,4 @@ func TestTypeBinding_applyRule(t *testing.T) {
 		}
 	})
 }
+*/

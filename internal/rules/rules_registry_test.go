@@ -20,7 +20,7 @@ type wrapGet struct{ v string }
 func (w wrapGet) String() string { return w.v }
 
 // Helper to fetch a builtin rule for tests after lazy-init refactor.
-func builtinRuleForTest(t *testing.T, name string, typ reflect.Type) Rule {
+func builtinRuleForTest(t *testing.T, name string, typ reflect.Type) *Rule {
 	t.Helper()
 	r, ok := lookupBuiltin(name, typ)
 	if !ok {
@@ -34,17 +34,17 @@ func TestGetFieldTypesNames(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		rules    []Rule
+		rules    []*Rule
 		expected []string
 	}{
 		{
 			name:     "single rule",
-			rules:    []Rule{testRules["stringRule"]},
+			rules:    []*Rule{testRules["stringRule"]},
 			expected: []string{"string"},
 		},
 		{
 			name: "multiple rules of different types, unsorted",
-			rules: []Rule{
+			rules: []*Rule{
 				testRules["stringRule"],
 				testRules["intRule"],
 				testRules["floatRule"],
@@ -58,14 +58,14 @@ func TestGetFieldTypesNames(t *testing.T) {
 				"float64",
 				"int",
 				"interface {}",
+				"rules.a",
 				"string",
 				"struct {}",
-				"validation.a",
 			},
 		},
 		{
 			name:     "empty rules",
-			rules:    []Rule{},
+			rules:    []*Rule{},
 			expected: []string{},
 		},
 	}
@@ -97,20 +97,20 @@ func TestRegistry_add(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		rulesToAdd    []Rule
+		rulesToAdd    []*Rule
 		expectedError error
-		expectedRules map[string][]Rule
+		expectedRules map[string][]*Rule
 	}{
 		{
 			name:       "add single rule",
-			rulesToAdd: []Rule{testRules["stringRule"]},
-			expectedRules: map[string][]Rule{
+			rulesToAdd: []*Rule{testRules["stringRule"]},
+			expectedRules: map[string][]*Rule{
 				"stringRule": {testRules["stringRule"]},
 			},
 		},
 		{
 			name:       "add duplicate overload rule for same type",
-			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"]},
+			rulesToAdd: []*Rule{testRules["stringRule"], testRules["stringRule"]},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
 				errorc.String(keys.RuleName, "stringRule"),
@@ -119,21 +119,21 @@ func TestRegistry_add(t *testing.T) {
 		},
 		{
 			name:       "add rule with existing Name, but for different type",
-			rulesToAdd: []Rule{testRules["stringRule"], interfaceOverloadForStringRule},
-			expectedRules: map[string][]Rule{
+			rulesToAdd: []*Rule{testRules["stringRule"], interfaceOverloadForStringRule},
+			expectedRules: map[string][]*Rule{
 				"stringRule": {testRules["stringRule"], interfaceOverloadForStringRule},
 			},
 		},
 		{
 			name:       "add multiple distinct overloads (string, interface, int)",
-			rulesToAdd: []Rule{testRules["stringRule"], interfaceOverloadForStringRule, intOverloadForStringRule},
-			expectedRules: map[string][]Rule{
+			rulesToAdd: []*Rule{testRules["stringRule"], interfaceOverloadForStringRule, intOverloadForStringRule},
+			expectedRules: map[string][]*Rule{
 				"stringRule": {testRules["stringRule"], interfaceOverloadForStringRule, intOverloadForStringRule},
 			},
 		},
 		{
 			name:       "short-circuit after duplicate (second add fails; third not applied)",
-			rulesToAdd: []Rule{testRules["stringRule"], testRules["stringRule"], intOverloadForStringRule},
+			rulesToAdd: []*Rule{testRules["stringRule"], testRules["stringRule"], intOverloadForStringRule},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
 				errorc.String(keys.RuleName, "stringRule"),
@@ -142,7 +142,7 @@ func TestRegistry_add(t *testing.T) {
 		},
 		{
 			name:       "duplicate pointer overload",
-			rulesToAdd: []Rule{testRules["pointerToInterfaceRule"], pointerToInterfaceRule2},
+			rulesToAdd: []*Rule{testRules["pointerToInterfaceRule"], pointerToInterfaceRule2},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
 				errorc.String(keys.RuleName, "pointerToInterfaceRule"),
@@ -151,7 +151,7 @@ func TestRegistry_add(t *testing.T) {
 		},
 		{
 			name:       "duplicate interface overload",
-			rulesToAdd: []Rule{testRules["interfaceRule"], interfaceRule2},
+			rulesToAdd: []*Rule{testRules["interfaceRule"], interfaceRule2},
 			expectedError: errorc.With(
 				errorsPkg.ErrDuplicateOverloadRule,
 				errorc.String(keys.RuleName, "interfaceRule"),
@@ -160,15 +160,15 @@ func TestRegistry_add(t *testing.T) {
 		},
 		{
 			name:          "nil rule",
-			rulesToAdd:    []Rule{nil},
-			expectedRules: map[string][]Rule{},
+			rulesToAdd:    []*Rule{nil},
+			expectedRules: map[string][]*Rule{},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reg := &rulesRegistry{
-				rules: make(map[string][]Rule),
+			reg := &Registry{
+				rules: make(map[string][]*Rule),
 			}
 			var err error
 			for _, r := range test.rulesToAdd {
@@ -207,11 +207,11 @@ func TestRegistry_add(t *testing.T) {
 				}
 
 				// stable ordering by field type Name
-				slices.SortFunc(actualOverloads, func(i, j Rule) int {
-					return strings.Compare(i.getFieldTypeName(), j.getFieldTypeName())
+				slices.SortFunc(actualOverloads, func(i, j *Rule) int {
+					return strings.Compare(i.GetFieldTypeName(), j.GetFieldTypeName())
 				})
-				slices.SortFunc(expectedOverloads, func(i, j Rule) int {
-					return strings.Compare(i.getFieldTypeName(), j.getFieldTypeName())
+				slices.SortFunc(expectedOverloads, func(i, j *Rule) int {
+					return strings.Compare(i.GetFieldTypeName(), j.GetFieldTypeName())
 				})
 
 				for i, exp := range expectedOverloads {
@@ -230,8 +230,8 @@ func TestRegistry_add(t *testing.T) {
 							"for rule %s overload %d, expected type %s, got %s",
 							name,
 							i,
-							exp.getFieldTypeName(),
-							act.getFieldTypeName(),
+							exp.GetFieldTypeName(),
+							act.GetFieldTypeName(),
 						)
 					}
 				}
@@ -243,20 +243,20 @@ func TestRegistry_add(t *testing.T) {
 func TestRegistry_get(t *testing.T) {
 	testRules := getTestRules(t)
 
-	defaultRegistry := func(t *testing.T) *rulesRegistry {
-		return &rulesRegistry{
-			rules: make(map[string][]Rule),
+	defaultRegistry := func(t *testing.T) *Registry {
+		return &Registry{
+			rules: make(map[string][]*Rule),
 		}
 	}
 
 	cases := []struct { // rename internal for clarity
 		name                  string
-		setupRegistry         func(t *testing.T) *rulesRegistry
+		setupRegistry         func(t *testing.T) *Registry
 		ruleName              string
 		value                 reflect.Value
 		expectedSentinelError error
 		expectedError         error
-		expectedRule          Rule
+		expectedRule          *Rule
 	}{
 		{
 			name:                  "invalid reflect.Value",
@@ -289,11 +289,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "builtin fallback when empty slice present",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules[RuleEmail] = []Rule{}
+				r.rules[RuleEmail] = []*Rule{}
 				return r
 			},
 			ruleName:     RuleEmail,
@@ -302,11 +302,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "exact match single overload",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules["singleOverload"] = []Rule{testRules["stringRule"]}
+				r.rules["singleOverload"] = []*Rule{testRules["stringRule"]}
 				return r
 			},
 			ruleName:     "singleOverload",
@@ -315,11 +315,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "assignable interface match (no exact)",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules["assignableInterface"] = []Rule{testRules["stringerInterfaceRule"]}
+				r.rules["assignableInterface"] = []*Rule{testRules["stringerInterfaceRule"]}
 				return r
 			},
 			ruleName:     "assignableInterface",
@@ -328,11 +328,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "exact preferred over assignable (both registered)",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules["exactOverAssignable"] = []Rule{testRules["stringerInterfaceRule"], testRules["stringRule"]}
+				r.rules["exactOverAssignable"] = []*Rule{testRules["stringerInterfaceRule"], testRules["stringRule"]}
 				return r
 			},
 			ruleName:     "exactOverAssignable",
@@ -341,11 +341,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "no overload for value type -> available types list",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules["noOverload"] = []Rule{testRules["stringRule"], testRules["intRule"]}
+				r.rules["noOverload"] = []*Rule{testRules["stringRule"], testRules["intRule"]}
 				return r
 			},
 			ruleName:              "noOverload",
@@ -360,11 +360,11 @@ func TestRegistry_get(t *testing.T) {
 		},
 		{
 			name: "ambiguous duplicates (manually inserted unreachable path)",
-			setupRegistry: func(t *testing.T) *rulesRegistry {
-				r := &rulesRegistry{
-					rules: make(map[string][]Rule),
+			setupRegistry: func(t *testing.T) *Registry {
+				r := &Registry{
+					rules: make(map[string][]*Rule),
 				}
-				r.rules["ambiguousDuplicates"] = []Rule{testRules["stringRule"], testRules["stringRule"]}
+				r.rules["ambiguousDuplicates"] = []*Rule{testRules["stringRule"], testRules["stringRule"]}
 				return r
 			},
 			ruleName:              "ambiguousDuplicates",
@@ -382,7 +382,7 @@ func TestRegistry_get(t *testing.T) {
 		// capture
 		t.Run(tc.name, func(t *testing.T) {
 			r := tc.setupRegistry(t)
-			rule, err := r.Get(tc.ruleName, tc.value)
+			rule, err := r.GetByValue(tc.ruleName, tc.value)
 			if tc.expectedError != nil {
 				if err == nil {
 					t.Fatalf("expected error %v, got nil", tc.expectedError)

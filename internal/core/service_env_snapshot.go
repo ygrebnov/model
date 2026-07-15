@@ -18,7 +18,9 @@ func (s *Service[T]) snapshotEnvSource() fieldPkg.EnvSource {
 			return false
 		},
 		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
-			return ctx.EnvEnabled
+			// Recursive references have no finite environment path to snapshot.
+			// Avoid allocating a new pointer at the cycle boundary.
+			return ctx.EnvEnabled && ctx.Node.Reference == nil
 		},
 	}
 

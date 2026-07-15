@@ -63,15 +63,15 @@ func TestBinding_Validate_SkipsPointerCycles(t *testing.T) {
 	obj := cycleRoot{First: first}
 	by := validationByField(t, b.Validate(context.Background(), &obj))
 
-	if _, ok := by["First.Name"]; !ok {
-		t.Fatalf("expected validation error at First.Name, got: %+v", by)
+	if _, ok := by["first.name"]; !ok {
+		t.Fatalf("expected validation error at first.name, got: %+v", by)
 	}
-	if _, ok := by["First.Next.Name"]; !ok {
-		t.Fatalf("expected validation error at First.Next.Name, got: %+v", by)
+	if _, ok := by["first.next.name"]; !ok {
+		t.Fatalf("expected validation error at first.next.name, got: %+v", by)
 	}
 
 	for path := range by {
-		if strings.HasPrefix(path, "First.Next.Next") {
+		if strings.HasPrefix(path, "first.next.next") {
 			t.Fatalf("unexpected recursive validation past cycle boundary at %s", path)
 		}
 	}
@@ -90,11 +90,11 @@ func TestBinding_Validate_RevisitsSharedNodesByPath(t *testing.T) {
 
 	by := validationByField(t, b.Validate(context.Background(), &obj))
 
-	if _, ok := by["First.Name"]; !ok {
-		t.Fatalf("expected validation error at First.Name, got: %+v", by)
+	if _, ok := by["first.name"]; !ok {
+		t.Fatalf("expected validation error at first.name, got: %+v", by)
 	}
-	if _, ok := by["Second.Name"]; !ok {
-		t.Fatalf("expected validation error at Second.Name, got: %+v", by)
+	if _, ok := by["second.name"]; !ok {
+		t.Fatalf("expected validation error at second.name, got: %+v", by)
 	}
 }
 
@@ -112,15 +112,15 @@ func TestBinding_ValidateElemDive_SkipsPointerCycles(t *testing.T) {
 
 	by := validationByField(t, b.Validate(context.Background(), &obj))
 
-	if _, ok := by["Items[0].Name"]; !ok {
-		t.Fatalf("expected validation error at Items[0].Name, got: %+v", by)
+	if _, ok := by["items[0].name"]; !ok { // actual key "items[][0].name"
+		t.Fatalf("expected validation error at items[0].name, got: %+v", by)
 	}
-	if _, ok := by["Items[0].Next.Name"]; !ok {
-		t.Fatalf("expected validation error at Items[0].Next.Name, got: %+v", by)
+	if _, ok := by["items[0].next.name"]; !ok {
+		t.Fatalf("expected validation error at items[0].next.name, got: %+v", by)
 	}
 
 	for path := range by {
-		if strings.HasPrefix(path, "Items[0].Next.Next") {
+		if strings.HasPrefix(path, "items[0].next.next") {
 			t.Fatalf("unexpected recursive validation past cycle boundary at %s", path)
 		}
 	}

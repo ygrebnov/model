@@ -65,26 +65,6 @@ func ExampleValidateWithDefaults() {
 	// Output: ValidateWithDefaults -> name="svc" timeout=250ms
 }
 
-func ExampleValidateWithDefaultsAny() {
-	type Cfg struct {
-		Name    string        `default:"svc"`
-		Timeout time.Duration `default:"250ms"`
-	}
-
-	cfg := &Cfg{}
-
-	func(obj any) {
-		err := model.ValidateWithDefaultsAny(context.Background(), obj)
-		if err != nil {
-			fmt.Println("error:", err)
-			return
-		}
-	}(cfg)
-
-	fmt.Printf("ValidateWithDefaultsAny -> name=%q timeout=%v", cfg.Name, cfg.Timeout)
-	// Output: ValidateWithDefaultsAny -> name="svc" timeout=250ms
-}
-
 func ExampleValidateWithDefaults_withRule() {
 	type Input struct {
 		// Use a custom rule name for a non-builtin type (time.Duration)
@@ -92,7 +72,7 @@ func ExampleValidateWithDefaults_withRule() {
 	}
 
 	in := Input{} // D is zero -> should fail validation
-	nonZeroDurationRule, err := validation.NewRule[time.Duration]("nonzeroDur",
+	nonZeroDurationRule, err := model.NewRule[time.Duration]("nonzeroDur",
 		func(d time.Duration, _ ...string) error {
 			if d == 0 {
 				return fmt.Errorf("duration must be non-zero")
@@ -131,7 +111,7 @@ func ExampleValidateWithDefaults_withMultipleRules() {
 		Age  int    `validate:"positive,nonzero"`
 	}
 
-	nonempty, err := validation.NewRule[string]("nonempty", func(s string, _ ...string) error {
+	nonempty, err := model.NewRule[string]("nonempty", func(s string, _ ...string) error {
 		if s == "" {
 			return fmt.Errorf("must not be empty")
 		}
@@ -141,7 +121,7 @@ func ExampleValidateWithDefaults_withMultipleRules() {
 		fmt.Println("error creating nonempty rule:", err)
 		return
 	}
-	positive, err := validation.NewRule[int]("positive", func(n int, _ ...string) error {
+	positive, err := model.NewRule[int]("positive", func(n int, _ ...string) error {
 		if n <= 0 {
 			return fmt.Errorf("must be > 0")
 		}
@@ -151,7 +131,7 @@ func ExampleValidateWithDefaults_withMultipleRules() {
 		fmt.Println("error creating positive rule:", err)
 		return
 	}
-	nonzero, err := validation.NewRule[int](validation.RuleNonzero, func(n int, _ ...string) error {
+	nonzero, err := model.NewRule[int]("nonzero", func(n int, _ ...string) error {
 		if n == 0 {
 			return fmt.Errorf("must not be zero")
 		}

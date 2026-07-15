@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 	"testing"
-
-	"github.com/ygrebnov/model/validation"
 )
 
 // mediumRule is a medium-level CPU and memory usage rule used for benchmarking.
@@ -82,7 +80,7 @@ func BenchmarkMediumValidate(b *testing.B) {
 		F20: "twentieth medium length string for benchmarking",
 	}
 
-	rule, err := validation.NewRule[string]("medium", mediumRule)
+	rule, err := NewRule[string]("medium", mediumRule)
 	if err != nil {
 		b.Fatalf("failed to create medium rule: %v", err)
 	}

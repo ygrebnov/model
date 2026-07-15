@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/ygrebnov/model/validation"
 )
@@ -142,7 +143,7 @@ func validateCollectionElements(
 			if err := applyCompiledRules(
 				ctx,
 				container.Index(i),
-				fmt.Sprintf("%s[%d]", fieldPath, i),
+				collectionElementRuntimePath(fieldPath, i),
 				compiled,
 				ve,
 			); err != nil {
@@ -156,8 +157,7 @@ func validateCollectionElements(
 			if err := applyCompiledRules(
 				ctx,
 				iterator.Value(),
-				fmt.Sprintf(
-					"%s[%v]",
+				collectionElementRuntimePath(
 					fieldPath,
 					iterator.Key().Interface(),
 				),
@@ -203,7 +203,7 @@ func validateDiveElements(
 
 			validateDiveElement(
 				container.Index(i),
-				fmt.Sprintf("%s[%d]", fieldPath, i),
+				collectionElementRuntimePath(fieldPath, i),
 				ve,
 			)
 		}
@@ -217,8 +217,7 @@ func validateDiveElements(
 
 			validateDiveElement(
 				iterator.Value(),
-				fmt.Sprintf(
-					"%s[%v]",
+				collectionElementRuntimePath(
 					fieldPath,
 					iterator.Key().Interface(),
 				),
@@ -228,6 +227,23 @@ func validateDiveElements(
 	}
 
 	return nil
+}
+
+// collectionElementRuntimePath replaces the schema collection marker []
+// with a concrete runtime slice/array index or map key.
+func collectionElementRuntimePath(
+	path string,
+	key any,
+) string {
+	if strings.HasSuffix(path, "[]") {
+		return fmt.Sprintf(
+			"%s[%v]",
+			strings.TrimSuffix(path, "[]"),
+			key,
+		)
+	}
+
+	return fmt.Sprintf("%s[%v]", path, key)
 }
 
 func validateDiveElement(

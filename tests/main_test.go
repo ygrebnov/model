@@ -13,9 +13,9 @@ import (
 
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/types"
-	"github.com/ygrebnov/model/validation"
 )
 
 type Strings struct {
@@ -864,31 +864,29 @@ func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
 }
 
 func newService[T any]() (*core.Service[T], error) {
-	sc, err := schema.NewController[T]()
+	sc, err := schema.New[T]()
 	if err != nil {
 		return nil, err
 	}
 
 	return core.NewService[T](
-		validation.NewRulesRegistry(),
-		validation.NewRulesMapping(),
+		rules.NewRegistry(),
 		sc,
 		"",
-	), nil
+	)
 }
 
 func newServiceWithEnvPrefix[T any](envPrefix string) (*core.Service[T], error) {
-	sc, err := schema.NewController[T]()
+	sc, err := schema.New[T]()
 	if err != nil {
 		return nil, err
 	}
 
 	return core.NewService[T](
-		validation.NewRulesRegistry(),
-		validation.NewRulesMapping(),
+		rules.NewRegistry(),
 		sc,
 		envPrefix,
-	), nil
+	)
 }
 
 type osEnvSource struct{}
@@ -898,14 +896,6 @@ func (osEnvSource) Lookup(name string) (string, bool) {
 }
 
 func applyBindingDefaultsAndEnv[T any](b *model.Binding[T], obj *T) error {
-	if err := b.ApplyDefaults(obj); err != nil {
-		return err
-	}
-
-	return b.ApplyEnv(obj)
-}
-
-func applyDynamicDefaultsAndEnv(b *model.DynamicBinding, obj any) error {
 	if err := b.ApplyDefaults(obj); err != nil {
 		return err
 	}

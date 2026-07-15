@@ -31,13 +31,17 @@ const (
 // for ordinary struct fields. For fields below collection elements, Index is
 // relative to the collection element type, because runtime traversal must first
 // select the concrete slice/array element or map value before using the index.
+//
+// Reference points to an already compiled node representing the same recursive
+// struct type. Recursive nodes do not duplicate the referenced children;
+// runtime traversal follows Reference.Children instead.
 type Node struct {
-	Name                []string // all segments (ordered) starting from the root
+	Name                []string
 	Type                reflect.Type
-	Index               []int // reflect.StructField.Index
+	Index               []int
 	JSONTag             string
 	YAMLTag             string
-	Env                 []string // all env tags (ordered) starting from the root
+	Env                 []string
 	DefaultTag          string
 	DefaultElemTag      string
 	ValidateTag         string
@@ -45,13 +49,17 @@ type Node struct {
 	ValidateRules       []Rule
 	ValidateElemRules   []Rule
 	ValidateElementDive bool
-	Children            []*Node
+
+	// Reference points to the already compiled node describing the same
+	// struct type when this node closes a recursive type cycle.
+	Reference *Node
+	Children  []*Node
 }
 
 type Rule struct {
 	Name     string
 	Params   []string
-	Optional bool // rule will not be applied to zero-value if validate tag contains omitempty
+	Optional bool
 }
 
 // GetName joins the node name segments with the provided separator and returns
@@ -66,8 +74,8 @@ func (n *Node) GetName(separator string) string {
 // It exposes string-based lookup helpers so callers do not need to know the
 // internal reflect.Type, reflect.StructField.Index, or tree representation.
 type Schema[T any] struct {
-	Tree  *Node            // for traversals
-	Index map[string]*Node // full name (concatenated Node.Name) -> *Node
+	Tree  *Node
+	Index map[string]*Node
 }
 
 // addNode registers a compiled node under its public string identifier.
@@ -81,6 +89,7 @@ func (s *Schema[T]) addNode(name string, node *Node) {
 // getNode returns the compiled node for a public string identifier.
 func (s *Schema[T]) getNode(name string) (*Node, bool) {
 	n, ok := s.Index[name]
+
 	return n, ok
 }
 
@@ -147,16 +156,19 @@ func (s *Schema[T]) SetFieldValue(
 	rv := reflect.ValueOf(value)
 	if !rv.IsValid() {
 		fv.Set(reflect.Zero(fv.Type()))
+
 		return true
 	}
 
 	if rv.Type().AssignableTo(fv.Type()) {
 		fv.Set(rv)
+
 		return true
 	}
 
 	if rv.Type().ConvertibleTo(fv.Type()) {
 		fv.Set(rv.Convert(fv.Type()))
+
 		return true
 	}
 
@@ -198,7 +210,10 @@ func newNode[T any](s *Schema[T]) (*Node, error) {
 		Type: t,
 	}
 
-	active := map[reflect.Type]bool{t: true}
+	active := map[reflect.Type]*Node{
+		t: n,
+	}
+
 	if err := parse(t, n, s, nil, active); err != nil {
 		return nil, errorc.With(
 			errors.ErrCannotCompileSchema,
@@ -280,18 +295,19 @@ func fieldByIndex(
 // relative to the collection element type, because the concrete element must be
 // selected at runtime before the compiled index can be applied.
 //
-// The active map prevents infinite recursion for self-referential types.
+// active maps struct types currently being compiled to their schema nodes. When
+// parsing encounters one of those types again, it records a Reference rather
+// than recursively duplicating its children.
 func parse[T any](
 	t reflect.Type,
 	n *Node,
 	s *Schema[T],
 	parentIndex []int,
-	active map[reflect.Type]bool,
+	active map[reflect.Type]*Node,
 ) error {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
-		// Skip unexported fields.
 		if field.PkgPath != "" {
 			continue
 		}
@@ -325,14 +341,17 @@ func parse[T any](
 		}
 
 		n.Children = append(n.Children, newN)
-		s.addNode(newN.GetName("."), newN)
 
 		if childType, ok := nestedStructType(field.Type); ok {
-			if active[childType] {
+			if referenced, exists := active[childType]; exists {
+				newN.Reference = referenced
+				s.addNode(newN.GetName("."), newN)
+
 				continue
 			}
 
-			active[childType] = true
+			s.addNode(newN.GetName("."), newN)
+			active[childType] = newN
 
 			if err := parse[T](
 				childType,
@@ -352,20 +371,20 @@ func parse[T any](
 		if elemType, ok := collectionElementStructType(
 			field.Type,
 		); ok {
-			if active[elemType] {
+			newN.Name = collectionName(newN.Name)
+			s.addNode(newN.GetName("."), newN)
+
+			if referenced, exists := active[elemType]; exists {
+				newN.Reference = referenced
+
 				continue
 			}
 
-			collectionNode := newN
-			collectionNode.Name = collectionName(
-				collectionNode.Name,
-			)
-
-			active[elemType] = true
+			active[elemType] = newN
 
 			if err := parse[T](
 				elemType,
-				collectionNode,
+				newN,
 				s,
 				nil,
 				active,
@@ -378,9 +397,7 @@ func parse[T any](
 			continue
 		}
 
-		if field.Type.Kind() == reflect.Interface {
-			continue
-		}
+		s.addNode(newN.GetName("."), newN)
 	}
 
 	return nil
@@ -492,6 +509,7 @@ func extractValidateElementDive(
 		if rule.Name == "dive" &&
 			len(rule.Params) == 0 {
 			dive = true
+
 			continue
 		}
 
@@ -545,7 +563,6 @@ func parseValidateTag(tag string) []Rule {
 		}
 	}
 
-	// Append the last token.
 	if start <= len(tag) {
 		tokens = append(
 			tokens,
@@ -591,6 +608,7 @@ func parseTokens(tokens []string) []Rule {
 
 		if name == "omitempty" {
 			optional = true
+
 			continue
 		}
 

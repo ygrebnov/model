@@ -28,22 +28,6 @@ func TestValidateWithDefaults_Nominal(t *testing.T) {
 	}
 }
 
-func TestValidateWithDefaultsAny_Nominal(t *testing.T) {
-	obj := validateWithDefaultsSample{}
-	expected := validateWithDefaultsSample{
-		Name:  "s",
-		Count: 5,
-	}
-
-	if err := model.ValidateWithDefaultsAny(context.Background(), &obj); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if obj != expected {
-		t.Fatalf("got %+v, want %+v", obj, expected)
-	}
-}
-
 func TestValidateWithDefaults_EquivalentToDefaultsEnvThenValidate(t *testing.T) {
 	t.Run("typed", func(t *testing.T) {
 		t.Setenv("NAME", "typed_env")
@@ -67,35 +51,6 @@ func TestValidateWithDefaults_EquivalentToDefaultsEnvThenValidate(t *testing.T) 
 		errSplit := model.Validate(context.Background(), &gotSplit)
 		if errSplit != nil {
 			t.Fatalf("Validate returned error: %v", errSplit)
-		}
-
-		if gotCombined != gotSplit {
-			t.Fatalf("combined=%+v split=%+v", gotCombined, gotSplit)
-		}
-	})
-
-	t.Run("any", func(t *testing.T) {
-		t.Setenv("NAME", "any_env")
-		t.Setenv("COUNT", "8")
-
-		gotCombined := validateWithDefaultsSample{}
-		gotSplit := validateWithDefaultsSample{}
-
-		errCombined := model.ValidateWithDefaultsAny(context.Background(), &gotCombined)
-		if errCombined != nil {
-			t.Fatalf("ValidateWithDefaultsAny returned error: %v", errCombined)
-		}
-
-		b, err := model.NewDynamicBinding(&validateWithDefaultsSample{})
-		if err != nil {
-			t.Fatalf("NewDynamicBinding returned error: %v", err)
-		}
-		if err := applyDynamicDefaultsAndEnv(b, &gotSplit); err != nil {
-			t.Fatalf("defaults/env split returned error: %v", err)
-		}
-		errSplit := model.ValidateAny(context.Background(), &gotSplit)
-		if errSplit != nil {
-			t.Fatalf("ValidateAny returned error: %v", errSplit)
 		}
 
 		if gotCombined != gotSplit {

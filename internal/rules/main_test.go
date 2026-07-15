@@ -7,7 +7,7 @@ import (
 
 type a struct{}
 
-func getTestRules(t *testing.T) map[string]Rule {
+func getTestRules(t *testing.T) map[string]*Rule {
 	stringRule, err := NewRule(
 		"stringRule",
 		func(v string, _ ...string) error { return errors.New("stringRule") },
@@ -94,7 +94,7 @@ func getTestRules(t *testing.T) map[string]Rule {
 		t.Fatalf("NewRule error: %v", err)
 	}
 
-	return map[string]Rule{
+	return map[string]*Rule{
 		"stringRule":                     stringRule,
 		"intOverloadForStringRule":       intOverloadForStringRule,
 		"interfaceOverloadForStringRule": interfaceOverloadForStringRule,
