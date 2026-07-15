@@ -124,7 +124,7 @@ func applyDefaultTag(field reflect.Value, tag string) error {
 }
 
 // hasDefaults reports whether this subtree contains any default tags.
-func hasDefaults(nodes []*schema.N) bool {
+func hasDefaults(nodes []*schema.Node) bool {
 	for _, node := range nodes {
 		if node.DefaultTag != "" || node.DefaultElemTag != "" {
 			return true

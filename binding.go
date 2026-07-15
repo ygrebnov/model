@@ -30,7 +30,7 @@ type service[T any] interface {
 func newService[T any](
 	rr *rules.Registry,
 	//rm validation.RulesMapping,
-	sc *schema.Controller[T],
+	sc *schema.Schema[T],
 	cr
 	envPrefix string,
 ) service[T] {

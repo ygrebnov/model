@@ -35,7 +35,7 @@ func (s *Service[T]) ApplyValuesStruct(
 		)
 	}
 
-	values := make(map[*schema.N]any)
+	values := make(map[*schema.Node]any)
 
 	// Use a temporary value to visit the complete schema, including fields
 	// below nil pointer-to-struct nodes, without modifying the caller's value.
@@ -100,7 +100,7 @@ func (s *Service[T]) ApplyValuesStruct(
 					modelerrors.ErrTypeMismatch,
 					errorc.String(keys.Phase, "apply_values"),
 					errorc.String(keys.FieldName, ctx.Path),
-					errorc.String(keys.FieldType, ctx.Node.T.String()),
+					errorc.String(keys.FieldType, ctx.Node.Type.String()),
 					errorc.String(keys.ValueType, valueTypeName(value)),
 				)
 			}
@@ -111,8 +111,8 @@ func (s *Service[T]) ApplyValuesStruct(
 }
 
 func hasProvidedDescendant(
-	node *schema.N,
-	values map[*schema.N]any,
+	node *schema.Node,
+	values map[*schema.Node]any,
 ) bool {
 	if node == nil {
 		return false

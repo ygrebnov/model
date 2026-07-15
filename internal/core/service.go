@@ -45,7 +45,7 @@ func NewService[T any](
 }
 
 type schemaController[T any] interface {
-	GetRoot() *schema.N
+	GetRoot() *schema.Node
 	GetFieldType(name string) (reflect.Type, bool)
 	GetFieldValue(obj *T, name string) (reflect.Value, bool)
 	SetFieldValue(obj *T, name string, value any) bool

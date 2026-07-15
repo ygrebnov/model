@@ -1,28 +1,46 @@
 package rules
 
-import "github.com/ygrebnov/model/internal/schema"
+import (
+	"github.com/ygrebnov/model/internal/schema"
+)
 
 type Compiler[T any] struct {
-	schema   *schema.Controller[T]
+	schema   *schema.Schema[T]
 	registry *Registry
-	rules    map[*schema.N]nodeValidationRules
+	rules    map[*schema.Node]nodeValidationRules
 }
 
-func NewCompiler[T any](sc *schema.Controller[T], r *Registry) *Compiler[T] {
+func NewCompiler[T any](sc *schema.Schema[T], r *Registry) *Compiler[T] {
 	return &Compiler[T]{schema: sc, registry: r}
 }
 
-func (c *Compiler[T]) Compile(
-	root *schema.N, registry *Registry,
-) (map[*schema.N]nodeValidationRules, error) {
-	result := make(map[*schema.N]nodeValidationRules)
+type compiledValidationRule struct {
+	rule     Rule
+	params   []string
+	optional bool
+}
 
-	var walk func(*schema.N) error
-	walk = func(node *schema.N) error {
+type Service[T any] struct {
+	// ...
+	validationRules map[*schema.Node]nodeValidationRules
+}
+
+type nodeValidationRules struct {
+	field []compiledValidationRule
+	elem  []compiledValidationRule
+}
+
+func (c *Compiler[T]) Compile(
+	root *schema.Node, registry *Registry,
+) (map[*schema.Node]nodeValidationRules, error) {
+	result := make(map[*schema.Node]nodeValidationRules)
+
+	var walk func(*schema.Node) error
+	walk = func(node *schema.Node) error {
 		compiled := nodeValidationRules{}
 
 		for _, parsed := range node.ValidateRules {
-			rule, err := registry.Resolve(parsed.Name, node.T)
+			rule, err := registry.GetByType(parsed.Name, node.Type)
 			if err != nil {
 				return nilRuleCompileError(node, parsed, err)
 			}
@@ -38,14 +56,14 @@ func (c *Compiler[T]) Compile(
 		}
 
 		if !node.ValidateElemDive {
-			elemType, hasElements := validationElementType(node.T)
+			elemType, hasElements := validationElementType(node.Type)
 
 			if len(node.ValidateElemRules) > 0 && !hasElements {
 				return validationElemOnNonCollectionError(node)
 			}
 
 			for _, parsed := range node.ValidateElemRules {
-				rule, err := registry.Resolve(
+				rule, err := registry.GetByType(
 					parsed.Name,
 					elemType,
 				)

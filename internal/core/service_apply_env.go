@@ -72,7 +72,7 @@ func (s *Service[T]) applyEnvWalkValue(
 // hasNestedEnvValue reports whether any descendant node has a value in the
 // environment snapshot below envPath.
 func (s *Service[T]) hasNestedEnvValue(
-	node *schema.N,
+	node *schema.Node,
 	envPath []string,
 ) bool {
 	for _, child := range node.Children {
@@ -85,7 +85,7 @@ func (s *Service[T]) hasNestedEnvValue(
 			continue
 		}
 
-		if isSupportedLiteralType(child.T) {
+		if isSupportedLiteralType(child.Type) {
 			if _, ok := s.envSource.Lookup(
 				joinEnvPath(childEnvPath),
 			); ok {

@@ -20,62 +20,70 @@ const (
 	tagDefaultElem  = "defaultElem"
 )
 
-// N represents a compiled schema node for one exported struct field.
+// Node represents a compiled schema node for one exported struct field.
 //
 // Name contains the public schema identifier segments. For ordinary nested
 // structs, segments are joined with dots, for example "server.host". For
 // collection element fields, the collection segment is suffixed with [] to
 // show that the child belongs to each element, for example "servers[].host".
 //
-// I contains the full reflect.StructField.Index path from the root object for
-// ordinary struct fields. For fields below collection elements, I is relative
+// Index contains the full reflect.StructField.Index path from the root object for
+// ordinary struct fields. For fields below collection elements, Index is relative
 // to the collection element type, because runtime traversal must first select
 // the concrete slice/array element or map value before using the index.
-type N struct {
-	Name            []string // all segments (ordered) starting from the root
-	T               reflect.Type
-	I               []int // reflect.StructField.Index
-	JSONTag         string
-	YAMLTag         string
-	Env             []string // all env tags (ordered) starting from the root
-	DefaultTag      string
-	DefaultElemTag  string
-	ValidateTag     string
-	ValidateElemTag string
-	Children        []*N
+type Node struct {
+	Name              []string // all segments (ordered) starting from the root
+	Type              reflect.Type
+	Index             []int // reflect.StructField.Index
+	JSONTag           string
+	YAMLTag           string
+	Env               []string // all env tags (ordered) starting from the root
+	DefaultTag        string
+	DefaultElemTag    string
+	ValidateTag       string
+	ValidateElemTag   string
+	ValidateRules     []Rule
+	ValidateElemRules []Rule
+	Children          []*Node
+}
+
+type Rule struct {
+	Name     string
+	Params   []string
+	Optional bool // rule will not be applied to zero-value if validate tag contains omitempty
 }
 
 // GetName joins the node name segments with the provided separator and returns
 // the public string identifier used by the controller index.
-func (n *N) GetName(separator string) string {
+func (n *Node) GetName(separator string) string {
 	return strings.Join(n.Name, separator)
 }
 
-// Controller owns the compiled schema tree and a string index for field lookup.
+// Schema owns the compiled schema tree and a string index for field lookup.
 //
-// The controller is built once by NewController and then treated as immutable.
+// The schema is built once by NewSchema and then treated as immutable.
 // It exposes string-based lookup helpers so callers do not need to know the
 // internal reflect.Type, reflect.StructField.Index, or tree representation.
-type Controller[T any] struct {
-	Tree  *N            // for traversals
-	Index map[string]*N // N.fullName (concatenated N.Name) -> *N
+type Schema[T any] struct {
+	Tree  *Node            // for traversals
+	Index map[string]*Node // N.fullName (concatenated Node.Name) -> *Node
 }
 
 // addNode registers a compiled node under its public string identifier.
 //
-// It is used only while the controller is being built, so it does not perform
-// locking. After construction the controller is expected to be read-only.
-func (c *Controller[T]) addNode(name string, node *N) {
+// It is used only while the schema is being built, so it does not perform
+// locking. After construction the schema is expected to be read-only.
+func (c *Schema[T]) addNode(name string, node *Node) {
 	c.Index[name] = node
 }
 
 // getNode returns the compiled node for a public string identifier.
-func (c *Controller[T]) getNode(name string) (*N, bool) {
+func (c *Schema[T]) getNode(name string) (*Node, bool) {
 	n, ok := c.Index[name]
 	return n, ok
 }
 
-func (c *Controller[T]) GetRoot() *N {
+func (c *Schema[T]) GetRoot() *Node {
 	return c.Tree
 }
 
@@ -83,13 +91,13 @@ func (c *Controller[T]) GetRoot() *N {
 //
 // The name must match a compiled schema identifier, such as "server.host" or
 // "servers[].host". The boolean result is false when no such field exists.
-func (c *Controller[T]) GetFieldType(name string) (reflect.Type, bool) {
+func (c *Schema[T]) GetFieldType(name string) (reflect.Type, bool) {
 	n, ok := c.getNode(name)
 	if !ok {
 		return nil, false
 	}
 
-	return n.T, true
+	return n.Type, true
 }
 
 // GetFieldValue resolves a compiled field against a concrete object instance.
@@ -97,7 +105,7 @@ func (c *Controller[T]) GetFieldType(name string) (reflect.Type, bool) {
 // It works for ordinary struct fields whose node index is rooted at the object.
 // Collection element fields, such as "servers[].host", require runtime
 // collection traversal and are therefore not resolved by this helper alone.
-func (c *Controller[T]) GetFieldValue(obj *T, name string) (reflect.Value, bool) {
+func (c *Schema[T]) GetFieldValue(obj *T, name string) (reflect.Value, bool) {
 	n, ok := c.getNode(name)
 	if !ok {
 		return reflect.Value{}, false
@@ -108,7 +116,7 @@ func (c *Controller[T]) GetFieldValue(obj *T, name string) (reflect.Value, bool)
 		return reflect.Value{}, false
 	}
 
-	v, ok = fieldByIndex(v, n.I)
+	v, ok = fieldByIndex(v, n.Index)
 	if !ok {
 		return reflect.Value{}, false
 	}
@@ -122,7 +130,7 @@ func (c *Controller[T]) GetFieldValue(obj *T, name string) (reflect.Value, bool)
 // when convertible, or rejected when neither is possible. Passing nil resets
 // the field to its zero value. The boolean result reports whether the set was
 // performed.
-func (c *Controller[T]) SetFieldValue(obj *T, name string, value any) bool {
+func (c *Schema[T]) SetFieldValue(obj *T, name string, value any) bool {
 	fv, ok := c.GetFieldValue(obj, name)
 	if !ok || !fv.CanSet() {
 		return false
@@ -147,13 +155,13 @@ func (c *Controller[T]) SetFieldValue(obj *T, name string, value any) bool {
 	return false
 }
 
-// NewController compiles the schema tree and lookup index for T.
+// NewSchema compiles the schema tree and lookup index for T.
 //
 // T may be a struct type or a pointer to a struct type. Non-struct type
 // parameters return errors.ErrTypeParamNotStruct.
-func NewController[T any]() (*Controller[T], error) {
-	c := &Controller[T]{
-		Index: make(map[string]*N),
+func NewSchema[T any]() (*Schema[T], error) {
+	c := &Schema[T]{
+		Index: make(map[string]*Node),
 	}
 
 	n, err := newNode(c)
@@ -168,7 +176,7 @@ func NewController[T any]() (*Controller[T], error) {
 //
 // The root node is synthetic: it represents the root object type and does not
 // correspond to a concrete struct field.
-func newNode[T any](c *Controller[T]) (*N, error) {
+func newNode[T any](c *Schema[T]) (*Node, error) {
 	t := reflect.TypeOf((*T)(nil)).Elem()
 	t = dereferenceType(t)
 
@@ -176,8 +184,8 @@ func newNode[T any](c *Controller[T]) (*N, error) {
 		return nil, errors.ErrTypeParamNotStruct
 	}
 
-	n := &N{
-		T: t,
+	n := &Node{
+		Type: t,
 	}
 
 	active := map[reflect.Type]bool{t: true}
@@ -254,7 +262,7 @@ func fieldByIndex(v reflect.Value, index []int) (reflect.Value, bool) {
 // selected at runtime before the compiled index can be applied.
 //
 // The active map prevents infinite recursion for self-referential types.
-func parse[T any](t reflect.Type, n *N, c *Controller[T], parentIndex []int, active map[reflect.Type]bool) error {
+func parse[T any](t reflect.Type, n *Node, c *Schema[T], parentIndex []int, active map[reflect.Type]bool) error {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		// Skip unexported fields.
@@ -265,17 +273,22 @@ func parse[T any](t reflect.Type, n *N, c *Controller[T], parentIndex []int, act
 		fieldName := strings.ToLower(field.Name)
 		index := appendIndex(parentIndex, field.Index)
 
-		newN := &N{
-			Name:            appendName(n.Name, fieldName),
-			T:               field.Type,
-			I:               index,
-			JSONTag:         field.Tag.Get(tagJSON),
-			YAMLTag:         field.Tag.Get(tagYAML),
-			Env:             appendEnv(n.Env, field.Tag.Get(tagENV)),
-			DefaultTag:      field.Tag.Get(tagDefault),
-			DefaultElemTag:  field.Tag.Get(tagDefaultElem),
-			ValidateTag:     field.Tag.Get(tagValidate),
-			ValidateElemTag: field.Tag.Get(tagValidateElem),
+		validateTag := field.Tag.Get(tagValidate)
+		validateElemTag := field.Tag.Get(tagValidateElem)
+
+		newN := &Node{
+			Name:              appendName(n.Name, fieldName),
+			Type:              field.Type,
+			Index:             index,
+			JSONTag:           field.Tag.Get(tagJSON),
+			YAMLTag:           field.Tag.Get(tagYAML),
+			Env:               appendEnv(n.Env, field.Tag.Get(tagENV)),
+			DefaultTag:        field.Tag.Get(tagDefault),
+			DefaultElemTag:    field.Tag.Get(tagDefaultElem),
+			ValidateTag:       validateTag,
+			ValidateElemTag:   validateElemTag,
+			ValidateRules:     parseValidateTag(validateTag),
+			ValidateElemRules: parseValidateTag(validateElemTag),
 		}
 
 		n.Children = append(n.Children, newN)
@@ -400,4 +413,82 @@ func collectionName(name []string) []string {
 
 	out[len(out)-1] = out[len(out)-1] + "[]"
 	return out
+}
+
+// parseValidateTag tokenizes a raw tag string (e.g., "required,min(5),max(10)") into rules.
+// Behavior:
+//   - Splits on top-level commas only (commas inside parentheses do not split tokens).
+//   - Trims whitespace around tokens and parameters.
+//   - Empty tokens (from leading/trailing commas) are skipped.
+//   - Parameters are split by commas; nested parentheses inside parameters are not parsed specially.
+//   - Does not support quotes or escaping inside parameters.
+func parseValidateTag(tag string) []Rule {
+	if tag == "" || tag == "-" {
+		return nil
+	}
+
+	var tokens []string
+	depth := 0
+	start := 0
+	for i, r := range tag {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				tokens = append(tokens, strings.TrimSpace(tag[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	// Append the last token
+	if start <= len(tag) {
+		tokens = append(tokens, strings.TrimSpace(tag[start:]))
+	}
+
+	return parseTokens(tokens)
+}
+
+func parseTokens(tokens []string) []Rule {
+	var rules []Rule
+	optional := false
+
+	for _, tok := range tokens {
+		if tok == "" {
+			continue
+		}
+		name := tok
+		var params []string
+		if idx := strings.IndexRune(tok, '('); idx != -1 && strings.HasSuffix(tok, ")") {
+			name = strings.TrimSpace(tok[:idx])
+			inner := strings.TrimSpace(tok[idx+1 : len(tok)-1])
+			if inner != "" {
+				parts := strings.Split(inner, ",")
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						params = append(params, p)
+					}
+				}
+			}
+		}
+		if name == "omitempty" {
+			optional = true
+			continue
+		}
+		if name != "" {
+			rules = append(rules, Rule{Name: name, Params: params})
+		}
+	}
+
+	if optional {
+		for i := range rules {
+			rules[i].Optional = true
+		}
+	}
+	return rules
 }

@@ -77,7 +77,7 @@ func (s *Service[T]) ValidateStruct(
 
 func (s *Service[T]) processValidateTag(
 	ctx context.Context,
-	node *schema.N,
+	node *schema.Node,
 	fieldPath string,
 	fieldValue reflect.Value,
 	ve *validation.Error,
@@ -113,7 +113,7 @@ func (s *Service[T]) processValidateTag(
 
 func (s *Service[T]) processValidateElemTag(
 	ctx context.Context,
-	node *schema.N,
+	node *schema.Node,
 	fieldPath string,
 	fieldValue reflect.Value,
 	ve *validation.Error,

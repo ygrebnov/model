@@ -18,7 +18,7 @@ import (
 // An explicit env:"-" disables environment lookup for that node and all of its
 // descendants.
 type walkContext struct {
-	Node       *schema.N
+	Node       *schema.Node
 	Path       string
 	EnvPath    []string
 	EnvEnabled bool
@@ -50,7 +50,7 @@ type walkAction func(ctx walkContext, field reflect.Value) error
 // supplied through walkPolicy and walkAction.
 func walkSchema(
 	root reflect.Value,
-	rootNode *schema.N,
+	rootNode *schema.Node,
 	envPath []string,
 	policy walkPolicy,
 	action walkAction,
@@ -97,12 +97,12 @@ func walkSchema(
 func walkNode(
 	root reflect.Value,
 	parent reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
 ) error {
-	field, ok := fieldByIndex(parent, node.I)
+	field, ok := fieldByIndex(parent, node.Index)
 	if !ok {
 		return nil
 	}
@@ -124,7 +124,7 @@ func walkNode(
 func walkChildren(
 	root reflect.Value,
 	field reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
@@ -154,7 +154,7 @@ func walkChildren(
 func walkPtrChildren(
 	root reflect.Value,
 	field reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
@@ -190,7 +190,7 @@ func walkPtrChildren(
 func walkStructChildren(
 	root reflect.Value,
 	field reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
@@ -221,7 +221,7 @@ func walkStructChildren(
 // allows collection traversal.
 func walkSliceArrayChildren(
 	collection reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
@@ -275,7 +275,7 @@ func walkSliceArrayChildren(
 // written back into the map.
 func walkMapChildren(
 	mapValue reflect.Value,
-	node *schema.N,
+	node *schema.Node,
 	ctx walkContext,
 	policy walkPolicy,
 	action walkAction,
@@ -342,7 +342,7 @@ func walkMapChildren(
 // childWalkContext returns the runtime context for child below parent.
 func childWalkContext(
 	parent walkContext,
-	child *schema.N,
+	child *schema.Node,
 ) walkContext {
 	childEnvPath, childEnvEnabled := applyWalkNodeEnvPath(
 		parent.EnvPath,
@@ -378,7 +378,7 @@ func collectionElementContext(
 }
 
 // nodePath returns the schema path for node using dot-separated name segments.
-func nodePath(node *schema.N) string {
+func nodePath(node *schema.Node) string {
 	if node == nil {
 		return ""
 	}
@@ -387,7 +387,7 @@ func nodePath(node *schema.N) string {
 }
 
 // nodeLastName returns the final public name segment for node.
-func nodeLastName(node *schema.N) string {
+func nodeLastName(node *schema.Node) string {
 	if node == nil || len(node.Name) == 0 {
 		return ""
 	}
@@ -416,7 +416,7 @@ func joinRuntimePath(parent string, child string) string {
 func applyWalkNodeEnvPath(
 	parent []string,
 	parentEnabled bool,
-	node *schema.N,
+	node *schema.Node,
 ) ([]string, bool) {
 	if node == nil || !parentEnabled {
 		return parent, false
