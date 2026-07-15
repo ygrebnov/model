@@ -118,7 +118,7 @@ func compileNodeValidationRules(
 	registry *rules.Registry,
 ) (compiledNodeRules, error) {
 	compiled := compiledNodeRules{
-		dive: node.ValidateElemDive,
+		dive: node.ValidateElementDive,
 	}
 
 	for _, parsed := range node.ValidateRules {
@@ -134,7 +134,7 @@ func compileNodeValidationRules(
 		})
 	}
 
-	if node.ValidateElemDive {
+	if node.ValidateElementDive {
 		return compiled, nil
 	}
 

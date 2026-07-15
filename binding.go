@@ -12,9 +12,9 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
-// Binding provides defaulting and validation capabilities for type T.
+// Binding provides defaulting, value application, value export, and validation
+// capabilities for type T.
 type Binding[T any] struct {
-	// service is the underlying core service for type T.
 	service service[T]
 }
 
@@ -23,86 +23,96 @@ type service[T any] interface {
 	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
 	ApplyEnvStruct(v reflect.Value) error
 	WriteValuesStruct(v reflect.Value, sink field.ValueSink) error
-	//AddRule(r validation.Rule) error
-	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
+	ValidateStruct(
+		ctx context.Context,
+		v reflect.Value,
+		fieldPath string,
+		ve *validation.Error,
+	) error
 }
 
-func newService[T any](
-	rr *rules.Registry,
-	//rm validation.RulesMapping,
-	sc *schema.Schema[T],
-	cr
-	envPrefix string,
-) service[T] {
-	return core.NewService[T](rr, sc, envPrefix)
+// Rule is an opaque custom validation rule created by NewRule.
+//
+// Rule is intentionally non-generic so rules concerning different field types
+// can be passed together to WithRules.
+type Rule struct {
+	compiled *rules.Rule
 }
 
-// NewBinding constructs a Binding for the type parameter T. T must be a struct.
+// NewRule creates a named custom validation rule for FieldType.
+func NewRule[FieldType any](
+	name string,
+	fn func(FieldType, ...string) error,
+) (Rule, error) {
+	compiled, err := rules.NewRule(name, fn)
+	if err != nil {
+		return Rule{}, err
+	}
+
+	return Rule{compiled: compiled}, nil
+}
+
+// NewBinding compiles the schema and validation plan for T.
 //
-// Use WithEnvPrefix option to add an environment variable name prefix for ApplyEnv
-// and ValidateWithDefaults.
-//
-// Builtin rules are applied implicitly.
-//
-// Use WithRules option to register custom validation rules at construction time.
-// See [validation.Rule] and [validation.NewRule] for details on creating rules.
+// Built-in validation rules are available implicitly. Use WithRules to add
+// custom rules and WithEnvPrefix to prefix environment variable names used by
+// ApplyEnv and ValidateWithDefaults.
 func NewBinding[T any](opts ...Option) (*Binding[T], error) {
-	// Obtain the reflect.Type for T. The zero value of *T is never dereferenced.
-	var zero *T
-	t := reflect.TypeOf(zero).Elem()
-	if t.Kind() != reflect.Struct {
-		// Mirror New's constraint that only struct types are supported.
-		return nil, errors.ErrTypeParamNotStruct
-	}
-
 	o := &options{}
+
 	for _, opt := range opts {
-		opt(o)
+		if opt != nil {
+			opt(o)
+		}
 	}
 
-	rulesRegistry := rules.NewRegistry()
-	for _, r := range o.rules {
-		rr := r.(rule)
-		if err := rulesRegistry.Add(rr.r); err != nil {
+	registry, err := newRulesRegistry(o.rules)
+	if err != nil {
+		return nil, err
+	}
+
+	compiledSchema, err := schema.New[T]()
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := core.NewService[T](
+		registry,
+		compiledSchema,
+		o.envPrefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Binding[T]{
+		service: s,
+	}, nil
+}
+
+func newRulesRegistry(
+	customRules []Rule,
+) (*rules.Registry, error) {
+	registry := rules.NewRegistry()
+
+	for _, customRule := range customRules {
+		if customRule.compiled == nil {
+			return nil, errors.ErrInvalidRule
+		}
+
+		if err := registry.Add(customRule.compiled); err != nil {
 			return nil, err
 		}
 	}
 
-	// rulesMapping := validation.NewRulesMapping()
-	schemaController, err := schema.NewController[T]()
-	if err != nil {
-		return nil, err
-	}
-
-	compiledRules, err := rules.Compile(schemaController.GetRoot(), rulesRegistry)
-	if err != nil {
-		return nil, err
-	}
-
-	s := newService(rulesRegistry, schemaController, compiledRules, o.envPrefix)
-
-	b := &Binding[T]{service: s}
-
-	return b, nil
+	return registry, nil
 }
 
-type Rule interface{}
-
-type rule struct {
-	r *rules.Rule
-}
-
-func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
-	r, err := rules.NewRule(name, fn)
-	if err != nil {
-		return nil, err
-	}
-	return &rule{r: r}, nil
-}
-
-// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags.
-// ApplyDefaults applies defaults each time it is called.
-// It is idempotent, but not once-guarded.
+// ApplyDefaults applies values declared through default and defaultElem tags to
+// zero fields of obj.
+//
+// ApplyDefaults evaluates defaults on every call. It is idempotent but is not
+// guarded to run only once.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -112,8 +122,12 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	return b.service.SetDefaultsStruct(elem)
 }
 
-// ApplyValues applies field values supplied by source to obj using compiled field metadata.
-func (b *Binding[T]) ApplyValues(obj *T, source field.ValueSource) error {
+// ApplyValues applies values supplied by source to obj using the compiled
+// schema metadata.
+func (b *Binding[T]) ApplyValues(
+	obj *T,
+	source field.ValueSource,
+) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
 		return err
@@ -122,7 +136,8 @@ func (b *Binding[T]) ApplyValues(obj *T, source field.ValueSource) error {
 	return b.service.ApplyValuesStruct(elem, source)
 }
 
-// ApplyEnv applies environment-backed values from source to obj using compiled field metadata.
+// ApplyEnv applies the environment values snapshotted when the Binding was
+// constructed.
 func (b *Binding[T]) ApplyEnv(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -132,46 +147,12 @@ func (b *Binding[T]) ApplyEnv(obj *T) error {
 	return b.service.ApplyEnvStruct(elem)
 }
 
-// Validate runs validation rules declared via `validate` / `validateElem` tags on obj
-// with the provided context.
-//
-// If validation fails, a *validation.Error is returned; if the context is canceled, ctx.Err() is returned.
-func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
-	if ctx == nil {
-		return errors.ErrNilContext
-	}
-	elem, err := bindingTargetValue(obj)
-	if err != nil {
-		return err
-	}
-	ve := &validation.Error{}
-	if err := b.service.ValidateStruct(ctx, elem, "", ve); err != nil {
-		return err
-	}
-	if ve.Empty() {
-		return nil
-	}
-	return ve
-}
-
-// ValidateWithDefaults first applies defaults and snapshotted environment-backed values to obj,
-// then runs validation. This is a convenience for service-level flows that expect resolved inputs
-// before validation.
-func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
-	if err := b.ApplyDefaults(obj); err != nil {
-		return err
-	}
-	elem, err := bindingTargetValue(obj)
-	if err != nil {
-		return err
-	}
-	if err := b.service.ApplyEnvStruct(elem); err != nil {
-		return err
-	}
-	return b.Validate(ctx, obj)
-}
-
-func (b *Binding[T]) WriteValues(obj *T, sink field.ValueSink) error {
+// WriteValues writes values from obj to sink using the compiled schema
+// metadata.
+func (b *Binding[T]) WriteValues(
+	obj *T,
+	sink field.ValueSink,
+) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
 		return err
@@ -180,7 +161,65 @@ func (b *Binding[T]) WriteValues(obj *T, sink field.ValueSink) error {
 	return b.service.WriteValuesStruct(elem, sink)
 }
 
-func bindingTargetValue[T any](obj *T) (reflect.Value, error) {
+// Validate applies rules declared through validate and validateElem tags.
+//
+// It returns *validation.Error when one or more constraints fail. Context
+// cancellation and operational errors are returned directly.
+func (b *Binding[T]) Validate(
+	ctx context.Context,
+	obj *T,
+) error {
+	if ctx == nil {
+		return errors.ErrNilContext
+	}
+
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	validationErr := &validation.Error{}
+
+	if err := b.service.ValidateStruct(
+		ctx,
+		elem,
+		"",
+		validationErr,
+	); err != nil {
+		return err
+	}
+
+	if validationErr.Empty() {
+		return nil
+	}
+
+	return validationErr
+}
+
+// ValidateWithDefaults applies defaults and snapshotted environment values
+// before validating obj.
+func (b *Binding[T]) ValidateWithDefaults(
+	ctx context.Context,
+	obj *T,
+) error {
+	if ctx == nil {
+		return errors.ErrNilContext
+	}
+
+	if err := b.ApplyDefaults(obj); err != nil {
+		return err
+	}
+
+	if err := b.ApplyEnv(obj); err != nil {
+		return err
+	}
+
+	return b.Validate(ctx, obj)
+}
+
+func bindingTargetValue[T any](
+	obj *T,
+) (reflect.Value, error) {
 	if obj == nil {
 		return reflect.Value{}, errors.ErrNilObject
 	}
