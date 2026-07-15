@@ -14,6 +14,20 @@ import (
 
 // Binding provides defaulting, value application, value export, and validation
 // capabilities for type T.
+//
+// A Binding is safe for concurrent use after construction because its compiled
+// schema, validation plan, and environment snapshot are immutable. The objects,
+// sources, and sinks passed to its methods remain owned by the caller:
+//
+//   - concurrent calls using different objects are safe when the supplied
+//     sources and sinks are themselves safe for concurrent use;
+//   - concurrent operations on the same object require caller-side
+//     synchronization;
+//   - callers must not mutate an object concurrently with Validate or
+//     WriteValues;
+//   - ValueSink implementations that retain maps, slices, pointers, or other
+//     reference values receive references to the object's current values rather
+//     than deep copies.
 type Binding[T any] struct {
 	service service[T]
 }
@@ -34,12 +48,17 @@ type service[T any] interface {
 // Rule is an opaque custom validation rule created by NewRule.
 //
 // Rule is intentionally non-generic so rules concerning different field types
-// can be passed together to WithRules.
+// can be passed together to WithRules. Rule values are immutable after
+// construction and may be reused when constructing multiple bindings.
 type Rule struct {
 	compiled *rules.Rule
 }
 
 // NewRule creates a named custom validation rule for FieldType.
+//
+// The validation function may be called concurrently by different bindings and
+// validation operations. It must therefore synchronize access to any mutable
+// state it captures.
 func NewRule[FieldType any](
 	name string,
 	fn func(FieldType, ...string) error,
@@ -49,7 +68,9 @@ func NewRule[FieldType any](
 		return Rule{}, err
 	}
 
-	return Rule{compiled: compiled}, nil
+	return Rule{
+		compiled: compiled,
+	}, nil
 }
 
 // NewBinding compiles the schema and validation plan for T.
@@ -57,6 +78,9 @@ func NewRule[FieldType any](
 // Built-in validation rules are available implicitly. Use WithRules to add
 // custom rules and WithEnvPrefix to prefix environment variable names used by
 // ApplyEnv and ValidateWithDefaults.
+//
+// The returned Binding is fully initialized and immutable. Environment values
+// are snapshotted during this call.
 func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 	o := &options{}
 
@@ -112,7 +136,8 @@ func newRulesRegistry(
 // zero fields of obj.
 //
 // ApplyDefaults evaluates defaults on every call. It is idempotent but is not
-// guarded to run only once.
+// guarded to run only once. Concurrent mutation of obj requires caller-side
+// synchronization.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -124,6 +149,9 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 
 // ApplyValues applies values supplied by source to obj using the compiled
 // schema metadata.
+//
+// The caller must synchronize concurrent access to obj. The source must also be
+// safe for concurrent use when shared between calls.
 func (b *Binding[T]) ApplyValues(
 	obj *T,
 	source field.ValueSource,
@@ -137,7 +165,7 @@ func (b *Binding[T]) ApplyValues(
 }
 
 // ApplyEnv applies the environment values snapshotted when the Binding was
-// constructed.
+// constructed. Concurrent mutation of obj requires caller-side synchronization.
 func (b *Binding[T]) ApplyEnv(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -149,6 +177,9 @@ func (b *Binding[T]) ApplyEnv(obj *T) error {
 
 // WriteValues writes values from obj to sink using the compiled schema
 // metadata.
+//
+// The caller must not mutate obj concurrently with this method. A shared sink
+// must provide its own synchronization.
 func (b *Binding[T]) WriteValues(
 	obj *T,
 	sink field.ValueSink,
@@ -164,7 +195,8 @@ func (b *Binding[T]) WriteValues(
 // Validate applies rules declared through validate and validateElem tags.
 //
 // It returns *validation.Error when one or more constraints fail. Context
-// cancellation and operational errors are returned directly.
+// cancellation and operational errors are returned directly. The caller must
+// not mutate obj concurrently with validation.
 func (b *Binding[T]) Validate(
 	ctx context.Context,
 	obj *T,
@@ -178,6 +210,43 @@ func (b *Binding[T]) Validate(
 		return err
 	}
 
+	return b.validateValue(ctx, elem)
+}
+
+// ValidateWithDefaults applies defaults and snapshotted environment values
+// before validating obj.
+//
+// This sequence is not transactional: when a later step fails, changes made by
+// earlier steps remain in obj. The caller must provide exclusive access to obj
+// for the complete operation.
+func (b *Binding[T]) ValidateWithDefaults(
+	ctx context.Context,
+	obj *T,
+) error {
+	if ctx == nil {
+		return errors.ErrNilContext
+	}
+
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	if err := b.service.SetDefaultsStruct(elem); err != nil {
+		return err
+	}
+
+	if err := b.service.ApplyEnvStruct(elem); err != nil {
+		return err
+	}
+
+	return b.validateValue(ctx, elem)
+}
+
+func (b *Binding[T]) validateValue(
+	ctx context.Context,
+	elem reflect.Value,
+) error {
 	validationErr := &validation.Error{}
 
 	if err := b.service.ValidateStruct(
@@ -194,27 +263,6 @@ func (b *Binding[T]) Validate(
 	}
 
 	return validationErr
-}
-
-// ValidateWithDefaults applies defaults and snapshotted environment values
-// before validating obj.
-func (b *Binding[T]) ValidateWithDefaults(
-	ctx context.Context,
-	obj *T,
-) error {
-	if ctx == nil {
-		return errors.ErrNilContext
-	}
-
-	if err := b.ApplyDefaults(obj); err != nil {
-		return err
-	}
-
-	if err := b.ApplyEnv(obj); err != nil {
-		return err
-	}
-
-	return b.Validate(ctx, obj)
 }
 
 func bindingTargetValue[T any](

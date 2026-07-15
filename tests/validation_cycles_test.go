@@ -24,7 +24,7 @@ type cycleRoot struct {
 func newCycleBinding(t *testing.T) *model.Binding[cycleRoot] {
 	t.Helper()
 
-	nonempty, err := validation.NewRule[string]("nonempty", ruleNonEmpty)
+	nonempty, err := model.NewRule[string]("nonempty", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
