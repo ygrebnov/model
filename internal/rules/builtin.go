@@ -465,6 +465,30 @@ func ensureBuiltIns() {
 // lookupBuiltin returns a built-in rule by (Name,type) if present.
 func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 	ensureBuiltIns()
+
 	r, ok := builtInMap[key{name, t}]
-	return r, ok
+	if ok || t.Kind() != reflect.Ptr {
+		return r, ok
+	}
+
+	r, ok = lookupBuiltin(name, t.Elem())
+	if !ok {
+		return nil, false
+	}
+
+	return &Rule{
+		name:      name,
+		fieldType: t,
+		fn: func(v reflect.Value, params ...string) error {
+			for v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					v = reflect.Zero(v.Type().Elem())
+				} else {
+					v = v.Elem()
+				}
+			}
+
+			return r.GetValidationFn()(v, params...)
+		},
+	}, true
 }

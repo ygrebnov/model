@@ -140,9 +140,9 @@ func (s *Schema[T]) GetFieldValue(
 // SetFieldValue sets a concrete object field by public string identifier.
 //
 // The value is assigned directly when assignable to the field type, converted
-// when convertible, or rejected when neither is possible. Passing nil resets
-// the field to its zero value. The boolean result reports whether the set was
-// performed.
+// when convertible, or wrapped in a pointer when it matches the pointer
+// element type. Passing nil resets the field to its zero value. The boolean
+// result reports whether the set was performed.
 func (s *Schema[T]) SetFieldValue(
 	obj *T,
 	name string,
@@ -170,6 +170,25 @@ func (s *Schema[T]) SetFieldValue(
 		fv.Set(rv.Convert(fv.Type()))
 
 		return true
+	}
+
+	if fv.Kind() == reflect.Ptr {
+		elemType := fv.Type().Elem()
+		if rv.Type().AssignableTo(elemType) {
+			pointer := reflect.New(elemType)
+			pointer.Elem().Set(rv)
+			fv.Set(pointer)
+
+			return true
+		}
+
+		if rv.Type().ConvertibleTo(elemType) {
+			pointer := reflect.New(elemType)
+			pointer.Elem().Set(rv.Convert(elemType))
+			fv.Set(pointer)
+
+			return true
+		}
 	}
 
 	return false

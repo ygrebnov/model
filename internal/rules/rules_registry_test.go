@@ -288,6 +288,20 @@ func TestRegistry_get(t *testing.T) {
 			expectedRule:  builtinRuleForTest(t, RuleEmail, reflect.TypeOf("")),
 		},
 		{
+			name:          "builtin fallback only (string min)",
+			setupRegistry: defaultRegistry,
+			ruleName:      RuleMin,
+			value:         reflect.ValueOf(""),
+			expectedRule:  builtinRuleForTest(t, RuleMin, reflect.TypeOf("")),
+		},
+		{
+			name:          "builtin fallback only (pointer string min)",
+			setupRegistry: defaultRegistry,
+			ruleName:      RuleMin,
+			value:         reflect.ValueOf(new(string)),
+			expectedRule:  builtinRuleForTest(t, RuleMin, reflect.TypeOf(new(string))),
+		},
+		{
 			name: "builtin fallback when empty slice present",
 			setupRegistry: func(t *testing.T) *Registry {
 				r := &Registry{
