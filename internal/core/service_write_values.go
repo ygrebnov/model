@@ -39,7 +39,7 @@ func (s *Service[T]) WriteValuesStruct(
 
 	return walkSchema(
 		rv,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		nil,
 		policy,
 		func(ctx walkContext, field reflect.Value) error {

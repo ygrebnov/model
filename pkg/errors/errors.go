@@ -38,6 +38,10 @@ var (
 	ErrDefaultLiteralUnsupportedKind = errorc.New("default literal unsupported kind")
 )
 
+var (
+	ErrInvalidValidateElemUsage = errorc.New("validateElem can only be used on slice, array, or map fields")
+)
+
 // Validation rule argument and parameter errors
 var (
 	// ErrRuleMissingParameter reports that a rule requiring parameters was invoked without them.

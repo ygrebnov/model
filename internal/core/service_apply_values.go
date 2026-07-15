@@ -51,7 +51,7 @@ func (s *Service[T]) ApplyValuesStruct(
 
 	if err := walkSchema(
 		probe,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		envPrefixPath(s.envPrefix),
 		probePolicy,
 		func(ctx walkContext, _ reflect.Value) error {
@@ -85,7 +85,7 @@ func (s *Service[T]) ApplyValuesStruct(
 
 	return walkSchema(
 		rv,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		envPrefixPath(s.envPrefix),
 		policy,
 		func(ctx walkContext, _ reflect.Value) error {
@@ -95,7 +95,7 @@ func (s *Service[T]) ApplyValuesStruct(
 			}
 
 			name := ctx.Node.GetName(".")
-			if !s.schemaController.SetFieldValue(obj, name, value) {
+			if !s.schema.SetFieldValue(obj, name, value) {
 				return errorc.With(
 					modelerrors.ErrTypeMismatch,
 					errorc.String(keys.Phase, "apply_values"),

@@ -32,7 +32,7 @@ type Rule struct {
 }
 
 // NewRule creates a typed validation rule with the given name and validation function.
-func NewRule(name string, fn func(value FieldType, params ...string) error) (*Rule, error) {
+func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (*Rule, error) {
 	if name == "" || fn == nil {
 		return nil, errors.ErrInvalidRule
 	}

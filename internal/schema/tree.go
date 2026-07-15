@@ -61,7 +61,7 @@ func (n *Node) GetName(separator string) string {
 
 // Schema owns the compiled schema tree and a string index for field lookup.
 //
-// The schema is built once by NewSchema and then treated as immutable.
+// The schema is built once by New and then treated as immutable.
 // It exposes string-based lookup helpers so callers do not need to know the
 // internal reflect.Type, reflect.StructField.Index, or tree representation.
 type Schema[T any] struct {
@@ -155,11 +155,11 @@ func (c *Schema[T]) SetFieldValue(obj *T, name string, value any) bool {
 	return false
 }
 
-// NewSchema compiles the schema tree and lookup index for T.
+// New compiles the schema tree and lookup index for T.
 //
 // T may be a struct type or a pointer to a struct type. Non-struct type
 // parameters return errors.ErrTypeParamNotStruct.
-func NewSchema[T any]() (*Schema[T], error) {
+func New[T any]() (*Schema[T], error) {
 	c := &Schema[T]{
 		Index: make(map[string]*Node),
 	}

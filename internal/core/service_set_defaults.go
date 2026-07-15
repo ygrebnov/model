@@ -50,7 +50,7 @@ func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
 
 	return walkSchema(
 		root,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		nil,
 		policy,
 		applyDefaultWalkValue,

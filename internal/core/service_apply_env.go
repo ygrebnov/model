@@ -29,7 +29,7 @@ func (s *Service[T]) ApplyEnvStruct(root reflect.Value) error {
 
 	return walkSchema(
 		root,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		envPrefixPath(s.envPrefix),
 		policy,
 		s.applyEnvWalkValue,

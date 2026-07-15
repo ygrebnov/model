@@ -41,7 +41,7 @@ func (s *Service[T]) ValidateStruct(
 
 	return walkSchema(
 		rv,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		nil,
 		policy,
 		func(walkCtx walkContext, field reflect.Value) error {

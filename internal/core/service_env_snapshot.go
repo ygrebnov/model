@@ -24,7 +24,7 @@ func (s *Service[T]) snapshotEnvSource() fieldPkg.EnvSource {
 
 	_ = walkSchema(
 		root,
-		s.schemaController.GetRoot(),
+		s.schema.GetRoot(),
 		envPrefixPath(s.envPrefix),
 		policy,
 		func(ctx walkContext, field reflect.Value) error {
