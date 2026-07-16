@@ -1,16 +1,16 @@
 package model
 
-import "github.com/ygrebnov/model/validation"
-
 type options struct {
 	envPrefix string
-	rules     []validation.Rule
+	rules     []Rule
 }
 
-// Option customizes Binding, DynamicBinding or wrappers behavior.
+// Option customizes Binding construction and one-time wrapper operations.
 type Option func(o *options)
 
-// WithEnvPrefix adds non-empty environment variables names prefix.
+// WithEnvPrefix adds a non-empty environment variable name prefix for ApplyEnv
+// and ValidateWithDefaults. For example, prefix "MYAPP" makes an untagged
+// Name field use MYAPP_NAME.
 func WithEnvPrefix(prefix string) Option {
 	return func(o *options) {
 		if prefix != "" {
@@ -19,11 +19,12 @@ func WithEnvPrefix(prefix string) Option {
 	}
 }
 
-// WithRules registers one or many named custom validation rules during binding construction.
+// WithRules registers custom validation rules during binding construction.
 //
-// See the validation.Rule type and validation.NewRule function for details on creating rules.
-func WithRules(rules ...validation.Rule) Option {
+// Repeated WithRules options compose in declaration order. See Rule and NewRule
+// for details on creating rules.
+func WithRules(rules ...Rule) Option {
 	return func(o *options) {
-		o.rules = rules
+		o.rules = append(o.rules, rules...)
 	}
 }

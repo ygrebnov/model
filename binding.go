@@ -4,132 +4,303 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/core"
+	"github.com/ygrebnov/model/internal/rules"
+	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/validation"
 )
 
-// Binding provides defaulting and validation capabilities for type T.
+// Binding provides defaulting, external value application, value export, and
+// validation for struct type T.
+//
+// NewBinding compiles the schema and validation plan once. A Binding is safe
+// for concurrent use after construction because that metadata and its
+// environment snapshot are immutable. The objects, sources, and sinks passed
+// to its methods remain owned by the caller:
+//
+//   - concurrent calls using different objects are safe when the supplied
+//     sources and sinks are themselves safe for concurrent use;
+//   - concurrent operations on the same object require caller-side
+//     synchronization;
+//   - callers must not mutate an object concurrently with ApplyDefaults,
+//     ApplyValues, ApplyEnv, Validate, ValidateWithDefaults, or WriteValues;
+//   - ValueSink implementations that retain maps, slices, pointers, or other
+//     reference values receive references to the object's current values rather
+//     than deep copies.
 type Binding[T any] struct {
-	// service is the underlying core service for type T.
-	service service
+	service service[T]
 }
 
-type service interface {
+type service[T any] interface {
 	SetDefaultsStruct(v reflect.Value) error
-	AddRule(r validation.Rule) error
-	ValidateStruct(ctx context.Context, v reflect.Value, fieldPath string, ve *validation.Error) error
+	ApplyValuesStruct(v reflect.Value, source field.ValueSource) error
+	ApplyEnvStruct(v reflect.Value) error
+	WriteValuesStruct(v reflect.Value, sink field.ValueSink) error
+	ValidateStruct(
+		ctx context.Context,
+		v reflect.Value,
+		fieldPath string,
+		ve *validation.Error,
+	) error
 }
 
-func newService(
-	typ reflect.Type,
-	rr validation.RulesRegistry,
-	rm validation.RulesMapping,
-	envPrefix string,
-) service {
-	return core.NewService(typ, rr, rm, envPrefix)
+// Rule is an opaque custom validation rule created by NewRule.
+//
+// Rule is intentionally non-generic so rules concerning different field types
+// can be passed together to WithRules. Rule values are immutable after
+// construction and may be reused when constructing multiple bindings.
+type Rule struct {
+	compiled *rules.Rule
 }
 
-// NewBinding constructs a Binding for the type parameter T. T must be a struct.
+// NewRule creates a named custom validation rule for FieldType.
 //
-// Use WithEnvPrefix option to add environment variables names prefix. Environment variables are
-// snapshotted when the binding is constructed.
+// The name must be non-empty and fn must be non-nil. Custom rules with the
+// same name and field type replace the corresponding built-in rule; duplicate
+// custom overloads are rejected when NewBinding is called.
 //
-// Builtin rules are applied implicitly.
+// The validation function may be called concurrently by different bindings or
+// validation operations. It must therefore synchronize access to mutable state
+// it captures.
+func NewRule[FieldType any](
+	name string,
+	fn func(FieldType, ...string) error,
+) (Rule, error) {
+	compiled, err := rules.NewRule(name, fn)
+	if err != nil {
+		return Rule{}, err
+	}
+
+	return Rule{
+		compiled: compiled,
+	}, nil
+}
+
+// NewBinding compiles a reusable Binding for struct type T.
 //
-// Use WithRules option to register custom validation rules at construction time.
-// See [validation.Rule] and [validation.NewRule] for details on creating rules.
+// T must be a struct, not a pointer. Built-in validation rules are available
+// implicitly. Use WithRules to add custom rules and WithEnvPrefix to prefix
+// environment variable names used by ApplyEnv and ValidateWithDefaults.
+//
+// The returned Binding is fully initialized and immutable. It snapshots
+// environment values during this call, so later process-environment changes do
+// not affect ApplyEnv or ValidateWithDefaults.
 func NewBinding[T any](opts ...Option) (*Binding[T], error) {
-	// Obtain the reflect.Type for T. The zero value of *T is never dereferenced.
-	var zero *T
-	t := reflect.TypeOf(zero).Elem()
-	if t.Kind() != reflect.Struct {
-		// Mirror New's constraint that only struct types are supported.
-		return nil, errors.ErrTypeParamNotStruct
-	}
-
 	o := &options{}
+
 	for _, opt := range opts {
-		opt(o)
+		if opt != nil {
+			opt(o)
+		}
 	}
 
-	rulesRegistry := validation.NewRulesRegistry()
-	rulesMapping := validation.NewRulesMapping()
+	registry, err := newRulesRegistry(o.rules)
+	if err != nil {
+		return nil, err
+	}
 
-	s := newService(t, rulesRegistry, rulesMapping, o.envPrefix)
+	compiledSchema, err := schema.New[T]()
+	if err != nil {
+		return nil, err
+	}
 
-	b := &Binding[T]{service: s}
+	s, err := core.NewService[T](
+		registry,
+		compiledSchema,
+		o.envPrefix,
+	)
+	if err != nil {
+		return nil, err
+	}
 
-	if len(o.rules) > 0 {
-		if err := registerRules(s, o.rules...); err != nil {
+	return &Binding[T]{
+		service: s,
+	}, nil
+}
+
+func newRulesRegistry(
+	customRules []Rule,
+) (*rules.Registry, error) {
+	registry := rules.NewRegistry()
+
+	for _, customRule := range customRules {
+		if customRule.compiled == nil {
+			return nil, errors.ErrInvalidRule
+		}
+
+		if err := registry.Add(customRule.compiled); err != nil {
 			return nil, err
 		}
 	}
 
-	return b, nil
+	return registry, nil
 }
 
-// ApplyDefaults applies default values to zero fields of obj according to its `default` / `defaultElem` tags
-// and environment variables. ApplyDefaults applies defaults each time it is called.
-// It is idempotent, but not once-guarded.
+// ApplyDefaults applies default and defaultElem tags to zero fields of obj.
+//
+// Literal defaults do not overwrite non-zero values. default:"alloc"
+// initializes nil slices and maps, and default:"dive" allocates a nil
+// pointer-to-struct before traversing it, except at a recursive schema
+// boundary. ApplyDefaults evaluates defaults on every call and is idempotent.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
-	if obj == nil {
-		return errors.ErrNilObject
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
 	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return errors.ErrNotStructPtr
-	}
-	elem := v.Elem()
-	if elem.Kind() != reflect.Struct {
-		return errors.ErrNotStructPtr
-	}
+
 	return b.service.SetDefaultsStruct(elem)
 }
 
-// Validate runs validation rules declared via `validate` / `validateElem` tags on obj
-// with the provided context.
+// ApplyValues applies values supplied by source to obj using compiled schema
+// paths.
 //
-// If validation fails, a *validation.Error is returned; if the context is canceled, ctx.Err() is returned.
-func (b *Binding[T]) Validate(ctx context.Context, obj *T) error {
-	if obj == nil {
-		return errors.ErrNilObject
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	v := reflect.ValueOf(obj)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return errors.ErrNotStructPtr
-	}
-	elem := v.Elem()
-	if elem.Kind() != reflect.Struct {
-		return errors.ErrNotStructPtr
-	}
-	ve := &validation.Error{}
-	if err := b.service.ValidateStruct(ctx, elem, "", ve); err != nil {
+// ValueSource.Get is called with exact exported field paths such as "Name" and
+// "Server.Host". Collection fields use a "[]" suffix, such as "Items[]"; the
+// source receives descendant collection paths, but ApplyValues only assigns
+// direct collection values rather than individual collection elements.
+//
+// A missing source value leaves its field unchanged. A found nil value resets
+// the field to its zero value. Other values must be assignable to, convertible
+// to, or assignable or convertible to the element type of a pointer field.
+// Scalar values for pointer fields allocate the pointer. Nil
+// pointer-to-struct fields are allocated only when a descendant value is
+// supplied. Lookup and assignment errors are returned; either can leave earlier
+// assignments in place.
+func (b *Binding[T]) ApplyValues(
+	obj *T,
+	source field.ValueSource,
+) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
 		return err
 	}
-	if ve.Empty() {
+
+	return b.service.ApplyValuesStruct(elem, source)
+}
+
+// ApplyEnv applies environment values snapshotted when the Binding was
+// constructed.
+//
+// An explicit env tag takes precedence. Without one, a JSON tag name is used
+// when present; otherwise the exported field name is used. env:"-" and
+// json:"-" disable environment traversal for that field and its descendants.
+// Path segments are joined with underscores and optionally prefixed by
+// WithEnvPrefix. Values present in the snapshot replace existing values. Nil
+// pointer-to-struct fields are allocated only when the snapshot contains a
+// descendant value.
+func (b *Binding[T]) ApplyEnv(obj *T) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.ApplyEnvStruct(elem)
+}
+
+// WriteValues writes reachable values from obj to sink using compiled schema
+// paths.
+//
+// Paths use exact exported field names, such as "Name" and "Server.Host".
+// A collection of structs uses a "[]" suffix, such as "Items[]", and each
+// reachable element's fields are written using paths such as "Items[].Name".
+// Scalar collections are written once using their field path, such as "Tags".
+//
+// Nil pointer-to-struct fields and nil pointer collection elements are written
+// but not traversed. Maps, slices, pointers, and other reference values are
+// passed to sink as the original values rather than deep copies. Sink errors
+// stop traversal and are returned; values already passed to sink remain there.
+func (b *Binding[T]) WriteValues(
+	obj *T,
+	sink field.ValueSink,
+) error {
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.service.WriteValuesStruct(elem, sink)
+}
+
+// Validate applies validate and validateElem rules declared on obj.
+//
+// It returns *validation.Error when one or more constraints fail. Field paths
+// use exact exported field names. Context cancellation and operational errors
+// are returned directly.
+func (b *Binding[T]) Validate(
+	ctx context.Context,
+	obj *T,
+) error {
+	if ctx == nil {
+		return errors.ErrNilContext
+	}
+
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	return b.validateValue(ctx, elem)
+}
+
+// ValidateWithDefaults applies defaults, snapshotted environment values, and
+// validation to obj, in that order.
+//
+// This sequence is not transactional: when a later step fails, changes made by
+// earlier steps remain in obj.
+func (b *Binding[T]) ValidateWithDefaults(
+	ctx context.Context,
+	obj *T,
+) error {
+	if ctx == nil {
+		return errors.ErrNilContext
+	}
+
+	elem, err := bindingTargetValue(obj)
+	if err != nil {
+		return err
+	}
+
+	if err := b.service.SetDefaultsStruct(elem); err != nil {
+		return err
+	}
+
+	if err := b.service.ApplyEnvStruct(elem); err != nil {
+		return err
+	}
+
+	return b.validateValue(ctx, elem)
+}
+
+func (b *Binding[T]) validateValue(
+	ctx context.Context,
+	elem reflect.Value,
+) error {
+	validationErr := &validation.Error{}
+
+	if err := b.service.ValidateStruct(
+		ctx,
+		elem,
+		"",
+		validationErr,
+	); err != nil {
+		return err
+	}
+
+	if validationErr.Empty() {
 		return nil
 	}
-	return ve
+
+	return validationErr
 }
 
-// ValidateWithDefaults first applies defaults to obj and then runs validation. This is a convenience
-// for service-level flows that expect defaulted inputs before validation.
-func (b *Binding[T]) ValidateWithDefaults(ctx context.Context, obj *T) error {
-	if err := b.ApplyDefaults(obj); err != nil {
-		return err
+func bindingTargetValue[T any](
+	obj *T,
+) (reflect.Value, error) {
+	if obj == nil {
+		return reflect.Value{}, errors.ErrNilObject
 	}
-	return b.Validate(ctx, obj)
-}
 
-func registerRules(s service, rules ...validation.Rule) error {
-	for _, r := range rules {
-		if err := s.AddRule(r); err != nil {
-			return err
-		}
-	}
-	return nil
+	return reflect.ValueOf(obj).Elem(), nil
 }

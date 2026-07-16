@@ -8,6 +8,7 @@ import (
 
 	keysLib "github.com/ygrebnov/keys"
 	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/validation"
@@ -86,7 +87,7 @@ func assertConstraintViolation(t *testing.T, err error, ruleName, paramName, par
 func assertMissingParameter(t *testing.T, err error) {
 	t.Helper()
 
-	assertRuleErrorHas(t, err, errors.ErrRuleMissingParameter, validation.RuleOneOf, nil)
+	assertRuleErrorHas(t, err, errors.ErrRuleMissingParameter, rules.RuleOneOf, nil)
 }
 
 func assertInvalidParameter(t *testing.T, err error, ruleName, paramName, paramValue string) {
@@ -230,7 +231,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMin, "value", "1")
+				assertConstraintViolation(t, err, rules.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -245,7 +246,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMax, "value", "10")
+				assertConstraintViolation(t, err, rules.RuleMax, "value", "10")
 			},
 		},
 		{
@@ -270,7 +271,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMin, "value", "1")
+				assertConstraintViolation(t, err, rules.RuleMin, "value", "1")
 			},
 		},
 		{
@@ -285,7 +286,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMax, "value", "10")
+				assertConstraintViolation(t, err, rules.RuleMax, "value", "10")
 			},
 		},
 		{
@@ -311,7 +312,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMin, "value", "0.5")
+				assertConstraintViolation(t, err, rules.RuleMin, "value", "0.5")
 			},
 		},
 		{
@@ -326,7 +327,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleMax, "value", "2.5")
+				assertConstraintViolation(t, err, rules.RuleMax, "value", "2.5")
 			},
 		},
 
@@ -354,7 +355,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "red,green,blue")
+				assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "red,green,blue")
 			},
 		},
 		{
@@ -397,7 +398,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "1,2,3")
+				assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "1,2,3")
 			},
 		},
 		{
@@ -427,7 +428,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, rules.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -455,7 +456,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "10,20,30")
+				assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "10,20,30")
 			},
 		},
 		{
@@ -485,7 +486,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, rules.RuleOneOf, "value", "a")
 			},
 		},
 
@@ -513,7 +514,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "0.5,1.0,2.5")
+				assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "0.5,1.0,2.5")
 			},
 		},
 		{
@@ -543,7 +544,7 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				return err
 			},
 			checkErr: func(t *testing.T, err error) {
-				assertInvalidParameter(t, err, validation.RuleOneOf, "value", "a")
+				assertInvalidParameter(t, err, rules.RuleOneOf, "value", "a")
 			},
 		},
 	}
@@ -605,7 +606,7 @@ func TestBuiltinRules_WithValidation_ExtendedNumericCoverage(t *testing.T) {
 			t.Fatal("expected validation error, got nil")
 		}
 
-		assertConstraintViolation(t, err, validation.RuleMin, "value", "3")
+		assertConstraintViolation(t, err, rules.RuleMin, "value", "3")
 	})
 
 	t.Run("unsigned integer rule resolves for uintptr", func(t *testing.T) {
@@ -618,7 +619,7 @@ func TestBuiltinRules_WithValidation_ExtendedNumericCoverage(t *testing.T) {
 			t.Fatal("expected validation error, got nil")
 		}
 
-		assertConstraintViolation(t, err, validation.RuleOneOf, "allowed", "3,4,5")
+		assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "3,4,5")
 	})
 
 	t.Run("float rule resolves for float32", func(t *testing.T) {
@@ -631,7 +632,7 @@ func TestBuiltinRules_WithValidation_ExtendedNumericCoverage(t *testing.T) {
 			t.Fatal("expected validation error, got nil")
 		}
 
-		assertConstraintViolation(t, err, validation.RuleMax, "value", "2.5")
+		assertConstraintViolation(t, err, rules.RuleMax, "value", "2.5")
 	})
 }
 

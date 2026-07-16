@@ -1,0 +1,263 @@
+package core
+
+import (
+	"reflect"
+	"strings"
+
+	"github.com/ygrebnov/errorc"
+	fieldPkg "github.com/ygrebnov/model/field"
+	"github.com/ygrebnov/model/internal/schema"
+	modelerrors "github.com/ygrebnov/model/pkg/errors"
+	"github.com/ygrebnov/model/pkg/keys"
+)
+
+// ApplyValuesStruct walks the compiled schema for rv and applies values supplied
+// by source to matching fields. Nested pointer-to-struct fields are allocated
+// only when a value is present for one of their descendants.
+//
+//nolint:gocyclo,funlen // acceptable here
+func (s *Service[T]) ApplyValuesStruct(
+	rv reflect.Value,
+	source fieldPkg.ValueSource,
+) error {
+	if source == nil {
+		return errorc.With(
+			modelerrors.ErrInvalidValue,
+			errorc.String(keys.Phase, "apply_values"),
+			errorc.String(keys.ValueType, "<nil>"),
+		)
+	}
+
+	obj, ok := valuePointer[T](rv)
+	if !ok {
+		return errorc.With(
+			modelerrors.ErrInvalidValue,
+			errorc.String(keys.Phase, "apply_values"),
+			errorc.String(keys.ValueType, rv.Type().String()),
+		)
+	}
+
+	values := make(map[*schema.Node]any)
+
+	collectValue := func(ctx walkContext) error {
+		value, ok, err := source.Get(valueSourceName(ctx.Node))
+		if err != nil {
+			return errorc.With(
+				err,
+				errorc.String(keys.Phase, "apply_values"),
+				errorc.String(keys.FieldName, ctx.Path),
+			)
+		}
+
+		if ok {
+			values[ctx.Node] = value
+		}
+
+		return nil
+	}
+
+	var collectCollectionDescendants func(walkContext) error
+	collectCollectionDescendants = func(ctx walkContext) error {
+		for _, child := range ctx.Node.Children {
+			childCtx := childWalkContext(ctx, child)
+			if err := collectValue(childCtx); err != nil {
+				return err
+			}
+
+			if err := collectCollectionDescendants(childCtx); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	// Use a temporary value to visit the complete schema, including fields
+	// below nil pointer-to-struct nodes, without modifying the caller's value.
+	probe := reflect.New(rv.Type()).Elem()
+	probePolicy := walkPolicy{
+		DiveCollection: func(walkContext, reflect.Value) bool {
+			return false
+		},
+		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
+			return ctx.Node.Reference == nil
+		},
+	}
+
+	if err := walkSchema(
+		probe,
+		s.schema.GetRoot(),
+		envPrefixPath(s.envPrefix),
+		probePolicy,
+		func(ctx walkContext, _ reflect.Value) error {
+			if err := collectValue(ctx); err != nil {
+				return err
+			}
+
+			if isCollectionNode(ctx.Node) {
+				return collectCollectionDescendants(ctx)
+			}
+
+			return nil
+		},
+	); err != nil {
+		return err
+	}
+
+	policy := walkPolicy{
+		DiveCollection: func(walkContext, reflect.Value) bool {
+			return false
+		},
+		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
+			return hasProvidedDescendant(ctx.Node, values)
+		},
+	}
+
+	return walkSchema(
+		rv,
+		s.schema.GetRoot(),
+		envPrefixPath(s.envPrefix),
+		policy,
+		func(ctx walkContext, field reflect.Value) error {
+			value, ok := values[ctx.Node]
+			if !ok && isCollectionNode(ctx.Node) &&
+				hasCollectionValue(field) {
+				sourceName := valueSourceName(ctx.Node)
+				legacyName := strings.TrimSuffix(sourceName, "[]")
+				if legacyName != sourceName {
+					var err error
+					value, ok, err = source.Get(legacyName)
+					if err != nil {
+						return errorc.With(
+							err,
+							errorc.String(keys.Phase, "apply_values"),
+							errorc.String(keys.FieldName, ctx.Path),
+						)
+					}
+				}
+			}
+
+			if !ok {
+				return nil
+			}
+
+			name := ctx.Node.GetName(".")
+			if !s.schema.SetFieldValue(obj, name, value) {
+				return errorc.With(
+					modelerrors.ErrTypeMismatch,
+					errorc.String(keys.Phase, "apply_values"),
+					errorc.String(keys.FieldName, ctx.Path),
+					errorc.String(keys.FieldType, ctx.Node.Type.String()),
+					errorc.String(keys.ValueType, valueTypeName(value)),
+				)
+			}
+
+			return nil
+		},
+	)
+}
+
+func hasProvidedDescendant(
+	node *schema.Node,
+	values map[*schema.Node]any,
+) bool {
+	if node == nil {
+		return false
+	}
+
+	for _, child := range node.Children {
+		if _, ok := values[child]; ok {
+			return true
+		}
+
+		if hasProvidedDescendant(child, values) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func valuePointer[T any](rv reflect.Value) (*T, bool) {
+	rv = unwrapInterface(rv)
+	if !rv.IsValid() {
+		return nil, false
+	}
+
+	if rv.CanAddr() {
+		if obj, ok := rv.Addr().Interface().(*T); ok {
+			return obj, true
+		}
+	}
+
+	if rv.Kind() == reflect.Ptr && !rv.IsNil() {
+		if obj, ok := rv.Interface().(*T); ok {
+			return obj, true
+		}
+	}
+
+	return nil, false
+}
+
+func valueTypeName(value any) string {
+	if value == nil {
+		return "<nil>"
+	}
+
+	return reflect.TypeOf(value).String()
+}
+
+func isCollectionNode(node *schema.Node) bool {
+	if node == nil {
+		return false
+	}
+
+	t := node.Type
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return true
+	default:
+		return false
+	}
+}
+
+func valueSourceName(node *schema.Node) string {
+	if node == nil {
+		return ""
+	}
+
+	name := node.GetName(".")
+	if isCollectionNode(node) && !strings.HasSuffix(name, "[]") {
+		return name + "[]"
+	}
+
+	return name
+}
+
+func hasCollectionValue(value reflect.Value) bool {
+	value = unwrapInterface(value)
+	for value.IsValid() && value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return false
+		}
+
+		value = unwrapInterface(value.Elem())
+	}
+
+	if !value.IsValid() {
+		return false
+	}
+
+	switch value.Kind() {
+	case reflect.Slice, reflect.Map:
+		return !value.IsNil()
+	case reflect.Array:
+		return true
+	default:
+		return false
+	}
+}

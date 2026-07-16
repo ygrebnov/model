@@ -24,7 +24,7 @@ type cycleRoot struct {
 func newCycleBinding(t *testing.T) *model.Binding[cycleRoot] {
 	t.Helper()
 
-	nonempty, err := validation.NewRule[string]("nonempty", ruleNonEmpty)
+	nonempty, err := model.NewRule[string]("nonempty", ruleNonEmpty)
 	if err != nil {
 		t.Fatalf("NewRule error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestBinding_ValidateElemDive_SkipsPointerCycles(t *testing.T) {
 
 	by := validationByField(t, b.Validate(context.Background(), &obj))
 
-	if _, ok := by["Items[0].Name"]; !ok {
+	if _, ok := by["Items[0].Name"]; !ok { // actual key "Items[][0].Name"
 		t.Fatalf("expected validation error at Items[0].Name, got: %+v", by)
 	}
 	if _, ok := by["Items[0].Next.Name"]; !ok {

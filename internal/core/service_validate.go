@@ -4,282 +4,293 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/ygrebnov/model/validation"
 )
 
-type validationState struct {
-	activePointers map[validationVisit]struct{}
-}
-
-type validationVisit struct {
-	typ  reflect.Type
-	addr uintptr
-}
-
-func (vs *validationState) enterStruct(rv reflect.Value) (b bool, f func()) {
-	if rv.Kind() != reflect.Struct || !rv.CanAddr() {
-		return true, func() {}
-	}
-
-	visit := validationVisit{
-		typ:  rv.Type(),
-		addr: rv.Addr().Pointer(),
-	}
-	if _, exists := vs.activePointers[visit]; exists {
-		return false, func() {}
-	}
-
-	vs.activePointers[visit] = struct{}{}
-	return true, func() {
-		delete(vs.activePointers, visit)
-	}
-}
-
-// AddRule registers a validation rule in the service's rules registry.
-func (s *Service) AddRule(r validation.Rule) error {
-	return s.rulesRegistry.Add(r)
-}
-
-// ValidateStruct walks a struct value and applies rules on each field according to its `validate` tag.
-// Nested structs and pointers to structs are traversed recursively. Cycles in pointer graphs are
-// skipped on the current traversal path so validation terminates even for self-referential data.
-// The `path` argument tracks the dotted field path for clearer error messages.
-func (s *Service) ValidateStruct(
+// ValidateStruct walks the compiled schema and executes the validation plan
+// prepared when the Service was constructed.
+//
+// Nested structs and non-nil pointers to structs are traversed automatically.
+// Collection element structs are traversed only when validateElem contains the
+// dive directive.
+func (s *Service[T]) ValidateStruct(
 	ctx context.Context,
 	rv reflect.Value,
 	path string,
 	ve *validation.Error,
-) error {
-	state := &validationState{
-		activePointers: make(map[validationVisit]struct{}),
-	}
-	return s.validateStruct(ctx, rv, path, ve, state)
-}
-
-func (s *Service) validateStruct(
-	ctx context.Context,
-	rv reflect.Value,
-	path string,
-	ve *validation.Error,
-	state *validationState,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	entered, leave := state.enterStruct(rv)
-	if !entered {
-		return nil
+	policy := walkPolicy{
+		DiveCollection: func(ctx walkContext, _ reflect.Value) bool {
+			return s.validation.nodes[ctx.Node].dive
+		},
+		AllocPtrStruct: func(_ walkContext, _ reflect.Value) bool {
+			return false
+		},
 	}
-	defer leave()
 
-	typ := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
+	return walkSchema(
+		rv,
+		s.schema.GetRoot(),
+		nil,
+		policy,
+		func(walkCtx walkContext, field reflect.Value) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			fieldPath := walkCtx.Path
+			if path != "" {
+				fieldPath = joinRuntimePath(path, fieldPath)
+			}
+
+			compiled := s.validation.nodes[walkCtx.Node]
+
+			if err := applyCompiledRules(
+				ctx,
+				field,
+				fieldPath,
+				compiled.field,
+				ve,
+			); err != nil {
+				return err
+			}
+
+			if compiled.dive {
+				return validateDiveElements(
+					ctx,
+					field,
+					fieldPath,
+					ve,
+				)
+			}
+
+			return validateCollectionElements(
+				ctx,
+				field,
+				fieldPath,
+				compiled.elem,
+				ve,
+			)
+		},
+	)
+}
+
+func applyCompiledRules(
+	ctx context.Context,
+	value reflect.Value,
+	path string,
+	compiled []compiledRule,
+	ve *validation.Error,
+) error {
+	for _, rule := range compiled {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		field := typ.Field(i)
-		if field.PkgPath != "" { // Skip unexported fields
+
+		if rule.optional && value.IsZero() {
 			continue
 		}
-		fv := rv.Field(i)
 
-		fpath := field.Name
-		if path != "" {
-			fpath = path + "." + field.Name
-		}
-
-		// Recurse into pointers to structs
-		if fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct {
-			if err := s.validateStruct(ctx, fv.Elem(), fpath, ve, state); err != nil {
-				return err
-			}
-		}
-
-		// Recurse into embedded/inline structs
-		if fv.Kind() == reflect.Struct {
-			if err := s.validateStruct(ctx, fv, fpath, ve, state); err != nil {
-				return err
-			}
-		}
-
-		// Process `validate` tag
-		if err := s.processValidateTag(ctx, &field, fpath, fv, typ, i, ve); err != nil {
-			return err
-		}
-
-		// Process `validateElem` tag for slices, arrays, and maps
-		if err := s.processValidateElemTag(ctx, &field, fpath, fv, typ, i, ve, state); err != nil {
-			return err
+		if err := rule.rule.GetValidationFn()(
+			value,
+			rule.params...,
+		); err != nil {
+			ve.Add(validation.FieldError{
+				Path:   path,
+				Rule:   rule.rule.GetName(),
+				Params: rule.params,
+				Err:    err,
+			})
 		}
 	}
 
 	return nil
 }
 
-func (s *Service) processValidateTag(
+func validateCollectionElements(
 	ctx context.Context,
-	field *reflect.StructField,
-	fieldPath string,
 	fieldValue reflect.Value,
-	structType reflect.Type,
-	fieldIndex int,
-	ve *validation.Error,
-) error {
-	rawTag := field.Tag.Get(tagValidate)
-	if rawTag == "" || rawTag == "-" {
-		return nil
-	}
-	// Check cache for parsed rules
-	rules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidate)
-	if !exists {
-		rules = validation.ParseTag(rawTag)
-		s.rulesMapping.Add(structType, fieldIndex, tagValidate, rules)
-	}
-
-	for _, r := range rules {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := s.applyRule(r.Name, fieldValue, r.Optional, r.Params...); err != nil {
-			ve.Add(validation.FieldError{Path: fieldPath, Rule: r.Name, Params: r.Params, Err: err})
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) processValidateElemTag(
-	ctx context.Context,
-	field *reflect.StructField,
 	fieldPath string,
-	fieldValue reflect.Value,
-	structType reflect.Type,
-	fieldIndex int,
+	compiled []compiledRule,
 	ve *validation.Error,
-	state *validationState,
 ) error {
-	elemRaw := field.Tag.Get(tagValidateElem)
-	if elemRaw == "" || elemRaw == "-" {
+	if len(compiled) == 0 {
 		return nil
 	}
 
-	// Check cache for parsed rules
-	elemRules, exists := s.rulesMapping.Get(structType, fieldIndex, tagValidateElem)
-	if !exists {
-		elemRules = validation.ParseTag(elemRaw)
-		s.rulesMapping.Add(structType, fieldIndex, tagValidateElem, elemRules)
-	}
-
-	if err := s.validateElements(ctx, fieldValue, fieldPath, elemRules, ve, state); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) validateElements(
-	ctx context.Context,
-	fv reflect.Value,
-	fpath string,
-	rules []validation.RuleNameParams,
-	ve *validation.Error,
-	state *validationState,
-) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	cont := fv
-	if cont.Kind() == reflect.Ptr && !cont.IsNil() {
-		cont = cont.Elem()
-	}
-	if len(rules) == 0 {
+	container := unwrapInterface(fieldValue)
+	if !container.IsValid() {
 		return nil
 	}
-	// Special case: validateElem:"dive" means recurse into element structs
-	isDiveOnly := len(rules) == 1 && rules[0].Name == tagDive && len(rules[0].Params) == 0
 
-	switch cont.Kind() {
+	if container.Kind() == reflect.Ptr {
+		if container.IsNil() {
+			return nil
+		}
+
+		container = unwrapInterface(container.Elem())
+	}
+
+	switch container.Kind() {
 	case reflect.Slice, reflect.Array:
-		for i := 0; i < cont.Len(); i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			elem := cont.Index(i)
-			pathIdx := fmt.Sprintf("%s[%d]", fpath, i)
-			if err := s.validateSingleElement(ctx, elem, pathIdx, rules, isDiveOnly, ve, state); err != nil {
+		for i := 0; i < container.Len(); i++ {
+			if err := applyCompiledRules(
+				ctx,
+				container.Index(i),
+				collectionElementRuntimePath(fieldPath, i),
+				compiled,
+				ve,
+			); err != nil {
 				return err
 			}
 		}
+
 	case reflect.Map:
-		for _, key := range cont.MapKeys() {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			elem := cont.MapIndex(key)
-			pathKey := fmt.Sprintf("%s[%v]", fpath, key.Interface())
-			if err := s.validateSingleElement(ctx, elem, pathKey, rules, isDiveOnly, ve, state); err != nil {
+		iterator := container.MapRange()
+		for iterator.Next() {
+			if err := applyCompiledRules(
+				ctx,
+				iterator.Value(),
+				collectionElementRuntimePath(
+					fieldPath,
+					iterator.Key().Interface(),
+				),
+				compiled,
+				ve,
+			); err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }
 
-// validateSingleElement handles validation for a single item from a collection.
-func (s *Service) validateSingleElement(
+// validateDiveElements records errors for nil pointer elements and unsupported
+// element kinds. Non-nil struct elements are traversed and validated by
+// walkSchema itself.
+func validateDiveElements(
 	ctx context.Context,
-	elem reflect.Value,
-	path string,
-	rules []validation.RuleNameParams,
-	isDiveOnly bool,
+	fieldValue reflect.Value,
+	fieldPath string,
 	ve *validation.Error,
-	state *validationState,
 ) error {
-	if err := ctx.Err(); err != nil {
-		return err
+	container := unwrapInterface(fieldValue)
+	if !container.IsValid() {
+		return nil
 	}
-	if isDiveOnly {
-		dv := elem
-		if dv.Kind() == reflect.Ptr && !dv.IsNil() {
-			dv = dv.Elem()
+
+	if container.Kind() == reflect.Ptr {
+		if container.IsNil() {
+			return nil
 		}
-		if dv.Kind() == reflect.Struct {
-			return s.validateStruct(ctx, dv, path, ve, state)
+
+		container = unwrapInterface(container.Elem())
+	}
+
+	switch container.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < container.Len(); i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			validateDiveElement(
+				container.Index(i),
+				collectionElementRuntimePath(fieldPath, i),
+				ve,
+			)
 		}
-		ve.Add(
-			validation.FieldError{
+
+	case reflect.Map:
+		iterator := container.MapRange()
+		for iterator.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			validateDiveElement(
+				iterator.Value(),
+				collectionElementRuntimePath(
+					fieldPath,
+					iterator.Key().Interface(),
+				),
+				ve,
+			)
+		}
+	}
+
+	return nil
+}
+
+// collectionElementRuntimePath replaces the schema collection marker []
+// with a concrete runtime slice/array index or map key.
+func collectionElementRuntimePath(
+	path string,
+	key any,
+) string {
+	if strings.HasSuffix(path, "[]") {
+		return fmt.Sprintf(
+			"%s[%v]",
+			strings.TrimSuffix(path, "[]"),
+			key,
+		)
+	}
+
+	return fmt.Sprintf("%s[%v]", path, key)
+}
+
+func validateDiveElement(
+	element reflect.Value,
+	path string,
+	ve *validation.Error,
+) {
+	element = unwrapInterface(element)
+	if !element.IsValid() {
+		ve.Add(validation.FieldError{
+			Path: path,
+			Rule: tagDive,
+			Err: fmt.Errorf(
+				"validateElem:\"dive\" requires a valid struct element",
+			),
+		})
+		return
+	}
+
+	if element.Kind() == reflect.Ptr {
+		if element.IsNil() {
+			ve.Add(validation.FieldError{
 				Path: path,
 				Rule: tagDive,
-				Err:  fmt.Errorf("validateElem:\"dive\" requires struct element, got %s", dv.Kind()),
-			},
-		)
-		return nil
+				Err: fmt.Errorf(
+					"validateElem:\"dive\" requires non-nil struct element",
+				),
+			})
+			return
+		}
+
+		element = unwrapInterface(element.Elem())
 	}
 
-	for _, r := range rules {
-		if err := ctx.Err(); err != nil {
-			return err
+	if !element.IsValid() || element.Kind() != reflect.Struct {
+		kind := reflect.Invalid
+		if element.IsValid() {
+			kind = element.Kind()
 		}
-		if err := s.applyRule(r.Name, elem, r.Optional, r.Params...); err != nil {
-			ve.Add(validation.FieldError{Path: path, Rule: r.Name, Params: r.Params, Err: err})
-		}
-	}
-	return nil
-}
 
-// applyRule fetches the named rule from the registry and applies it to the given reflect.Value v,
-// passing any additional string parameters.
-// If the rule is not found or fails, an error is returned.
-func (s *Service) applyRule(name string, v reflect.Value, optional bool, params ...string) error {
-	isZero := v.IsZero()
-	if optional && isZero {
-		return nil
+		ve.Add(validation.FieldError{
+			Path: path,
+			Rule: tagDive,
+			Err: fmt.Errorf(
+				"validateElem:\"dive\" requires struct element, got %s",
+				kind,
+			),
+		})
 	}
-	r, err := s.rulesRegistry.Get(name, v)
-	if err != nil {
-		return err
-	}
-	return r.GetValidationFn()(v, params...)
 }

@@ -1,4 +1,4 @@
-package validation
+package rules
 
 import (
 	"errors"
@@ -23,13 +23,13 @@ func TestNewRule(t *testing.T) {
 		name     string
 		ruleName string
 		fn       any // provided to newRule via type assertion inside test
-		assert   func(r Rule, err error)
+		assert   func(r *Rule, err error)
 	}{
 		{
 			name:     "empty Name returns error",
 			ruleName: "",
 			fn:       func(int, ...string) error { return nil },
-			assert: func(r Rule, err error) {
+			assert: func(r *Rule, err error) {
 				if !errors.Is(err, errorsPkg.ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
@@ -42,7 +42,7 @@ func TestNewRule(t *testing.T) {
 			name:     "nil function returns error",
 			ruleName: "r1",
 			fn:       nil,
-			assert: func(r Rule, err error) {
+			assert: func(r *Rule, err error) {
 				if !errors.Is(err, errorsPkg.ErrInvalidRule) {
 					t.Fatalf("expected ErrInvalidRule, got %v", err)
 				}
@@ -55,7 +55,7 @@ func TestNewRule(t *testing.T) {
 			name:     "primitive int rule",
 			ruleName: "intRule",
 			fn:       func(int, ...string) error { return nil },
-			assert: func(r Rule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -71,7 +71,7 @@ func TestNewRule(t *testing.T) {
 			name:     "interface rule fmt.Stringer",
 			ruleName: "stringer",
 			fn:       func(fmt.Stringer, ...string) error { return nil },
-			assert: func(r Rule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -84,7 +84,7 @@ func TestNewRule(t *testing.T) {
 			name:     "pointer type rule",
 			ruleName: "ptrInt",
 			fn:       func(*int, ...string) error { return nil },
-			assert: func(r Rule, err error) {
+			assert: func(r *Rule, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -99,7 +99,7 @@ func TestNewRule(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// build rule according to fn's inferred generic parameter
 			var (
-				rule Rule
+				rule *Rule
 				err  error
 			)
 			switch f := tt.fn.(type) {
@@ -136,7 +136,7 @@ func TestValidationRuleFn(t *testing.T) {
 	// Cases for runtime invocation of wrapped fn.
 	tests := []struct {
 		name             string
-		rule             Rule
+		rule             *Rule
 		value            any
 		expectedErr      error
 		sentinel         error

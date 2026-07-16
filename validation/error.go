@@ -84,7 +84,7 @@ func (ve *Error) Unwrap() error {
 	return errors.Join(errs...)
 }
 
-// ForField returns all issues for a given dotted field path.
+// ForField returns all issues for an exact exported field path.
 func (ve *Error) ForField(path string) []FieldError {
 	if ve == nil {
 		return nil
@@ -100,7 +100,7 @@ func (ve *Error) ForField(path string) []FieldError {
 	return out
 }
 
-// ByField groups issues by dotted field path.
+// ByField groups issues by exact exported field path.
 func (ve *Error) ByField() map[string][]FieldError {
 	m := make(map[string][]FieldError)
 	if ve == nil {
@@ -113,7 +113,8 @@ func (ve *Error) ByField() map[string][]FieldError {
 	return m
 }
 
-// Fields returns the list of field paths that have issues (unique, order preserved by first occurrence).
+// Fields returns field paths with issues. Paths are unique and retain first
+// occurrence order.
 func (ve *Error) Fields() []string {
 	if ve == nil {
 		return nil
@@ -165,7 +166,7 @@ func (ve *Error) snapshotIssues() []FieldError {
 // FieldError represents a single validation failure for a specific field and rule.
 // It implements error and unwraps to the underlying cause so callers can use errors.Is/As.
 type FieldError struct {
-	Path   string   // dotted path to the field (e.g., Address.Street)
+	Path   string   // exact exported path to the field (for example, Address.Street)
 	Rule   string   // rule Name that failed
 	Params []string // parameters provided to the rule via validate tag
 	Err    error    // underlying error from the rule

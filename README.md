@@ -2,20 +2,23 @@
 [![Build Status](https://github.com/ygrebnov/model/actions/workflows/build.yml/badge.svg)](https://github.com/ygrebnov/model/actions/workflows/build.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ygrebnov/model)](https://goreportcard.com/report/github.com/ygrebnov/model)
 
-# model — defaults & validation for Go structs
+# model — defaults, values & validation for Go structs
 
 `model` creates reusable **Bindings** for your structs. It can:
 
-- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"` as well as environment variables.
+- **Set defaults** from struct tags like `default:"…"` and `defaultElem:"…"`.
+- **Apply typed external values** from an application-provided source.
+- **Apply environment values** from a constructor-time environment snapshot.
+- **Export values** to an application-provided sink.
 - **Validate** fields using named rules from `validate:"…"` and `validateElem:"…"`.
 - Accumulate all issues into a single `*validation.Error` (no fail-fast).
 - Recurse through nested structs, pointers, slices/arrays, and map values, including cycle-safe validation of pointer graphs.
 
-Library is designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). `Binding[T]` is a shared engine you can use for defaults and validation across many values of the same type. Library provides a set of convenient wrappers for one-off use cases, too. `DynamicBinding` is available for cases where you need to validate arbitrary types at runtime.
+Library is designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). `Binding[T]` is a shared engine for defaults, external values, environment values, value export, and validation across many values of the same type. Library provides convenient wrappers for one-off defaulting and validation operations, too.
 
 ## Features
 
-- **Simple API**: a constructor and three main methods on `Binding[T]` and `DynamicBinding`: `SetDefaults()`, `Validate(ctx)`, and `ValidateWithDefaults(ctx)`. Convenience wrappers correspond to main methods for one-off use cases.
+- **Simple API**: constructors plus `ApplyDefaults()`, `ApplyValues()`, `ApplyEnv()`, `WriteValues()`, `Validate(ctx)`, and `ValidateWithDefaults(ctx)` on bindings.
 - **Predictable behavior**: defaults fill *only zero values*; validation gathers *all* issues.
 - **Extensible**: register your own rules; supports interface-based rules (e.g., rules for `fmt.Stringer`).
 - **Structured errors**: built-in rules and many internal errors use sentinel values plus structured key/value metadata (via `errorc`), making it easier to inspect and transform validation failures.
@@ -62,7 +65,7 @@ type User struct {
 }
 
 func main() {
-	customRule, _ := validation.NewRule("email", func(s string, _ ...string) error {
+	customRule, _ := model.NewRule("email", func(s string, _ ...string) error {
 	    if s != "user@company.com" {
 	        return fmt.Errorf("must be 'user@company.com'")
 	    }
@@ -78,7 +81,7 @@ func main() {
 
     u1 := User{Aliases: []string{"", "ok"}} // will fail validation
 		
-    err = b.ValidateWithDefaults( // apply defaults and validate in one call
+    err = b.ValidateWithDefaults( // apply defaults, env snapshot, and validate in one call
 		context.Background(), // context-aware validation with cancellation support
 		&u1,
 	)
@@ -111,7 +114,7 @@ func main() {
     u4 := User{Aliases: []string{"pass"}} // will pass validation
 	_ = model.SetDefaults(&u4) // apply defaults
     _ = model.Validate(context.Background(), &u4) // returns *validation.Error on failure
-	_ = model.ValidateWithDefaults(context.Background(), &u4) // apply defaults and validate in one call
+	_ = model.ValidateWithDefaults(context.Background(), &u4) // apply defaults, env snapshot, and validate in one call
 }
 ```
 
@@ -119,7 +122,7 @@ func main() {
 
 ## Setting defaults
 
-Library supports setting defaults for exported fields via struct tags and environment variables.
+Library supports setting defaults for exported fields via struct tags.
 
 ### `default:"…"` struct tag
 
@@ -147,13 +150,98 @@ Applies a default to elements of a slice/array or values of a map. Supported lit
 
 ---
 
+## Applying external values
+
+`Binding.ApplyValues` applies typed values from a [`field.ValueSource`](field/field.go) to a struct. The source is queried with **exact exported Go field paths**:
+
+- `Name` for a top-level field;
+- `Server.Host` for a nested field;
+- `Items[]` for a slice, array, or map field;
+- `Items[].Name` for a child of a struct collection element.
+
+Exact paths preserve names that differ only by casing, such as `URL` and `Url`. `ApplyValues` assigns direct field values only; it does not apply individual collection element paths. Use `Items[]` to replace the collection as a whole.
+
+```go
+type mapSource map[string]any
+
+func (s mapSource) Get(name string) (any, bool, error) {
+    value, found := s[name]
+    return value, found, nil
+}
+
+type Server struct {
+    Host string
+}
+
+type Config struct {
+    Name    string
+    Retries int
+    Server  *Server
+    Tags    []string
+}
+
+b, err := model.NewBinding[Config]()
+if err != nil {
+    panic(err)
+}
+
+cfg := Config{}
+err = b.ApplyValues(&cfg, mapSource{
+    "Name":        "api",
+    "Retries":     int32(3), // convertible to int
+    "Server.Host": "127.0.0.1",
+    "Tags[]":      []string{"public", "v1"},
+})
+if err != nil {
+    panic(err)
+}
+// cfg.Server is allocated because Server.Host was supplied.
+```
+
+`Get` returning `found == false` leaves a field unchanged. A found `nil` resets the field to its zero value. Values must be assignable to or convertible to the field type; scalar values can also initialize pointer-to-scalar fields. If a later lookup or type assignment fails, earlier assignments can remain applied.
+
+---
+
+## Writing values
+
+`Binding.WriteValues` exports reachable values to a [`field.ValueSink`](field/field.go). It uses exact exported field paths for ordinary fields and nested structs:
+
+```go
+type mapSink map[string]any
+
+func (s mapSink) Set(name string, value any) error {
+    s[name] = value
+    return nil
+}
+
+cfg := Config{
+    Name:   "api",
+    Server: &Server{Host: "127.0.0.1"},
+}
+
+sink := mapSink{}
+if err := b.WriteValues(&cfg, sink); err != nil {
+    panic(err)
+}
+
+// sink["Name"] is "api".
+// sink["Server"] is cfg.Server.
+// sink["Server.Host"] is "127.0.0.1".
+```
+
+Slices, arrays, and maps of scalar values are written once under their field path, such as `Tags`. Collections of structs are written under a `[]` path, such as `Items[]`, followed by each reachable child under a schema path such as `Items[].Name`. A sink may therefore receive the same child path more than once when a collection contains multiple elements.
+
+`WriteValues` writes nil pointer-to-struct fields but does not allocate or traverse them; nil pointer collection elements are likewise skipped after the collection itself is written. Maps, slices, pointers, and other reference values are passed through without deep copying. If `Set` returns an error, traversal stops and values already accepted by the sink remain there.
+
+---
+
 ### environment variables
 
 Top-level struct field can be populated from an environment variable corresponding to the field uppercase name. For example, `Name string` field value can be set via `NAME` environment variable. 
 
 Nested struct fields can be populated via `PARENT_CHILD` style environment variable names. For example, `Parent struct { Child string }` field value can be set via `PARENT_CHILD` environment variable. 
 
-You can also use `env:"ENV_VAR_NAME"` struct tag to specify a custom environment variable name for a field.
+You can also use `env:"ENV_VAR_NAME"` struct tag to specify a custom environment variable name for a field. An explicit `env` tag takes precedence over a `json` tag. Without an `env` tag, a JSON name is used when present, otherwise the exported field name is used. `env:"-"` and `json:"-"` disable environment traversal for that field and its descendants.
 
 Library also supports environment variables names prefixes, which can be set via `WithEnvPrefix` option.
 
@@ -165,18 +253,15 @@ type S struct {
 
 _ = os.Setenv("MYAPP_CUSTOM_NAME", "Alice")
 
+b, _ := model.NewBinding[S](model.WithEnvPrefix("MYAPP"))
 var s S
-_ = model.SetDefaults(&s, model.WithEnvPrefix("MYAPP"))
+_ = b.ApplyEnv(&s)
 
-fmt.Printf("S after defaults: %+v\n", s) 
-// Output: S after defaults: {Name:Alice Age:0}
+fmt.Printf("S after env apply: %+v\n", s) 
+// Output: S after env apply: {Name:Alice Age:0}
 ```
 
-Values from environment variables are applied **after** literal defaults, so they can override them.
-Reusable `Binding[T]` and `DynamicBinding` instances snapshot environment variables when they are
-constructed, so later process env changes are not observed by that binding. Convenience wrappers
-such as `SetDefaults` and `ValidateWithDefaults` create a fresh binding per call and therefore read
-the current environment each time.
+Environment values are snapshotted during `NewBinding`; changes made to the process environment afterward do not affect `ApplyEnv` or `ValidateWithDefaults`. Environment-backed values are applied separately from literal defaults. If you want the "defaults, then env overrides" flow explicitly, call `ApplyDefaults` first and `ApplyEnv` second. `ValidateWithDefaults` also performs that sequence internally using the binding's constructor-time environment snapshot.
 
 ---
 
@@ -200,17 +285,17 @@ type User struct {
 
 ### Rules
 
-Create rules with `NewRule` and pass them. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call. Duplicate exact overloads (same rule name & identical field type) are rejected.
+Create rules with `NewRule` and pass them through `WithRules`. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call, and separate `WithRules` options compose in declaration order. Duplicate exact overloads (same rule name & identical field type) are rejected.
 
 ```go
-maxLen, _ := validation.NewRule[string]("maxLen", func(s string, params ...string) error {
+maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) error {
     if len(params) < 1 { return fmt.Errorf("maxLen requires 1 param") }
     n, _ := strconv.Atoi(params[0])
     if len(s) > n { return fmt.Errorf("must be <= %d chars", n) }
     return nil
 })
 
-positive64, _ := validation.NewRule[int64]("positive", func(v int64, _ ...string) error {
+positive64, _ := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
     if v <= 0 { return fmt.Errorf("must be > 0") }
     return nil
 })
@@ -227,7 +312,7 @@ type S struct {
     Name string `validate:"min(1)"`
 }
 
-minCustom, _ := validation.NewRule[string]("min", func(s string, _ ...string) error {
+minCustom, _ := model.NewRule[string]("min", func(s string, _ ...string) error {
     if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
     return nil
 })
@@ -268,7 +353,7 @@ Built-in rules are always implicitly available (you do **not** need to register 
 
 ### Structured errors: errorc, sentinels, and structured keys
 
-Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. Sentinel errors live in `github.com/ygrebnov/model/errors`, and strongly-typed keys live in `github.com/ygrebnov/model/keys`:
+Under the hood, `model` uses [`github.com/ygrebnov/errorc`](https://github.com/ygrebnov/errorc) to build structured errors. Sentinel errors live in [`github.com/ygrebnov/model/pkg/errors`](pkg/errors), and strongly-typed keys live in [`github.com/ygrebnov/model/pkg/keys`](pkg/keys):
 
 - Sentinels (examples):
   - `modelerrors.ErrNilObject`
@@ -301,7 +386,8 @@ From your code, you can inspect these errors using `errors.Is`, inspect the wrap
 Example:
 
 ```go
-m, err := model.New(&u, model.WithValidation[User](ctx))
+u := User{}
+err := model.Validate(context.Background(), &u)
 if err != nil {
     var ve *validation.Error
     if errors.As(err, &ve) {

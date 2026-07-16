@@ -1,3 +1,4 @@
+// Package keys defines structured error-context keys used by model.
 package keys
 
 import (
@@ -24,8 +25,10 @@ var (
 	// RuleParamValue identifies a rule parameter value in structured error context.
 	RuleParamValue = newRuleParamKey("value")
 
-	// FieldName identifies a field path or field name in structured error context.
+	// FieldName identifies a field name in structured error context.
 	FieldName = newFieldKey("name")
+	// FieldPath identifies an exact exported field path in structured error context.
+	FieldPath = newFieldKey("path")
 	// FieldType identifies a field type in structured error context.
 	FieldType = newFieldKey("type")
 	// FieldAvailableTypes identifies the available field types for rule overload diagnostics.
@@ -34,14 +37,18 @@ var (
 	// ValueType identifies the runtime value type in structured error context.
 	ValueType = keys.New("value.type")
 	// ObjectType identifies the runtime object type in structured error context.
-	ObjectType   = keys.New("object.type")
+	ObjectType = keys.New("object.type")
+	// ExpectedType identifies an expected type in structured error context.
 	ExpectedType = keys.New("expected_type")
 	// DefaultLiteralKind identifies the kind used when parsing default literal values.
 	DefaultLiteralKind = keys.New("default.literal.kind")
 
+	// TagDefault identifies a default tag value in structured error context.
+	TagDefault = keys.New("tag.default")
 	// Phase identifies the operation phase in structured error context.
 	Phase = keys.New("phase")
 	// Cause identifies an underlying cause in structured error context.
 	Cause = keys.New("cause")
+	// Value identifies a raw value in structured error context.
 	Value = keys.New("value")
 )

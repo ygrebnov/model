@@ -1,14 +1,13 @@
 package tests
 
 import (
-	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/pkg/types"
 )
 
@@ -817,11 +816,6 @@ func checkEqualPtr[T comparable](t *testing.T, name string, got, want *T) {
 	checkEqualValue(t, name, *got, *want)
 }
 
-type myStringer interface{ String() string }
-type wrapS struct{ v string }
-
-func (w wrapS) String() string { return w.v }
-
 // nonempty for string
 func ruleNonEmpty(s string, _ ...string) error {
 	if s == "" {
@@ -830,29 +824,10 @@ func ruleNonEmpty(s string, _ ...string) error {
 	return nil
 }
 
-// withParams echoes params to prove parsing worked
-func ruleWithParams(_ string, params ...string) error {
-	if len(params) == 0 {
-		return fmt.Errorf("expected params")
+func applyBindingDefaultsAndEnv[T any](b *model.Binding[T], obj *T) error {
+	if err := b.ApplyDefaults(obj); err != nil {
+		return err
 	}
-	// Return an error that includes params for assertion
-	return fmt.Errorf("params=%s", strings.Join(params, "|"))
-}
 
-// nonzeroDuration (time.Duration or int64 underlying)
-func ruleNonzeroDuration(d time.Duration, _ ...string) error {
-	if d == 0 {
-		return fmt.Errorf("duration must be non-zero")
-	}
-	return nil
-}
-
-// int rule that always errors (to populate FieldError)
-func ruleIntAlwaysErr(_ int, _ ...string) error {
-	return fmt.Errorf("bad int")
-}
-
-// Rule for fmt.Stringer (AssignableTo interface)
-func ruleStringerBad(_ fmt.Stringer, _ ...string) error {
-	return fmt.Errorf("bad stringer")
+	return b.ApplyEnv(obj)
 }

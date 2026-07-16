@@ -1,4 +1,4 @@
-package validation
+package rules
 
 import (
 	"reflect"
@@ -8,28 +8,15 @@ import (
 	"github.com/ygrebnov/model/pkg/keys"
 )
 
-// Rule represents a named validation rule bound to a specific field type.
-type Rule interface {
-	// GetName returns the rule name used in struct tags and registration.
-	GetName() string
-	// GetValidationFn returns the reflect-based validation function for the rule.
-	GetValidationFn() func(v reflect.Value, params ...string) error
-
-	getFieldTypeName() string
-	getFieldType() reflect.Type
-	isOfType(t reflect.Type) bool
-	isAssignableTo(t reflect.Type) bool
-}
-
-// rule defines a named validation function for a specific field type.
-type rule struct {
+// Rule defines a named validation function for a specific field type.
+type Rule struct {
 	name      string
 	fieldType reflect.Type
 	fn        func(v reflect.Value, params ...string) error
 }
 
 // NewRule creates a typed validation rule with the given name and validation function.
-func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (Rule, error) {
+func NewRule[FieldType any](name string, fn func(value FieldType, params ...string) error) (*Rule, error) {
 	if name == "" || fn == nil {
 		return nil, errors.ErrInvalidRule
 	}
@@ -37,7 +24,7 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 	// Capture the static type of FieldType even when FieldType is an interface.
 	fieldType := reflect.TypeOf((*FieldType)(nil)).Elem()
 
-	return &rule{
+	return &Rule{
 		name:      name,
 		fieldType: fieldType,
 		// fn:        fn,
@@ -62,30 +49,30 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 	}, nil
 }
 
-func (r *rule) GetName() string {
+func (r *Rule) GetName() string {
 	return r.name
 }
 
-func (r *rule) getFieldTypeName() string {
+func (r *Rule) GetFieldTypeName() string {
 	if r.fieldType == nil {
 		return "" // defensive, cannot happen due to constructor check
 	}
 	return r.fieldType.String()
 }
 
-func (r *rule) getFieldType() reflect.Type {
+func (r *Rule) getFieldType() reflect.Type {
 	return r.fieldType
 }
 
-func (r *rule) GetValidationFn() func(v reflect.Value, params ...string) error {
+func (r *Rule) GetValidationFn() func(v reflect.Value, params ...string) error {
 	return r.fn
 }
 
-func (r *rule) isOfType(t reflect.Type) bool {
+func (r *Rule) isOfType(t reflect.Type) bool {
 	return r.fieldType == t
 }
 
-func (r *rule) isAssignableTo(t reflect.Type) bool {
+func (r *Rule) IsAssignableTo(t reflect.Type) bool {
 	if r.fieldType == nil {
 		return false // defensive, cannot happen due to constructor check
 	}
