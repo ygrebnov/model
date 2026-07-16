@@ -2346,7 +2346,7 @@ func TestBinding_Defaults(t *testing.T) {
 					if !errors.Is(err, errors.ErrSetDefault) {
 						t.Fatalf("expected ErrSetDefault, got %v", err)
 					}
-					expectedMsg := "cannot set default value, tag.default: unsupported, field.path: unsupported, cause: default literal unsupported kind, default.literal.kind: struct"
+					expectedMsg := "cannot set default value, tag.default: unsupported, field.path: Unsupported, cause: default literal unsupported kind, default.literal.kind: struct"
 					if err.Error() != expectedMsg {
 						t.Fatalf("expected %s, got %s", expectedMsg, err.Error())
 					}

@@ -106,75 +106,75 @@ func TestBindingValidate_EndToEnd(t *testing.T) {
 	ve := requireValidationError(t, err)
 	byField := ve.ByField()
 
-	assertFieldRule(t, byField, "title", "nonempty")
+	assertFieldRule(t, byField, "Title", "nonempty")
 
 	// omitempty suppresses min(3) for an empty string.
-	assertNoFieldError(t, byField, "note")
+	assertNoFieldError(t, byField, "Note")
 
 	// Ordinary nested structs and non-nil pointers are traversed automatically.
-	assertFieldRule(t, byField, "inner.name", "nonempty")
-	assertFieldRule(t, byField, "inner.wait", "nonzeroDuration")
-	assertNoFieldError(t, byField, "innerptr.name")
-	assertFieldRule(t, byField, "innerptr.wait", "nonzeroDuration")
+	assertFieldRule(t, byField, "Inner.Name", "nonempty")
+	assertFieldRule(t, byField, "Inner.Wait", "nonzeroDuration")
+	assertNoFieldError(t, byField, "InnerPtr.Name")
+	assertFieldRule(t, byField, "InnerPtr.Wait", "nonzeroDuration")
 
 	// validateElem applies ordinary rules to scalar collection elements.
-	assertFieldRule(t, byField, "tags[0]", "nonempty")
-	assertNoFieldError(t, byField, "tags[1]")
-	assertFieldRule(t, byField, "tags[2]", "nonempty")
+	assertFieldRule(t, byField, "Tags[0]", "nonempty")
+	assertNoFieldError(t, byField, "Tags[1]")
+	assertFieldRule(t, byField, "Tags[2]", "nonempty")
 
-	assertNoFieldError(t, byField, "fixed[0]")
-	assertFieldRule(t, byField, "fixed[1]", "nonempty")
+	assertNoFieldError(t, byField, "Fixed[0]")
+	assertFieldRule(t, byField, "Fixed[1]", "nonempty")
 
-	assertFieldRule(t, byField, "labels[bad]", "nonempty")
-	assertNoFieldError(t, byField, "labels[ok]")
+	assertFieldRule(t, byField, "Labels[bad]", "nonempty")
+	assertNoFieldError(t, byField, "Labels[ok]")
 
 	// validateElem:dive traverses struct collection elements.
-	assertFieldRule(t, byField, "items[0].name", "nonempty")
-	assertFieldRule(t, byField, "items[0].wait", "nonzeroDuration")
-	assertNoFieldError(t, byField, "items[1].name")
-	assertFieldRule(t, byField, "items[1].wait", "nonzeroDuration")
+	assertFieldRule(t, byField, "Items[0].Name", "nonempty")
+	assertFieldRule(t, byField, "Items[0].Wait", "nonzeroDuration")
+	assertNoFieldError(t, byField, "Items[1].Name")
+	assertFieldRule(t, byField, "Items[1].Wait", "nonzeroDuration")
 
 	// Nil pointer elements are reported as dive errors; non-nil elements are
 	// traversed normally.
-	assertFieldRule(t, byField, "ptrs[0]", "dive")
-	assertFieldRule(t, byField, "ptrs[1].name", "nonempty")
-	assertFieldRule(t, byField, "ptrs[1].wait", "nonzeroDuration")
+	assertFieldRule(t, byField, "Ptrs[0]", "dive")
+	assertFieldRule(t, byField, "Ptrs[1].Name", "nonempty")
+	assertFieldRule(t, byField, "Ptrs[1].Wait", "nonzeroDuration")
 
 	assertFieldRule(
 		t,
 		byField,
-		"byname[first].name",
+		"ByName[first].Name",
 		"nonempty",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byname[first].wait",
+		"ByName[first].Wait",
 		"nonzeroDuration",
 	)
 	assertNoFieldError(
 		t,
 		byField,
-		"byname[second].name",
+		"ByName[second].Name",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byname[second].wait",
+		"ByName[second].Wait",
 		"nonzeroDuration",
 	)
 
-	assertFieldRule(t, byField, "byptr[nil]", "dive")
+	assertFieldRule(t, byField, "ByPtr[nil]", "dive")
 	assertFieldRule(
 		t,
 		byField,
-		"byptr[set].name",
+		"ByPtr[set].Name",
 		"nonempty",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byptr[set].wait",
+		"ByPtr[set].Wait",
 		"nonzeroDuration",
 	)
 }
@@ -277,9 +277,9 @@ func TestBindingValidate_Builtins(t *testing.T) {
 	)
 	byField := ve.ByField()
 
-	assertFieldRule(t, byField, "name", "min")
-	assertFieldRule(t, byField, "count", "max")
-	assertFieldRule(t, byField, "score", "nonzero")
+	assertFieldRule(t, byField, "Name", "min")
+	assertFieldRule(t, byField, "Count", "max")
+	assertFieldRule(t, byField, "Score", "nonzero")
 }
 
 func TestBindingValidate_OmitEmpty(t *testing.T) {
@@ -331,7 +331,7 @@ func TestBindingValidate_OmitEmpty(t *testing.T) {
 			assertFieldRule(
 				t,
 				validationErr.ByField(),
-				"name",
+				"Name",
 				test.wantRule,
 			)
 		})
@@ -360,11 +360,11 @@ func TestBindingValidate_ValidateElemBuiltins(t *testing.T) {
 	)
 	byField := ve.ByField()
 
-	assertFieldRule(t, byField, "names[0]", "min")
-	assertNoFieldError(t, byField, "names[1]")
+	assertFieldRule(t, byField, "Names[0]", "min")
+	assertNoFieldError(t, byField, "Names[1]")
 
-	assertFieldRule(t, byField, "counts[0]", "min")
-	assertNoFieldError(t, byField, "counts[1]")
+	assertFieldRule(t, byField, "Counts[0]", "min")
+	assertNoFieldError(t, byField, "Counts[1]")
 }
 
 func TestBindingValidate_ValidateElemOmitempty(t *testing.T) {
@@ -391,9 +391,9 @@ func TestBindingValidate_ValidateElemOmitempty(t *testing.T) {
 	)
 	byField := ve.ByField()
 
-	assertNoFieldError(t, byField, "names[0]")
-	assertFieldRule(t, byField, "names[1]", "min")
-	assertNoFieldError(t, byField, "names[2]")
+	assertNoFieldError(t, byField, "Names[0]")
+	assertFieldRule(t, byField, "Names[1]", "min")
+	assertNoFieldError(t, byField, "Names[2]")
 }
 
 func TestBindingValidate_CustomRuleAssignableToInterface(t *testing.T) {
@@ -434,7 +434,7 @@ func TestBindingValidate_CustomRuleAssignableToInterface(t *testing.T) {
 	assertFieldRule(
 		t,
 		ve.ByField(),
-		"value",
+		"Value",
 		"stringer",
 	)
 }
@@ -482,7 +482,7 @@ func TestBindingValidate_CustomRuleReceivesParameters(t *testing.T) {
 		t,
 		binding.Validate(context.Background(), &obj),
 	)
-	fieldErrors := ve.ByField()["value"]
+	fieldErrors := ve.ByField()["Value"]
 
 	if len(fieldErrors) != 1 {
 		t.Fatalf(
@@ -544,7 +544,7 @@ func TestBindingValidate_MultipleRulesAccumulate(t *testing.T) {
 		t,
 		binding.Validate(context.Background(), &obj),
 	)
-	fieldErrors := ve.ByField()["value"]
+	fieldErrors := ve.ByField()["Value"]
 
 	if len(fieldErrors) != 2 {
 		t.Fatalf(
@@ -554,8 +554,8 @@ func TestBindingValidate_MultipleRulesAccumulate(t *testing.T) {
 		)
 	}
 
-	assertFieldRule(t, ve.ByField(), "value", "first")
-	assertFieldRule(t, ve.ByField(), "value", "second")
+	assertFieldRule(t, ve.ByField(), "Value", "first")
+	assertFieldRule(t, ve.ByField(), "Value", "second")
 }
 
 func TestBindingValidate_NilPointerToStructIsSkipped(t *testing.T) {
@@ -857,13 +857,13 @@ func TestBindingValidate_DiveOnScalarElementsReportsRuntimeErrors(
 	assertFieldRule(
 		t,
 		ve.ByField(),
-		"values[0]",
+		"Values[0]",
 		"dive",
 	)
 	assertFieldRule(
 		t,
 		ve.ByField(),
-		"values[1]",
+		"Values[1]",
 		"dive",
 	)
 }

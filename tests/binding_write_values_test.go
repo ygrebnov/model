@@ -65,12 +65,12 @@ func TestBindingWriteValues_ScalarsAndPointers(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "s", value: "value"},
-		{name: "ps", value: obj.PS},
-		{name: "i", value: 7},
-		{name: "pi", value: obj.PI},
-		{name: "b", value: true},
-		{name: "pb", value: obj.PB},
+		{name: "S", value: "value"},
+		{name: "PS", value: obj.PS},
+		{name: "I", value: 7},
+		{name: "PI", value: obj.PI},
+		{name: "B", value: true},
+		{name: "PB", value: obj.PB},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -98,11 +98,11 @@ func TestBindingWriteValues_WritesZeroAndNilValues(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "s", value: ""},
-		{name: "i", value: 0},
-		{name: "b", value: false},
-		{name: "ps", value: (*string)(nil)},
-		{name: "m", value: map[string]int(nil)},
+		{name: "S", value: ""},
+		{name: "I", value: 0},
+		{name: "B", value: false},
+		{name: "PS", value: (*string)(nil)},
+		{name: "M", value: map[string]int(nil)},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -138,10 +138,10 @@ func TestBindingWriteValues_NestedStruct(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "name", value: "app"},
-		{name: "server", value: obj.Server},
-		{name: "server.host", value: "localhost"},
-		{name: "server.port", value: 8080},
+		{name: "Name", value: "app"},
+		{name: "Server", value: obj.Server},
+		{name: "Server.Host", value: "localhost"},
+		{name: "Server.Port", value: 8080},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -175,9 +175,9 @@ func TestBindingWriteValues_NonNilPointerToStruct(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "server", value: obj.Server},
-		{name: "server.host", value: "localhost"},
-		{name: "server.port", value: 8080},
+		{name: "Server", value: obj.Server},
+		{name: "Server.Host", value: "localhost"},
+		{name: "Server.Port", value: 8080},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -207,7 +207,7 @@ func TestBindingWriteValues_NilPointerToStructIsWrittenButNotTraversed(
 	}
 
 	expected := []writtenValue{
-		{name: "server", value: (*nested)(nil)},
+		{name: "Server", value: (*nested)(nil)},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -249,14 +249,14 @@ func TestBindingWriteValues_SliceAndArrayStructElements(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "items[]", value: obj.Items},
-		{name: "items[].name", value: "first"},
-		{name: "items[].port", value: 1},
-		{name: "items[].name", value: "second"},
-		{name: "items[].port", value: 2},
-		{name: "array[]", value: obj.Array},
-		{name: "array[].name", value: "array"},
-		{name: "array[].port", value: 3},
+		{name: "Items[]", value: obj.Items},
+		{name: "Items[].Name", value: "first"},
+		{name: "Items[].Port", value: 1},
+		{name: "Items[].Name", value: "second"},
+		{name: "Items[].Port", value: 2},
+		{name: "Array[]", value: obj.Array},
+		{name: "Array[].Name", value: "array"},
+		{name: "Array[].Port", value: 3},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -290,9 +290,9 @@ func TestBindingWriteValues_PointerSliceElements(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "items[]", value: obj.Items},
-		{name: "items[].name", value: "first"},
-		{name: "items[].name", value: "third"},
+		{name: "Items[]", value: obj.Items},
+		{name: "Items[].Name", value: "first"},
+		{name: "Items[].Name", value: "third"},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -328,9 +328,9 @@ func TestBindingWriteValues_MapStructValues(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "items[]", value: obj.Items},
-		{name: "items[].name", value: "first"},
-		{name: "items[].port", value: 1},
+		{name: "Items[]", value: obj.Items},
+		{name: "Items[].Name", value: "first"},
+		{name: "Items[].Port", value: 1},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -370,7 +370,7 @@ func TestBindingWriteValues_MapPointerValuesSkipNilEntries(t *testing.T) {
 		)
 	}
 
-	if sink.values[0].name != "items[]" ||
+	if sink.values[0].name != "Items[]" ||
 		!reflect.DeepEqual(sink.values[0].value, obj.Items) {
 		t.Fatalf(
 			"first write = %#v, want collection value",
@@ -378,7 +378,7 @@ func TestBindingWriteValues_MapPointerValuesSkipNilEntries(t *testing.T) {
 		)
 	}
 
-	if sink.values[1].name != "items[].name" ||
+	if sink.values[1].name != "Items[].Name" ||
 		sink.values[1].value != "first" {
 		t.Fatalf(
 			"second write = %#v, want non-nil map element field",
@@ -411,8 +411,8 @@ func TestBindingWriteValues_ScalarCollectionsAreWrittenWithoutElementTraversal(
 	}
 
 	expected := []writtenValue{
-		{name: "items", value: obj.Items},
-		{name: "m", value: obj.M},
+		{name: "Items", value: obj.Items},
+		{name: "M", value: obj.M},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -438,7 +438,7 @@ func TestBindingWriteValues_InterfaceValue(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "value", value: "text"},
+		{name: "Value", value: "text"},
 	}
 
 	assertWrittenValues(t, sink.values, expected)
@@ -454,7 +454,7 @@ func TestBindingWriteValues_SinkErrorStopsTraversal(t *testing.T) {
 	sinkErr := errors.New("sink failure")
 	sink := &recordingValueSink{
 		errFor: map[string]error{
-			"second": sinkErr,
+			"Second": sinkErr,
 		},
 	}
 
@@ -483,7 +483,7 @@ func TestBindingWriteValues_SinkErrorStopsTraversal(t *testing.T) {
 	}
 
 	expected := []writtenValue{
-		{name: "first", value: "first"},
+		{name: "First", value: "first"},
 	}
 
 	assertWrittenValues(t, sink.values, expected)

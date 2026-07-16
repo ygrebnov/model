@@ -320,7 +320,7 @@ func parse[T any](
 			continue
 		}
 
-		fieldName := strings.ToLower(field.Name)
+		fieldName := field.Name
 		index := appendIndex(parentIndex, field.Index)
 
 		validateTag := field.Tag.Get(tagValidate)

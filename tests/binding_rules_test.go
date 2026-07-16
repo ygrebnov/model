@@ -93,7 +93,7 @@ func TestBinding_Rules(t *testing.T) {
 			t.Fatalf("Validate() error = %v, want *validation.Error", err)
 		}
 
-		for _, field := range []string{"s", "i"} {
+		for _, field := range []string{"S", "I"} {
 			if _, ok := validationErr.ByField()[field]; !ok {
 				t.Fatalf(
 					"expected validation error for %q, got: %+v",
@@ -142,7 +142,7 @@ func TestBinding_Rules(t *testing.T) {
 			t.Fatalf("Validate() error = %v, want *validation.Error", err)
 		}
 
-		for _, field := range []string{"name", "age", "score", "id"} {
+		for _, field := range []string{"Name", "Age", "Score", "ID"} {
 			if _, ok := validationErr.ByField()[field]; !ok {
 				t.Fatalf(
 					"expected validation error for %q, got: %+v",
@@ -181,7 +181,7 @@ func TestBinding_Rules(t *testing.T) {
 			t.Fatalf("Validate() error = %v, want *validation.Error", err)
 		}
 
-		fieldErrors := validationErr.ByField()["name"]
+		fieldErrors := validationErr.ByField()["Name"]
 		if len(fieldErrors) == 0 ||
 			!strings.Contains(fieldErrors[0].Err.Error(), "custom email") {
 			t.Fatalf("expected custom email error, got: %+v", fieldErrors)

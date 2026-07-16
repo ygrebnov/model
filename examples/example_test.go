@@ -43,9 +43,9 @@ func ExampleBinding() {
 	}
 
 	// Output: validation error:
-	// - Field "id": rule "uuid": rule constraint violated (length=10)
-	// - Field "email": rule "email": rule constraint violated (at_count=1)
-	// - Field "retries": rule "max": rule constraint violated (value=5)
+	// - Field "ID": rule "uuid": rule constraint violated (length=10)
+	// - Field "Email": rule "email": rule constraint violated (at_count=1)
+	// - Field "Retries": rule "max": rule constraint violated (value=5)
 }
 
 func ExampleValidateWithDefaults() {
@@ -102,7 +102,7 @@ func ExampleValidateWithDefaults_withRule() {
 	fmt.Println("unexpected: validation passed")
 
 	// Output: ValidateWithDefaults+WithRule -> validation error:
-	// - Field "d": rule "nonzeroDur": duration must be non-zero
+	// - Field "D": rule "nonzeroDur": duration must be non-zero
 }
 
 func ExampleValidateWithDefaults_withMultipleRules() {
@@ -161,7 +161,7 @@ func ExampleValidateWithDefaults_withMultipleRules() {
 	fmt.Println("WithRules -> ok")
 
 	// Output: WithRules:
-	// - Field "name": rule "nonempty": must not be empty
-	// - Field "age": rule "positive": must be > 0
-	// - Field "age": rule "nonzero": must not be zero
+	// - Field "Name": rule "nonempty": must not be empty
+	// - Field "Age": rule "positive": must be > 0
+	// - Field "Age": rule "nonzero": must not be zero
 }

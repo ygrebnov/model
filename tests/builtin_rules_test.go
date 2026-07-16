@@ -193,12 +193,12 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 				if vErr.Len() != 1 {
 					t.Fatalf("expected 1 field error, but got %d", vErr.Len())
 				}
-				fErr := vErr.ForField("s")
+				fErr := vErr.ForField("S")
 				if len(fErr) != 1 {
 					t.Fatalf("expected 1 field error, but got %d", len(fErr))
 				}
-				if fErr[0].Path != "s" {
-					t.Fatalf("expected field Path s, but got %s", fErr[0].Path)
+				if fErr[0].Path != "S" {
+					t.Fatalf("expected field Path S, but got %s", fErr[0].Path)
 				}
 				if fErr[0].Err == nil || !errors.Is(fErr[0].Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, but got %v", fErr[0].Err)
@@ -674,7 +674,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
-				fe := firstFieldErrorFor(t, err, "email")
+				fe := firstFieldErrorFor(t, err, "Email")
 				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
@@ -695,7 +695,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
-				fe := firstFieldErrorFor(t, err, "id")
+				fe := firstFieldErrorFor(t, err, "ID")
 				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}
@@ -805,7 +805,7 @@ func TestBuiltinStringSemver(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
-				fe := firstFieldErrorFor(t, err, "semver")
+				fe := firstFieldErrorFor(t, err, "Semver")
 				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
 					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
 				}

@@ -41,12 +41,12 @@ func TestBindingApplyValues_AssignsScalarAndPointerValues(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"s":  "provided",
-			"ps": "pointer-value",
-			"i":  7,
-			"pi": 8,
-			"b":  true,
-			"pb": false,
+			"S":  "provided",
+			"PS": "pointer-value",
+			"I":  7,
+			"PI": 8,
+			"B":  true,
+			"PB": false,
 		},
 	}
 
@@ -77,9 +77,9 @@ func TestBindingApplyValues_OverridesExistingValues(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"s": "replacement",
-			"i": 11,
-			"b": false,
+			"S": "replacement",
+			"I": 11,
+			"B": false,
 		},
 	}
 
@@ -120,8 +120,8 @@ func TestBindingApplyValues_ConvertsConvertibleValues(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"s": "converted",
-			"i": int32(17),
+			"S": "converted",
+			"I": int32(17),
 		},
 	}
 
@@ -154,9 +154,9 @@ func TestBindingApplyValues_NilResetsFieldToZeroValue(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"s":  nil,
-			"ps": nil,
-			"m":  nil,
+			"S":  nil,
+			"PS": nil,
+			"M":  nil,
 		},
 	}
 
@@ -234,8 +234,8 @@ func TestBindingApplyValues_NestedStruct(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"server.host": "localhost",
-			"server.port": 8080,
+			"Server.Host": "localhost",
+			"Server.Port": 8080,
 		},
 	}
 
@@ -279,7 +279,7 @@ func TestBindingApplyValues_PointerToStructAllocation(t *testing.T) {
 		{
 			name: "allocates when descendant value exists",
 			values: map[string]any{
-				"server.host": "localhost",
+				"Server.Host": "localhost",
 			},
 			expected: &nested{
 				Host: "localhost",
@@ -349,7 +349,7 @@ func TestBindingApplyValues_RecursivePointerProbeStopsAtCycleBoundary(
 		{
 			name: "first-level value allocates root",
 			values: map[string]any{
-				"root.value": "provided",
+				"Root.Value": "provided",
 			},
 			expected: &node{
 				Value: "provided",
@@ -390,7 +390,7 @@ func TestBindingApplyValues_DirectPointerToStructValue(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"server": expectedServer,
+			"Server": expectedServer,
 		},
 	}
 
@@ -427,8 +427,8 @@ func TestBindingApplyValues_DirectCollectionValues(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"items[]": expectedItems,
-			"m[]":     expectedMap,
+			"Items[]": expectedItems,
+			"M[]":     expectedMap,
 		},
 	}
 
@@ -472,7 +472,7 @@ func TestBindingApplyValues_DoesNotApplyCollectionElementPaths(
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"items[].name": "replacement",
+			"Items[].Name": "replacement",
 		},
 	}
 
@@ -536,11 +536,11 @@ func TestBindingApplyValues_SourceReceivesCompiledSchemaNames(
 	}
 
 	expectedCalls := []string{
-		"top",
-		"nested",
-		"nested.value",
-		"items[]",
-		"items[].value",
+		"Top",
+		"Nested",
+		"Nested.Value",
+		"Items[]",
+		"Items[].Value",
 	}
 
 	if !reflect.DeepEqual(source.calls, expectedCalls) {
@@ -549,6 +549,36 @@ func TestBindingApplyValues_SourceReceivesCompiledSchemaNames(
 			source.calls,
 			expectedCalls,
 		)
+	}
+}
+
+func TestBindingApplyValues_DistinguishesCaseSensitiveExportedNames(
+	t *testing.T,
+) {
+	type config struct {
+		URL string
+		Url string //nolint:stylecheck
+	}
+
+	source := &mapValueSource{
+		values: map[string]any{
+			"URL": "initialism",
+			"Url": "title-case",
+		},
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatalf("NewBinding() error: %v", err)
+	}
+
+	got := config{}
+	if err := binding.ApplyValues(&got, source); err != nil {
+		t.Fatalf("ApplyValues() error: %v", err)
+	}
+
+	if got.URL != "initialism" || got.Url != "title-case" {
+		t.Fatalf("ApplyValues() result = %+v, want both fields assigned", got)
 	}
 }
 
@@ -562,10 +592,10 @@ func TestBindingApplyValues_SourceErrorStopsApplication(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"first": "replacement",
+			"First": "replacement",
 		},
 		errFor: map[string]error{
-			"second": sourceErr,
+			"Second": sourceErr,
 		},
 	}
 
@@ -613,7 +643,7 @@ func TestBindingApplyValues_TypeMismatchReturnsError(t *testing.T) {
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"i": "not-an-int",
+			"I": "not-an-int",
 		},
 	}
 
@@ -653,8 +683,8 @@ func TestBindingApplyValues_EarlierAssignmentsRemainOnLaterTypeMismatch(
 
 	source := &mapValueSource{
 		values: map[string]any{
-			"first":  "applied",
-			"second": "not-an-int",
+			"First":  "applied",
+			"Second": "not-an-int",
 		},
 	}
 
