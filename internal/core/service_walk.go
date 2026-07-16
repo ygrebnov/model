@@ -596,9 +596,7 @@ func collectionElementContext(
 	}
 
 	path := parent.Path
-	if strings.HasSuffix(path, "[]") {
-		path = strings.TrimSuffix(path, "[]")
-	}
+	path = strings.TrimSuffix(path, "[]")
 
 	return walkContext{
 		Node:       parent.Node,
@@ -627,7 +625,7 @@ func nodeLastName(node *schema.Node) string {
 }
 
 // joinRuntimePath joins parent and child runtime path segments.
-func joinRuntimePath(parent string, child string) string {
+func joinRuntimePath(parent, child string) string {
 	if parent == "" {
 		return child
 	}

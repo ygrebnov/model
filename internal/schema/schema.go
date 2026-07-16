@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
@@ -330,8 +329,7 @@ func parse[T any](
 		validateRules := parseValidateTag(validateTag)
 		validateElemRules := parseValidateTag(validateElemTag)
 
-		validateElementDive, validateElemRules :=
-			extractValidateElementDive(validateElemRules)
+		validateElementDive, validateElemRules := extractValidateElementDive(validateElemRules)
 
 		newN := &Node{
 			Name:                appendName(n.Name, fieldName),
@@ -362,13 +360,7 @@ func parse[T any](
 			s.addNode(newN.GetName("."), newN)
 			active[childType] = newN
 
-			if err := parse[T](
-				childType,
-				newN,
-				s,
-				index,
-				active,
-			); err != nil {
+			if err := parse[T](childType, newN, s, index, active); err != nil {
 				return err
 			}
 

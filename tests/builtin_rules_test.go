@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	keysLib "github.com/ygrebnov/keys"
-
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/pkg/errors"

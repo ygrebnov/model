@@ -4,7 +4,6 @@ import (
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
-
 	fieldPkg "github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/internal/schema"

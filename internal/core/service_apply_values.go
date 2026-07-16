@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/ygrebnov/errorc"
-
 	fieldPkg "github.com/ygrebnov/model/field"
 	"github.com/ygrebnov/model/internal/schema"
 	modelerrors "github.com/ygrebnov/model/pkg/errors"
@@ -15,6 +14,8 @@ import (
 // ApplyValuesStruct walks the compiled schema for rv and applies values supplied
 // by source to matching fields. Nested pointer-to-struct fields are allocated
 // only when a value is present for one of their descendants.
+//
+//nolint:gocyclo,funlen // acceptable here
 func (s *Service[T]) ApplyValuesStruct(
 	rv reflect.Value,
 	source fieldPkg.ValueSource,

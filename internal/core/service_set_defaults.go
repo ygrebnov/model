@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/pkg/types"

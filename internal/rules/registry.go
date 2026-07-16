@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/ygrebnov/errorc"
-
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
