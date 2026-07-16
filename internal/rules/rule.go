@@ -4,24 +4,10 @@ import (
 	"reflect"
 
 	"github.com/ygrebnov/errorc"
+
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
-
-/*
-// Rule represents a named validation rule bound to a specific field type.
-type Rule interface {
-	// GetName returns the rule name used in struct tags and registration.
-	GetName() string
-	// GetValidationFn returns the reflect-based validation function for the rule.
-	GetValidationFn() func(v reflect.Value, params ...string) error
-
-	getFieldTypeName() string
-	getFieldType() reflect.Type
-	isOfType(t reflect.Type) bool
-	isAssignableTo(t reflect.Type) bool
-}
-*/
 
 // Rule defines a named validation function for a specific field type.
 type Rule struct {

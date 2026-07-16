@@ -45,6 +45,65 @@ func TestBinding_Rules(t *testing.T) {
 		}
 	})
 
+	t.Run("WithRules: separate options compose", func(t *testing.T) {
+		type sample struct {
+			S string `validate:"nonempty"`
+			I int    `validate:"positive"`
+		}
+
+		nonempty, err := model.NewRule[string](
+			"nonempty",
+			func(value string, _ ...string) error {
+				if value == "" {
+					return errors.New("must not be empty")
+				}
+
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("NewRule(nonempty) error: %v", err)
+		}
+
+		positive, err := model.NewRule[int](
+			"positive",
+			func(value int, _ ...string) error {
+				if value <= 0 {
+					return errors.New("must be positive")
+				}
+
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("NewRule(positive) error: %v", err)
+		}
+
+		binding, err := model.NewBinding[sample](
+			model.WithRules(nonempty),
+			model.WithRules(positive),
+		)
+		if err != nil {
+			t.Fatalf("NewBinding() error: %v", err)
+		}
+
+		err = binding.Validate(context.Background(), &sample{})
+		var validationErr *validation.Error
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Validate() error = %v, want *validation.Error", err)
+		}
+
+		for _, field := range []string{"s", "i"} {
+			if _, ok := validationErr.ByField()[field]; !ok {
+				t.Fatalf(
+					"expected validation error for %q, got: %+v",
+					field,
+					validationErr.ByField(),
+				)
+			}
+		}
+	})
+
 	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
 		r1, err := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })

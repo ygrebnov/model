@@ -23,6 +23,6 @@ func WithEnvPrefix(prefix string) Option {
 // See the Rule type and NewRule function for details on creating rules.
 func WithRules(rules ...Rule) Option {
 	return func(o *options) {
-		o.rules = rules
+		o.rules = append(o.rules, rules...)
 	}
 }

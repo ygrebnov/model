@@ -4,26 +4,15 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/ygrebnov/errorc"
+
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
 
-/*
-// Registry stores validation rules and resolves the best matching overload by name and type.
-type Registry interface {
-	// Add registers a rule in the registry.
-	Add(r Rule) error
-	// Get resolves the best matching rule overload for name and value.
-	Get(name string, v reflect.Value) (Rule, error)
-}
-*/
-
 // Registry is a registry of validation rules.
 type Registry struct {
-	mu    sync.RWMutex
 	rules map[string][]*Rule // rule Name -> overloads by type
 }
 
@@ -35,9 +24,6 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Add(rule *Rule) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if rule == nil {
 		return nil
 	}
@@ -70,9 +56,6 @@ func (r *Registry) Add(rule *Rule) error {
 //  4. If no matches, return a descriptive error listing available overload types.
 //  5. If multiple exact matches (shouldn't happen), return an ambiguity error.
 func (r *Registry) GetByValue(name string, v reflect.Value) (*Rule, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	if !v.IsValid() {
 		return nil,
 			errorc.With(errors.ErrInvalidValue, errorc.String(keys.RuleName, name))
@@ -83,16 +66,10 @@ func (r *Registry) GetByValue(name string, v reflect.Value) (*Rule, error) {
 
 // GetByType returns the best-matching overload of rule `Name` for the given field value type.
 func (r *Registry) GetByType(name string, valueType reflect.Type) (*Rule, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	return r.getByType(name, valueType)
 }
 
 func (r *Registry) getByType(name string, valueType reflect.Type) (*Rule, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	rules := r.rules[name]
 
 	var (
