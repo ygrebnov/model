@@ -246,6 +246,37 @@ func TestBindingApplyDefaults_DiveAllocatesPointerToStruct(t *testing.T) {
 	}
 }
 
+func TestBindingApplyDefaults_DiveStopsAtRecursiveReference(t *testing.T) {
+	type node struct {
+		Value string `default:"value"`
+		Next  *node  `default:"dive"`
+	}
+
+	type config struct {
+		Root *node `default:"dive"`
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatalf("NewBinding() error: %v", err)
+	}
+
+	got := config{}
+	if err := binding.ApplyDefaults(&got); err != nil {
+		t.Fatalf("ApplyDefaults() error: %v", err)
+	}
+
+	if got.Root == nil {
+		t.Fatal("Root = nil, want allocated node")
+	}
+	if got.Root.Value != "value" {
+		t.Fatalf("Root.Value = %q, want %q", got.Root.Value, "value")
+	}
+	if got.Root.Next != nil {
+		t.Fatalf("Root.Next = %#v, want nil at recursive boundary", got.Root.Next)
+	}
+}
+
 func TestBindingApplyDefaults_AllocInitializesNilCollections(t *testing.T) {
 	type config struct {
 		Items []string          `default:"alloc"`

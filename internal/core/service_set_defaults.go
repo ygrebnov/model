@@ -40,7 +40,8 @@ func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
 			}
 		},
 		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
-			return ctx.Node.DefaultTag == tagDive
+			return ctx.Node.DefaultTag == tagDive &&
+				ctx.Node.Reference == nil
 		},
 	}
 
@@ -65,6 +66,10 @@ func applyDefaultWalkValue(
 
 	field = unwrapInterface(field)
 	if !field.IsValid() || !field.CanSet() {
+		return nil
+	}
+
+	if ctx.Node.DefaultTag == tagDive && ctx.Node.Reference != nil {
 		return nil
 	}
 
