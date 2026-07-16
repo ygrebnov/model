@@ -23,11 +23,4 @@
 //
 // Validation is driven by `validate` and `validateElem` tags plus built-in and custom rules.
 // It supports rule parameters via the syntax "rule" or "rule(p1,p2)" and multiple rules separated by commas.
-//
-// Package also supports invariants of Binding and convenience wrappers which resolve type at runtime:
-//   - DynamicBinding,
-//   - SetDefaultsAny, ValidateAny, ValidateWithDefaultsAny.
-//
-// Although it may be necessary to use these dynamic wrappers in some cases, the preferred approach
-// is to use the type-safe Binding[T] or the generic wrappers for compile-time safety.
 package model

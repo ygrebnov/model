@@ -7,6 +7,7 @@ import (
 
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/field"
+	modelerrors "github.com/ygrebnov/model/pkg/errors"
 )
 
 type writtenValue struct {
@@ -495,8 +496,13 @@ func TestBindingWriteValues_NilSink(t *testing.T) {
 	}
 
 	obj := Strings{}
-	if err := binding.WriteValues(&obj, nil); err == nil {
-		t.Fatal("WriteValues() error = nil, want nil-sink error")
+	err = binding.WriteValues(&obj, nil)
+	if !errors.Is(err, modelerrors.ErrInvalidValue) {
+		t.Fatalf(
+			"WriteValues() error = %v, want %v",
+			err,
+			modelerrors.ErrInvalidValue,
+		)
 	}
 }
 

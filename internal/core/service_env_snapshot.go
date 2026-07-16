@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"reflect"
+	"strings"
 
 	fieldPkg "github.com/ygrebnov/model/field"
 )
@@ -30,12 +31,22 @@ func (s *Service[T]) snapshotEnvSource() fieldPkg.EnvSource {
 		envPrefixPath(s.envPrefix),
 		policy,
 		func(ctx walkContext, field reflect.Value) error {
-			if !ctx.EnvEnabled || !canSetLiteralValue(field) {
+			if !ctx.EnvEnabled {
 				return nil
 			}
 
 			envName := joinEnvPath(ctx.EnvPath)
 			if envName == "" {
+				return nil
+			}
+
+			if isCollectionNode(ctx.Node) {
+				snapshotEnvironmentPrefix(snapshot, envName)
+
+				return nil
+			}
+
+			if !canSetLiteralValue(field) {
 				return nil
 			}
 
@@ -48,6 +59,17 @@ func (s *Service[T]) snapshotEnvSource() fieldPkg.EnvSource {
 	)
 
 	return snapshot
+}
+
+func snapshotEnvironmentPrefix(snapshot envSnapshotSource, prefix string) {
+	prefix += "_"
+
+	for _, entry := range os.Environ() {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok && strings.HasPrefix(name, prefix) {
+			snapshot[name] = value
+		}
+	}
 }
 
 type envSnapshotSource map[string]string

@@ -9,7 +9,6 @@ import (
 
 	"github.com/ygrebnov/errorc"
 
-	"github.com/ygrebnov/model/internal/schema"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 	"github.com/ygrebnov/model/pkg/types"
@@ -24,8 +23,7 @@ import (
 //   - slice and array element defaults require `defaultElem:"dive"`;
 //   - defaults are applied to existing map values;
 //   - nil slices and maps are allocated only by `default:"alloc"`;
-//   - nil pointer-to-struct fields are allocated only when `default:"dive"` or
-//     a descendant default requires traversal.
+//   - nil pointer-to-struct fields are allocated only when `default:"dive"`.
 func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
 	policy := walkPolicy{
 		DiveCollection: func(ctx walkContext, field reflect.Value) bool {
@@ -43,8 +41,7 @@ func (s *Service[T]) SetDefaultsStruct(root reflect.Value) error {
 			}
 		},
 		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
-			return ctx.Node.DefaultTag == tagDive ||
-				hasDefaults(ctx.Node.Children)
+			return ctx.Node.DefaultTag == tagDive
 		},
 	}
 
@@ -73,10 +70,11 @@ func applyDefaultWalkValue(
 	}
 
 	if err := applyDefaultTag(field, ctx.Node.DefaultTag); err != nil {
-		return fmt.Errorf(
-			"apply default for %s: %w",
-			ctx.Path,
-			err,
+		return errorc.With(
+			errors.ErrSetDefault,
+			errorc.String(keys.TagDefault, ctx.Node.DefaultTag),
+			errorc.String(keys.FieldPath, ctx.Path),
+			errorc.Error(keys.Cause, err),
 		)
 	}
 
@@ -121,21 +119,6 @@ func applyDefaultTag(field reflect.Value, tag string) error {
 	default:
 		return setLiteralValue(field, tag, true)
 	}
-}
-
-// hasDefaults reports whether this subtree contains any default tags.
-func hasDefaults(nodes []*schema.Node) bool {
-	for _, node := range nodes {
-		if node.DefaultTag != "" || node.DefaultElemTag != "" {
-			return true
-		}
-
-		if hasDefaults(node.Children) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // fieldByIndex resolves a field from base using a compiled index path.

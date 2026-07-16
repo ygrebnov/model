@@ -1,6 +1,16 @@
 package tests
 
-/*
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/ygrebnov/model"
+	"github.com/ygrebnov/model/validation"
+)
+
 func TestBinding_Rules(t *testing.T) {
 	t.Run("add rule via WithRules", func(t *testing.T) {
 		type sample struct{ A int }
@@ -34,36 +44,7 @@ func TestBinding_Rules(t *testing.T) {
 			t.Fatalf("Validate expected rule error, got: %v", err)
 		}
 	})
-*/
 
-/*
-	t.Run("newRuleAdapter: interface overload is usable (AssignableTo)", func(t *testing.T) {
-		// This test is specifically about AssignableTo dispatch, so we
-		// exercise the registry + rule directly instead of relying on tags.
-		obj := struct{ W wrapS }{W: wrapS{v: "Z"}}
-		iface, err := model.NewRule[myStringer]("iface", func(s myStringer, _ ...string) error {
-			return fmt.Errorf("iface:%s", s.String())
-		})
-		if err != nil {
-			t.Fatalf("NewRule error: %v", err)
-		}
-		// Build a lightweight registry and call the rule directly to verify AssignableTo behavior.
-		reg := rules.NewRegistry()
-		if err = reg.Add(iface); err != nil {
-			t.Fatalf("registry.add error: %v", err)
-		}
-		// Simulate dispatch by resolving the rule for the concrete type wrapS.
-		r, err := reg.Get("iface", reflect.ValueOf(obj.W))
-		if err != nil {
-			t.Fatalf("registry.get error: %v", err)
-		}
-		if err = r.GetValidationFn()(reflect.ValueOf(obj.W), nil...); err == nil || !strings.Contains(err.Error(), "iface:Z") {
-			t.Fatalf("expected interface overload to run, got: %v", err)
-		}
-	})
-*/
-
-/*
 	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
 		r1, err := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
@@ -82,6 +63,69 @@ func TestBinding_Rules(t *testing.T) {
 			t.Fatalf("expected duplicate overload rule error, got: %v", err)
 		}
 	})
-}
 
-*/
+	t.Run("implicit builtin rules are applied", func(t *testing.T) {
+		type sample struct {
+			Name  string  `validate:"email"`
+			Age   int     `validate:"min(1)"`
+			Score float64 `validate:"nonzero"`
+			ID    int64   `validate:"nonzero"`
+		}
+
+		binding, err := model.NewBinding[sample]()
+		if err != nil {
+			t.Fatalf("NewBinding() error: %v", err)
+		}
+
+		err = binding.Validate(context.Background(), &sample{})
+		var validationErr *validation.Error
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Validate() error = %v, want *validation.Error", err)
+		}
+
+		for _, field := range []string{"name", "age", "score", "id"} {
+			if _, ok := validationErr.ByField()[field]; !ok {
+				t.Fatalf(
+					"expected validation error for %q, got: %+v",
+					field,
+					validationErr.ByField(),
+				)
+			}
+		}
+	})
+
+	t.Run("custom rule overrides builtin rule", func(t *testing.T) {
+		type sample struct {
+			Name string `validate:"email"`
+		}
+
+		customEmail, err := model.NewRule[string](
+			"email",
+			func(value string, _ ...string) error {
+				return errors.New("custom email: " + value)
+			},
+		)
+		if err != nil {
+			t.Fatalf("NewRule() error: %v", err)
+		}
+
+		binding, err := model.NewBinding[sample](
+			model.WithRules(customEmail),
+		)
+		if err != nil {
+			t.Fatalf("NewBinding() error: %v", err)
+		}
+
+		err = binding.Validate(context.Background(), &sample{})
+		var validationErr *validation.Error
+		if !errors.As(err, &validationErr) {
+			t.Fatalf("Validate() error = %v, want *validation.Error", err)
+		}
+
+		fieldErrors := validationErr.ByField()["name"]
+		if len(fieldErrors) == 0 ||
+			!strings.Contains(fieldErrors[0].Err.Error(), "custom email") {
+			t.Fatalf("expected custom email error, got: %+v", fieldErrors)
+		}
+	})
+}

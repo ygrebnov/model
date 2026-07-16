@@ -7,6 +7,7 @@ import (
 
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/field"
+	modelerrors "github.com/ygrebnov/model/pkg/errors"
 )
 
 type mapValueSource struct {
@@ -572,6 +573,13 @@ func TestBindingApplyValues_TypeMismatchReturnsError(t *testing.T) {
 	err = binding.ApplyValues(&got, source)
 	if err == nil {
 		t.Fatal("ApplyValues() error = nil, want type mismatch")
+	}
+	if !errors.Is(err, modelerrors.ErrTypeMismatch) {
+		t.Fatalf(
+			"ApplyValues() error = %v, want %v",
+			err,
+			modelerrors.ErrTypeMismatch,
+		)
 	}
 
 	if got.I != 42 {

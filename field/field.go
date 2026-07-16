@@ -1,19 +1,5 @@
 package field
 
-/*
-type Field struct {
-	Path            string
-	Name            string
-	Type            reflect.Type
-	JSONName        string
-	EnvPath         []string
-	DefaultTag      string
-	DefaultElemTag  string
-	ValidateTag     string
-	ValidateElemTag string
-}
-*/
-
 type ValueSource interface {
 	Get(name string) (any, bool, error)
 }

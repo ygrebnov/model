@@ -19,7 +19,7 @@ func (s *Service[T]) ApplyEnvStruct(root reflect.Value) error {
 
 	policy := walkPolicy{
 		DiveCollection: func(ctx walkContext, _ reflect.Value) bool {
-			return ctx.EnvEnabled && len(ctx.Node.Children) > 0
+			return ctx.EnvEnabled
 		},
 		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
 			return ctx.EnvEnabled &&

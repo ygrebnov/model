@@ -12,7 +12,7 @@
 - Accumulate all issues into a single `*validation.Error` (no fail-fast).
 - Recurse through nested structs, pointers, slices/arrays, and map values, including cycle-safe validation of pointer graphs.
 
-Library is designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). `Binding[T]` is a shared engine you can use for defaults and validation across many values of the same type. Library provides a set of convenient wrappers for one-off use cases, too. `DynamicBinding` is available for cases where you need to validate arbitrary types at runtime.
+Library is designed to be **small, explicit, and type-safe** (uses generics). You register rules (via `NewRule`) and `model` handles traversal, dispatch, and error reporting. Built‑in rules are always available implicitly (you don’t have to register them unless you want to override their behavior). `Binding[T]` is a shared engine you can use for defaults and validation across many values of the same type. Library provides a set of convenient wrappers for one-off use cases, too.
 
 ## Features
 
@@ -63,7 +63,7 @@ type User struct {
 }
 
 func main() {
-	customRule, _ := validation.NewRule("email", func(s string, _ ...string) error {
+	customRule, _ := model.NewRule("email", func(s string, _ ...string) error {
 	    if s != "user@company.com" {
 	        return fmt.Errorf("must be 'user@company.com'")
 	    }
@@ -210,14 +210,14 @@ type User struct {
 Create rules with `NewRule` and pass them. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call. Duplicate exact overloads (same rule name & identical field type) are rejected.
 
 ```go
-maxLen, _ := validation.NewRule[string]("maxLen", func(s string, params ...string) error {
+maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) error {
     if len(params) < 1 { return fmt.Errorf("maxLen requires 1 param") }
     n, _ := strconv.Atoi(params[0])
     if len(s) > n { return fmt.Errorf("must be <= %d chars", n) }
     return nil
 })
 
-positive64, _ := validation.NewRule[int64]("positive", func(v int64, _ ...string) error {
+positive64, _ := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
     if v <= 0 { return fmt.Errorf("must be > 0") }
     return nil
 })
@@ -234,7 +234,7 @@ type S struct {
     Name string `validate:"min(1)"`
 }
 
-minCustom, _ := validation.NewRule[string]("min", func(s string, _ ...string) error {
+minCustom, _ := model.NewRule[string]("min", func(s string, _ ...string) error {
     if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
     return nil
 })

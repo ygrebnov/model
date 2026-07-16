@@ -24,8 +24,8 @@ var (
 	// RuleParamValue identifies a rule parameter value in structured error context.
 	RuleParamValue = newRuleParamKey("value")
 
-	// FieldName identifies a field path or field name in structured error context.
 	FieldName = newFieldKey("name")
+	FieldPath = newFieldKey("path")
 	// FieldType identifies a field type in structured error context.
 	FieldType = newFieldKey("type")
 	// FieldAvailableTypes identifies the available field types for rule overload diagnostics.
@@ -39,6 +39,7 @@ var (
 	// DefaultLiteralKind identifies the kind used when parsing default literal values.
 	DefaultLiteralKind = keys.New("default.literal.kind")
 
+	TagDefault = keys.New("tag.default")
 	// Phase identifies the operation phase in structured error context.
 	Phase = keys.New("phase")
 	// Cause identifies an underlying cause in structured error context.

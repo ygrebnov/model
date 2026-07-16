@@ -19,6 +19,10 @@ type wrapGet struct{ v string }
 
 func (w wrapGet) String() string { return w.v }
 
+type registryStringer interface {
+	String() string
+}
+
 // Helper to fetch a builtin rule for tests after lazy-init refactor.
 func builtinRuleForTest(t *testing.T, name string, typ reflect.Type) *Rule {
 	t.Helper()
@@ -430,5 +434,38 @@ func TestRegistry_get(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRegistryGetByValue_AssignableInterfaceExecutesRule(
+	t *testing.T,
+) {
+	rule, err := NewRule[registryStringer](
+		"iface",
+		func(value registryStringer, _ ...string) error {
+			return errors.New("iface:" + value.String())
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewRule() error: %v", err)
+	}
+
+	registry := NewRegistry()
+	if err := registry.Add(rule); err != nil {
+		t.Fatalf("Add() error: %v", err)
+	}
+
+	value := wrapGet{v: "Z"}
+	resolved, err := registry.GetByValue(
+		"iface",
+		reflect.ValueOf(value),
+	)
+	if err != nil {
+		t.Fatalf("GetByValue() error: %v", err)
+	}
+
+	err = resolved.GetValidationFn()(reflect.ValueOf(value))
+	if err == nil || !strings.Contains(err.Error(), "iface:Z") {
+		t.Fatalf("interface overload error = %v, want iface:Z", err)
 	}
 }

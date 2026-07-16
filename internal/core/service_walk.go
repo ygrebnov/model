@@ -139,7 +139,9 @@ func walkNodeByIndex(
 		}
 	}
 
-	if len(node.Children) == 0 && node.Reference == nil {
+	if len(node.Children) == 0 &&
+		node.Reference == nil &&
+		!isCollectionNode(node) {
 		return nil
 	}
 
@@ -367,6 +369,20 @@ func walkSliceArrayChildren(
 
 	children := schemaNodeChildren(node)
 	if len(children) == 0 {
+		for i := 0; i < collection.Len(); i++ {
+			if action == nil {
+				continue
+			}
+
+			elemCtx := collectionElementContext(
+				ctx,
+				fmt.Sprint(i),
+			)
+			if err := action(elemCtx, collection.Index(i)); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
@@ -414,9 +430,6 @@ func walkMapChildren(
 	}
 
 	children := schemaNodeChildren(node)
-	if len(children) == 0 {
-		return nil
-	}
 
 	for _, key := range mapValue.MapKeys() {
 		value := unwrapInterface(mapValue.MapIndex(key))
@@ -432,15 +445,23 @@ func walkMapChildren(
 			fmt.Sprint(key.Interface()),
 		)
 
-		if err := walkCollectionElement(
-			updated,
-			children,
-			elemCtx,
-			policy,
-			action,
-			activePointers,
-		); err != nil {
-			return err
+		if len(children) == 0 {
+			if action != nil {
+				if err := action(elemCtx, updated); err != nil {
+					return err
+				}
+			}
+		} else {
+			if err := walkCollectionElement(
+				updated,
+				children,
+				elemCtx,
+				policy,
+				action,
+				activePointers,
+			); err != nil {
+				return err
+			}
 		}
 
 		mapValue.SetMapIndex(key, updated)
@@ -642,6 +663,14 @@ func applyWalkNodeEnvPath(
 	}
 
 	if part == "" {
+		part = jsonTagName(node.JSONTag)
+	}
+
+	if part == "-" {
+		return parent, false
+	}
+
+	if part == "" {
 		part = nodeLastName(node)
 	}
 
@@ -650,6 +679,15 @@ func applyWalkNodeEnvPath(
 	}
 
 	return appendEnvPart(parent, part), true
+}
+
+// jsonTagName returns the JSON field name, excluding comma-separated options.
+func jsonTagName(tag string) string {
+	if index := strings.IndexByte(tag, ','); index >= 0 {
+		return tag[:index]
+	}
+
+	return tag
 }
 
 func appendEnvPart(parent []string, part string) []string {

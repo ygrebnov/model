@@ -29,8 +29,9 @@ func (s *Service[T]) WriteValuesStruct(
 	}
 
 	policy := walkPolicy{
-		DiveCollection: func(_ walkContext, _ reflect.Value) bool {
-			return true
+		DiveCollection: func(ctx walkContext, _ reflect.Value) bool {
+			return len(ctx.Node.Children) > 0 ||
+				ctx.Node.Reference != nil
 		},
 		AllocPtrStruct: func(_ walkContext, _ reflect.Value) bool {
 			return false

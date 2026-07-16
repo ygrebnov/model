@@ -115,8 +115,8 @@ func TestBindingValidate_EndToEnd(t *testing.T) {
 	// Ordinary nested structs and non-nil pointers are traversed automatically.
 	assertFieldRule(t, byField, "inner.name", "nonempty")
 	assertFieldRule(t, byField, "inner.wait", "nonzeroDuration")
-	assertNoFieldError(t, byField, "innerPtr.name")
-	assertFieldRule(t, byField, "innerPtr.wait", "nonzeroDuration")
+	assertNoFieldError(t, byField, "innerptr.name")
+	assertFieldRule(t, byField, "innerptr.wait", "nonzeroDuration")
 
 	// validateElem applies ordinary rules to scalar collection elements.
 	assertFieldRule(t, byField, "tags[0]", "nonempty")
@@ -144,38 +144,38 @@ func TestBindingValidate_EndToEnd(t *testing.T) {
 	assertFieldRule(
 		t,
 		byField,
-		"byName[first].name",
+		"byname[first].name",
 		"nonempty",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byName[first].wait",
+		"byname[first].wait",
 		"nonzeroDuration",
 	)
 	assertNoFieldError(
 		t,
 		byField,
-		"byName[second].name",
+		"byname[second].name",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byName[second].wait",
+		"byname[second].wait",
 		"nonzeroDuration",
 	)
 
-	assertFieldRule(t, byField, "byPtr[nil]", "dive")
+	assertFieldRule(t, byField, "byptr[nil]", "dive")
 	assertFieldRule(
 		t,
 		byField,
-		"byPtr[set].name",
+		"byptr[set].name",
 		"nonempty",
 	)
 	assertFieldRule(
 		t,
 		byField,
-		"byPtr[set].wait",
+		"byptr[set].wait",
 		"nonzeroDuration",
 	)
 }
@@ -281,6 +281,62 @@ func TestBindingValidate_Builtins(t *testing.T) {
 	assertFieldRule(t, byField, "name", "min")
 	assertFieldRule(t, byField, "count", "max")
 	assertFieldRule(t, byField, "score", "nonzero")
+}
+
+func TestBindingValidate_OmitEmpty(t *testing.T) {
+	type config struct {
+		Name string `validate:"omitempty,min(3)"`
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatalf("NewBinding() error: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		value    string
+		wantRule string
+	}{
+		{
+			name:  "empty value is skipped",
+			value: "",
+		},
+		{
+			name:  "valid value passes",
+			value: "valid",
+		},
+		{
+			name:     "short non-empty value fails",
+			value:    "ab",
+			wantRule: "min",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			obj := config{
+				Name: test.value,
+			}
+
+			err := binding.Validate(context.Background(), &obj)
+			if test.wantRule == "" {
+				if err != nil {
+					t.Fatalf("Validate() error: %v", err)
+				}
+
+				return
+			}
+
+			validationErr := requireValidationError(t, err)
+			assertFieldRule(
+				t,
+				validationErr.ByField(),
+				"name",
+				test.wantRule,
+			)
+		})
+	}
 }
 
 func TestBindingValidate_ValidateElemBuiltins(t *testing.T) {

@@ -39,6 +39,10 @@ var (
 )
 
 var (
+	ErrApplyDefaultTagFailure = errorc.New("apply default tag failure")
+)
+
+var (
 	ErrInvalidValidateElemUsage = errorc.New("validateElem can only be used on slice, array, or map fields")
 )
 
