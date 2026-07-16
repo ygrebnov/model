@@ -319,6 +319,62 @@ func TestBindingApplyValues_PointerToStructAllocation(t *testing.T) {
 	}
 }
 
+func TestBindingApplyValues_RecursivePointerProbeStopsAtCycleBoundary(
+	t *testing.T,
+) {
+	type node struct {
+		Value string
+		Next  *node
+	}
+
+	type config struct {
+		Root *node
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatalf("NewBinding() error: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		values   map[string]any
+		expected *node
+	}{
+		{
+			name:     "empty source leaves root nil",
+			values:   map[string]any{},
+			expected: nil,
+		},
+		{
+			name: "first-level value allocates root",
+			values: map[string]any{
+				"root.value": "provided",
+			},
+			expected: &node{
+				Value: "provided",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := config{}
+			source := &mapValueSource{
+				values: test.values,
+			}
+
+			if err := binding.ApplyValues(&got, source); err != nil {
+				t.Fatalf("ApplyValues() error: %v", err)
+			}
+
+			if !reflect.DeepEqual(got.Root, test.expected) {
+				t.Fatalf("Root = %#v, want %#v", got.Root, test.expected)
+			}
+		})
+	}
+}
+
 func TestBindingApplyValues_DirectPointerToStructValue(t *testing.T) {
 	type nested struct {
 		Host string

@@ -79,8 +79,8 @@ func (s *Service[T]) ApplyValuesStruct(
 		DiveCollection: func(walkContext, reflect.Value) bool {
 			return false
 		},
-		AllocPtrStruct: func(walkContext, reflect.Value) bool {
-			return true
+		AllocPtrStruct: func(ctx walkContext, _ reflect.Value) bool {
+			return ctx.Node.Reference == nil
 		},
 	}
 
