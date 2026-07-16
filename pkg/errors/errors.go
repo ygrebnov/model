@@ -1,3 +1,7 @@
+// Package errors defines sentinel errors returned by model operations.
+//
+// Callers can match these errors with errors.Is, directly or through the Is
+// helper in this package.
 package errors
 
 import (
@@ -6,16 +10,18 @@ import (
 	"github.com/ygrebnov/errorc"
 )
 
-// Sentinel errors for constructor misuses. Use errors.Is to match.
+// Sentinel errors returned by model operations. Use errors.Is to match.
 var (
+	// ErrNilContext reports that validation received a nil context.
 	ErrNilContext = errorc.New("nil context")
 	// ErrNilObject reports that a required object pointer was nil.
-	ErrNilObject    = errorc.New("nil object")
+	ErrNilObject = errorc.New("nil object")
+	// ErrNilEnvSource reports that no environment snapshot source is available.
 	ErrNilEnvSource = errorc.New("nil env source")
-	// ErrNotStructPtr reports that a value expected to be a non-nil pointer to a struct was not.
-	ErrNotStructPtr        = errorc.New("object must be a non-nil pointer to struct")
+	// ErrCannotCompileSchema reports a failure while compiling struct metadata.
 	ErrCannotCompileSchema = errorc.New("cannot compile schema")
-	ErrTypeParamNotStruct  = errorc.New("type parameter must be a struct")
+	// ErrTypeParamNotStruct reports that a binding type parameter is not a struct.
+	ErrTypeParamNotStruct = errorc.New("type parameter must be a struct")
 	// ErrTypeMismatch reports that a value's type did not match the expected type.
 	ErrTypeMismatch = errorc.New("type mismatch")
 	// ErrInvalidRule reports that a rule definition is missing a name or validation function.
@@ -39,10 +45,7 @@ var (
 )
 
 var (
-	ErrApplyDefaultTagFailure = errorc.New("apply default tag failure")
-)
-
-var (
+	// ErrInvalidValidateElemUsage reports validateElem on a non-collection field.
 	ErrInvalidValidateElemUsage = errorc.New("validateElem can only be used on slice, array, or map fields")
 )
 
@@ -57,12 +60,18 @@ var (
 )
 
 var (
-	ErrCannotParseInt         = errorc.New("cannot parse int")
-	ErrCannotParseUint        = errorc.New("cannot parse uint")
+	// ErrCannotParseInt reports an invalid signed integer literal.
+	ErrCannotParseInt = errorc.New("cannot parse int")
+	// ErrCannotParseUint reports an invalid unsigned integer literal.
+	ErrCannotParseUint = errorc.New("cannot parse uint")
+	// ErrCannotParseRuneLiteral reports an invalid rune literal.
 	ErrCannotParseRuneLiteral = errorc.New("cannot parse rune literal")
-	ErrCannotParseFloat       = errorc.New("cannot parse float")
-	ErrCannotParseComplex     = errorc.New("cannot parse complex")
-	ErrCannotParseDuration    = errorc.New("cannot parse duration")
+	// ErrCannotParseFloat reports an invalid floating-point literal.
+	ErrCannotParseFloat = errorc.New("cannot parse float")
+	// ErrCannotParseComplex reports an invalid complex literal.
+	ErrCannotParseComplex = errorc.New("cannot parse complex")
+	// ErrCannotParseDuration reports an invalid duration literal.
+	ErrCannotParseDuration = errorc.New("cannot parse duration")
 )
 
 // Is reports whether err matches target via errors.Is.
@@ -70,6 +79,7 @@ func Is(err, target error) bool {
 	return errorsPkg.Is(err, target)
 }
 
+// GetBase unwraps err until it reaches the innermost wrapped error.
 func GetBase(err error) error {
 	if err == nil {
 		return nil

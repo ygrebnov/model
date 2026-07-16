@@ -12,19 +12,20 @@ import (
 	"github.com/ygrebnov/model/validation"
 )
 
-// Binding provides defaulting, value application, value export, and validation
-// capabilities for type T.
+// Binding provides defaulting, external value application, value export, and
+// validation for struct type T.
 //
-// A Binding is safe for concurrent use after construction because its compiled
-// schema, validation plan, and environment snapshot are immutable. The objects,
-// sources, and sinks passed to its methods remain owned by the caller:
+// NewBinding compiles the schema and validation plan once. A Binding is safe
+// for concurrent use after construction because that metadata and its
+// environment snapshot are immutable. The objects, sources, and sinks passed
+// to its methods remain owned by the caller:
 //
 //   - concurrent calls using different objects are safe when the supplied
 //     sources and sinks are themselves safe for concurrent use;
 //   - concurrent operations on the same object require caller-side
 //     synchronization;
-//   - callers must not mutate an object concurrently with Validate or
-//     WriteValues;
+//   - callers must not mutate an object concurrently with ApplyDefaults,
+//     ApplyValues, ApplyEnv, Validate, ValidateWithDefaults, or WriteValues;
 //   - ValueSink implementations that retain maps, slices, pointers, or other
 //     reference values receive references to the object's current values rather
 //     than deep copies.
@@ -56,9 +57,13 @@ type Rule struct {
 
 // NewRule creates a named custom validation rule for FieldType.
 //
-// The validation function may be called concurrently by different bindings and
-// validation operations. It must therefore synchronize access to any mutable
-// state it captures.
+// The name must be non-empty and fn must be non-nil. Custom rules with the
+// same name and field type replace the corresponding built-in rule; duplicate
+// custom overloads are rejected when NewBinding is called.
+//
+// The validation function may be called concurrently by different bindings or
+// validation operations. It must therefore synchronize access to mutable state
+// it captures.
 func NewRule[FieldType any](
 	name string,
 	fn func(FieldType, ...string) error,
@@ -73,14 +78,15 @@ func NewRule[FieldType any](
 	}, nil
 }
 
-// NewBinding compiles the schema and validation plan for T.
+// NewBinding compiles a reusable Binding for struct type T.
 //
-// Built-in validation rules are available implicitly. Use WithRules to add
-// custom rules and WithEnvPrefix to prefix environment variable names used by
-// ApplyEnv and ValidateWithDefaults.
+// T must be a struct, not a pointer. Built-in validation rules are available
+// implicitly. Use WithRules to add custom rules and WithEnvPrefix to prefix
+// environment variable names used by ApplyEnv and ValidateWithDefaults.
 //
-// The returned Binding is fully initialized and immutable. Environment values
-// are snapshotted during this call.
+// The returned Binding is fully initialized and immutable. It snapshots
+// environment values during this call, so later process-environment changes do
+// not affect ApplyEnv or ValidateWithDefaults.
 func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 	o := &options{}
 
@@ -132,12 +138,12 @@ func newRulesRegistry(
 	return registry, nil
 }
 
-// ApplyDefaults applies values declared through default and defaultElem tags to
-// zero fields of obj.
+// ApplyDefaults applies default and defaultElem tags to zero fields of obj.
 //
-// ApplyDefaults evaluates defaults on every call. It is idempotent but is not
-// guarded to run only once. Concurrent mutation of obj requires caller-side
-// synchronization.
+// Literal defaults do not overwrite non-zero values. default:"alloc"
+// initializes nil slices and maps, and default:"dive" allocates a nil
+// pointer-to-struct before traversing it, except at a recursive schema
+// boundary. ApplyDefaults evaluates defaults on every call and is idempotent.
 func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -147,11 +153,21 @@ func (b *Binding[T]) ApplyDefaults(obj *T) error {
 	return b.service.SetDefaultsStruct(elem)
 }
 
-// ApplyValues applies values supplied by source to obj using the compiled
-// schema metadata.
+// ApplyValues applies values supplied by source to obj using compiled schema
+// paths.
 //
-// The caller must synchronize concurrent access to obj. The source must also be
-// safe for concurrent use when shared between calls.
+// ValueSource.Get is called with exact exported field paths such as "Name" and
+// "Server.Host". Collection fields use a "[]" suffix, such as "Items[]"; the
+// source receives descendant collection paths, but ApplyValues only assigns
+// direct collection values rather than individual collection elements.
+//
+// A missing source value leaves its field unchanged. A found nil value resets
+// the field to its zero value. Other values must be assignable to, convertible
+// to, or assignable or convertible to the element type of a pointer field.
+// Scalar values for pointer fields allocate the pointer. Nil
+// pointer-to-struct fields are allocated only when a descendant value is
+// supplied. Lookup and assignment errors are returned; either can leave earlier
+// assignments in place.
 func (b *Binding[T]) ApplyValues(
 	obj *T,
 	source field.ValueSource,
@@ -164,8 +180,16 @@ func (b *Binding[T]) ApplyValues(
 	return b.service.ApplyValuesStruct(elem, source)
 }
 
-// ApplyEnv applies the environment values snapshotted when the Binding was
-// constructed. Concurrent mutation of obj requires caller-side synchronization.
+// ApplyEnv applies environment values snapshotted when the Binding was
+// constructed.
+//
+// An explicit env tag takes precedence. Without one, a JSON tag name is used
+// when present; otherwise the exported field name is used. env:"-" and
+// json:"-" disable environment traversal for that field and its descendants.
+// Path segments are joined with underscores and optionally prefixed by
+// WithEnvPrefix. Values present in the snapshot replace existing values. Nil
+// pointer-to-struct fields are allocated only when the snapshot contains a
+// descendant value.
 func (b *Binding[T]) ApplyEnv(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {
@@ -175,11 +199,18 @@ func (b *Binding[T]) ApplyEnv(obj *T) error {
 	return b.service.ApplyEnvStruct(elem)
 }
 
-// WriteValues writes values from obj to sink using the compiled schema
-// metadata.
+// WriteValues writes reachable values from obj to sink using compiled schema
+// paths.
 //
-// The caller must not mutate obj concurrently with this method. A shared sink
-// must provide its own synchronization.
+// Paths use exact exported field names, such as "Name" and "Server.Host".
+// A collection of structs uses a "[]" suffix, such as "Items[]", and each
+// reachable element's fields are written using paths such as "Items[].Name".
+// Scalar collections are written once using their field path, such as "Tags".
+//
+// Nil pointer-to-struct fields and nil pointer collection elements are written
+// but not traversed. Maps, slices, pointers, and other reference values are
+// passed to sink as the original values rather than deep copies. Sink errors
+// stop traversal and are returned; values already passed to sink remain there.
 func (b *Binding[T]) WriteValues(
 	obj *T,
 	sink field.ValueSink,
@@ -192,11 +223,11 @@ func (b *Binding[T]) WriteValues(
 	return b.service.WriteValuesStruct(elem, sink)
 }
 
-// Validate applies rules declared through validate and validateElem tags.
+// Validate applies validate and validateElem rules declared on obj.
 //
-// It returns *validation.Error when one or more constraints fail. Context
-// cancellation and operational errors are returned directly. The caller must
-// not mutate obj concurrently with validation.
+// It returns *validation.Error when one or more constraints fail. Field paths
+// use exact exported field names. Context cancellation and operational errors
+// are returned directly.
 func (b *Binding[T]) Validate(
 	ctx context.Context,
 	obj *T,
@@ -213,12 +244,11 @@ func (b *Binding[T]) Validate(
 	return b.validateValue(ctx, elem)
 }
 
-// ValidateWithDefaults applies defaults and snapshotted environment values
-// before validating obj.
+// ValidateWithDefaults applies defaults, snapshotted environment values, and
+// validation to obj, in that order.
 //
 // This sequence is not transactional: when a later step fails, changes made by
-// earlier steps remain in obj. The caller must provide exclusive access to obj
-// for the complete operation.
+// earlier steps remain in obj.
 func (b *Binding[T]) ValidateWithDefaults(
 	ctx context.Context,
 	obj *T,

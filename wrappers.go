@@ -4,8 +4,9 @@ import (
 	"context"
 )
 
-// SetDefaults creates a new Binding for type TObject and applies default values
-// to the provided object.
+// SetDefaults creates a Binding for TObject and applies default values to obj.
+//
+// It is equivalent to creating a Binding with opts and calling ApplyDefaults.
 func SetDefaults[TObject any](obj *TObject, opts ...Option) error {
 	b, err := NewBinding[TObject](opts...)
 	if err != nil {
@@ -15,14 +16,11 @@ func SetDefaults[TObject any](obj *TObject, opts ...Option) error {
 	return b.ApplyDefaults(obj)
 }
 
-// Validate creates a new Binding for type TObject and validates the provided object
-// according to the registered rules.
+// Validate creates a Binding for TObject and validates obj.
 //
-// Builtin rules are applied implicitly.
-//
-// Use WithRules option to register custom validation rules.
-// See [github.com/ygrebnov/model/validation.Rule] and [github.com/ygrebnov/model/validation.NewRule]
-// for details on creating rules.
+// It is equivalent to creating a Binding with opts and calling Validate.
+// Built-in rules are applied implicitly; use WithRules to register custom
+// rules.
 func Validate[TObject any](ctx context.Context, obj *TObject, opts ...Option) error {
 	b, err := NewBinding[TObject](opts...)
 	if err != nil {
@@ -32,14 +30,12 @@ func Validate[TObject any](ctx context.Context, obj *TObject, opts ...Option) er
 	return b.Validate(ctx, obj)
 }
 
-// ValidateWithDefaults creates a new Binding for type TObject, applies default values and snapshotted
-// environment-backed values to the provided object, and then validates the object according to the
-// registered rules.
-// Builtin rules are applied implicitly.
+// ValidateWithDefaults creates a Binding for TObject, then applies defaults,
+// applies its snapshotted environment values, and validates obj.
 //
-// Use WithRules option to register custom validation rules.
-// See [github.com/ygrebnov/model/validation.Rule] and [github.com/ygrebnov/model/validation.NewRule]
-// for details on creating rules.
+// It is equivalent to creating a Binding with opts and calling
+// Binding.ValidateWithDefaults. Built-in rules are applied implicitly; use
+// WithRules to register custom rules.
 func ValidateWithDefaults[TObject any](ctx context.Context, obj *TObject, opts ...Option) error {
 	b, err := NewBinding[TObject](opts...)
 	if err != nil {
