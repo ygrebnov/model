@@ -142,6 +142,8 @@ Supported literal types:
 
 Defaults are applied only to **zero values**. Pointer-to-scalar fields (e.g., `*int`, `*bool`) are auto-allocated for literal defaults when nil. Pointer-to-complex types (struct/map/slice) are **not** auto-allocated for literals. Use `dive` to recurse into struct or `*struct` elements (allocating a new struct for nil pointers). Use `alloc` to allocate an empty slice/map if nil.
 
+`types.Duration` marshals as a duration string and unmarshals duration strings or integer nanoseconds in both JSON and YAML.
+
 ---
 
 ### `defaultElem:"…"` struct tag
