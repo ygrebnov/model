@@ -46,6 +46,8 @@ func (s *Service[T]) applyEnvWalkValue(
 	}
 
 	field = unwrapInterface(field)
+	s.materializeEnvSliceElements(ctx, field)
+
 	if !canSetLiteralValue(field) {
 		return nil
 	}
@@ -84,6 +86,11 @@ func (s *Service[T]) hasNestedEnvValue(
 			continue
 		}
 
+		if isStructSliceNode(child) &&
+			len(s.envCollectionIndexes(childEnvPath)) > 0 {
+			return true
+		}
+
 		if isSupportedLiteralType(child.Type) {
 			if _, ok := s.envSource.Lookup(
 				joinEnvPath(childEnvPath),
@@ -101,4 +108,75 @@ func (s *Service[T]) hasNestedEnvValue(
 	}
 
 	return false
+}
+
+func (s *Service[T]) materializeEnvSliceElements(
+	ctx walkContext,
+	field reflect.Value,
+) {
+	if !isStructSliceNode(ctx.Node) ||
+		!field.IsValid() ||
+		field.Kind() != reflect.Slice ||
+		!field.CanSet() {
+		return
+	}
+
+	indexes := s.envCollectionIndexes(ctx.EnvPath)
+	if len(indexes) == 0 {
+		return
+	}
+
+	lastIndex := indexes[len(indexes)-1]
+	if field.Len() <= lastIndex {
+		expanded := reflect.MakeSlice(field.Type(), lastIndex+1, lastIndex+1)
+		reflect.Copy(expanded, field)
+		field.Set(expanded)
+	}
+
+	elementType := field.Type().Elem()
+	if elementType.Kind() != reflect.Ptr ||
+		elementType.Elem().Kind() != reflect.Struct {
+		return
+	}
+
+	for _, index := range indexes {
+		element := field.Index(index)
+		if element.IsNil() {
+			element.Set(reflect.New(elementType.Elem()))
+		}
+	}
+}
+
+func (s *Service[T]) envCollectionIndexes(envPath []string) []int {
+	source, ok := s.envSource.(envSnapshotSource)
+	if !ok {
+		return nil
+	}
+
+	return source.CollectionIndexes(joinEnvPath(envPath))
+}
+
+func isStructSliceNode(node *schema.Node) bool {
+	if node == nil {
+		return false
+	}
+
+	typ := node.Type
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	if typ.Kind() != reflect.Slice {
+		return false
+	}
+
+	return nestedStructOrPointerType(typ.Elem())
+}
+
+func nestedStructOrPointerType(typ reflect.Type) bool {
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	return typ.Kind() == reflect.Struct && !isDurationType(typ)
 }
