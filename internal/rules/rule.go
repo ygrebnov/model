@@ -34,7 +34,8 @@ func NewRule[FieldType any](name string, fn func(value FieldType, params ...stri
 				// Accept assignable values (including types implementing an interface FieldType)
 				if !v.Type().AssignableTo(fieldType) {
 					// As a fallback for interface FieldType, use Implements for clarity.
-					if !(fieldType.Kind() == reflect.Interface && v.Type().Implements(fieldType)) {
+					if fieldType.Kind() != reflect.Interface ||
+						!v.Type().Implements(fieldType) {
 						return errorc.With(
 							errors.ErrRuleTypeMismatch,
 							errorc.String(keys.ValueType, v.Type().String()),
