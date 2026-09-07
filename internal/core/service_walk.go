@@ -669,7 +669,7 @@ func applyWalkNodeEnvPath(
 	}
 
 	if part == "" {
-		part = nodeLastName(node)
+		part = strings.TrimSuffix(nodeLastName(node), "[]")
 	}
 
 	if part == "" {

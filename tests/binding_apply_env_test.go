@@ -9,8 +9,6 @@ import (
 	"github.com/ygrebnov/model/pkg/types"
 )
 
-// TODO: check potential gap between snapshotEnvSource and collection traversal.
-
 func TestBindingApplyEnv_ScalarsAndPointers(t *testing.T) {
 	t.Setenv("S", "env-string")
 	t.Setenv("PS", "env-pointer")
@@ -192,6 +190,45 @@ func TestBindingApplyEnv_NestedStruct(t *testing.T) {
 		S:  "nested",
 		PS: pString("nested-pointer"),
 	})
+}
+
+func TestBindingApplyEnv_PointerToStructAllocationFromCollectionDescendant(
+	t *testing.T,
+) {
+	t.Setenv("B_D_0_E1", "nested")
+
+	type element struct {
+		E1 string
+		E2 string
+	}
+	type child struct {
+		D []element
+	}
+	type config struct {
+		B *child
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatalf("NewBinding() error: %v", err)
+	}
+
+	got := config{}
+
+	if err := binding.ApplyEnv(&got); err != nil {
+		t.Fatalf("ApplyEnv() error: %v", err)
+	}
+
+	expected := config{
+		B: &child{
+			D: []element{
+				{E1: "nested"},
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("ApplyEnv() result = %#v, want %#v", got, expected)
+	}
 }
 
 func TestBindingApplyEnv_PointerToStructAllocation(t *testing.T) {

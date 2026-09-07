@@ -3,6 +3,8 @@ package core
 import (
 	"os"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 
 	fieldPkg "github.com/ygrebnov/model/field"
@@ -77,4 +79,40 @@ type envSnapshotSource map[string]string
 func (s envSnapshotSource) Lookup(name string) (string, bool) {
 	value, ok := s[name]
 	return value, ok
+}
+
+// CollectionIndexes returns the indexed descendants captured below prefix.
+func (s envSnapshotSource) CollectionIndexes(prefix string) []int {
+	prefix += "_"
+	indexSet := make(map[int]struct{})
+
+	for name := range s {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+
+		indexPart, _, ok := strings.Cut(
+			strings.TrimPrefix(name, prefix),
+			"_",
+		)
+		if !ok {
+			continue
+		}
+
+		index, err := strconv.Atoi(indexPart)
+		if err != nil || index < 0 || strconv.Itoa(index) != indexPart {
+			continue
+		}
+
+		indexSet[index] = struct{}{}
+	}
+
+	indexes := make([]int, 0, len(indexSet))
+	for index := range indexSet {
+		indexes = append(indexes, index)
+	}
+
+	sort.Ints(indexes)
+
+	return indexes
 }
