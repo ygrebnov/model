@@ -1,5 +1,5 @@
-github.com/ygrebnov/errorc v0.6.0 h1:MBj9TVLeydiLMyvpHTKpI9iBgL8sCFKoKaZQp4NzEow=
-github.com/ygrebnov/errorc v0.6.0/go.mod h1:akitMzADmnm0i1X5fSJfBqiTqCzckka9sgukTRQN5ns=
+github.com/ygrebnov/errorc v0.6.1 h1:ICww1JOesR0HyE3cVWMr0SBmB8RV1XSmGwB5yVP1SqE=
+github.com/ygrebnov/errorc v0.6.1/go.mod h1:akitMzADmnm0i1X5fSJfBqiTqCzckka9sgukTRQN5ns=
 github.com/ygrebnov/keys v0.2.0 h1:KQSQG1la9WkTW59WbB3CK1yhxZ92el2ZJfV1XtlHTp0=
 github.com/ygrebnov/keys v0.2.0/go.mod h1:4IfRPgv7tFSlToKzHtA9MPMwXP0+HRJ0Kk8XSrvhDvQ=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
