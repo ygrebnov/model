@@ -157,6 +157,21 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 		F float64 `validate:"oneof(0.5,a,2.5)"`
 	}
 
+	type customString string
+
+	type customStringRules struct {
+		Min    customString `validate:"min(2)"`
+		Max    customString `validate:"max(5)"`
+		OneOf  customString `validate:"oneof(red,green,blue)"`
+		Email  customString `validate:"email"`
+		UUID   customString `validate:"uuid"`
+		Semver customString `validate:"semver"`
+	}
+
+	type customStringPointerRules struct {
+		OneOf *customString `validate:"oneof(red,green,blue)"`
+	}
+
 	tests := []struct {
 		name      string
 		run       func(t *testing.T) error
@@ -371,6 +386,74 @@ func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
 			},
 			checkErr: func(t *testing.T, err error) {
 				assertMissingParameter(t, err)
+			},
+		},
+		{
+			name: "named string builtins pass",
+			run: func(t *testing.T) error {
+				obj := customStringRules{
+					Min:    "ok",
+					Max:    "hello",
+					OneOf:  "green",
+					Email:  "user@example.com",
+					UUID:   "123e4567-e89b-12d3-a456-426614174000",
+					Semver: "1.2.3",
+				}
+
+				return model.Validate(context.Background(), &obj)
+			},
+		},
+		{
+			name:      "named string oneof fails",
+			wantError: true,
+			run: func(t *testing.T) error {
+				obj := customStringRules{
+					Min:    "ok",
+					Max:    "hello",
+					OneOf:  "yellow",
+					Email:  "user@example.com",
+					UUID:   "123e4567-e89b-12d3-a456-426614174000",
+					Semver: "1.2.3",
+				}
+
+				return model.Validate(context.Background(), &obj)
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertConstraintViolation(
+					t,
+					err,
+					rules.RuleOneOf,
+					"allowed",
+					"red,green,blue",
+				)
+			},
+		},
+		{
+			name: "pointer to named string builtin passes",
+			run: func(t *testing.T) error {
+				value := customString("green")
+				obj := customStringPointerRules{OneOf: &value}
+
+				return model.Validate(context.Background(), &obj)
+			},
+		},
+		{
+			name:      "pointer to named string builtin fails",
+			wantError: true,
+			run: func(t *testing.T) error {
+				value := customString("yellow")
+				obj := customStringPointerRules{OneOf: &value}
+
+				return model.Validate(context.Background(), &obj)
+			},
+			checkErr: func(t *testing.T, err error) {
+				assertConstraintViolation(
+					t,
+					err,
+					rules.RuleOneOf,
+					"allowed",
+					"red,green,blue",
+				)
 			},
 		},
 

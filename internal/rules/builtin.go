@@ -465,29 +465,50 @@ func ensureBuiltIns() {
 func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 	ensureBuiltIns()
 
-	r, ok := builtInMap[key{name, t}]
-	if ok || t.Kind() != reflect.Ptr {
-		return r, ok
+	if r, ok := builtInMap[key{name, t}]; ok {
+		return r, true
 	}
 
-	r, ok = lookupBuiltin(name, t.Elem())
-	if !ok {
-		return nil, false
-	}
+	if t.Kind() == reflect.Ptr {
+		r, ok := lookupBuiltin(name, t.Elem())
+		if !ok {
+			return nil, false
+		}
 
-	return &Rule{
-		name:      name,
-		fieldType: t,
-		fn: func(v reflect.Value, params ...string) error {
-			for v.Kind() == reflect.Ptr {
-				if v.IsNil() {
-					v = reflect.Zero(v.Type().Elem())
-				} else {
-					v = v.Elem()
+		return &Rule{
+			name:      name,
+			fieldType: t,
+			fn: func(v reflect.Value, params ...string) error {
+				for v.Kind() == reflect.Ptr {
+					if v.IsNil() {
+						v = reflect.Zero(v.Type().Elem())
+					} else {
+						v = v.Elem()
+					}
 				}
-			}
 
-			return r.GetValidationFn()(v, params...)
-		},
-	}, true
+				return r.GetValidationFn()(v, params...)
+			},
+		}, true
+	}
+
+	if t.Kind() == reflect.String && t != reflect.TypeFor[string]() {
+		r, ok := builtInMap[key{name, reflect.TypeFor[string]()}]
+		if !ok {
+			return nil, false
+		}
+
+		return &Rule{
+			name:      name,
+			fieldType: t,
+			fn: func(v reflect.Value, params ...string) error {
+				return r.GetValidationFn()(
+					v.Convert(reflect.TypeFor[string]()),
+					params...,
+				)
+			},
+		}, true
+	}
+
+	return nil, false
 }
