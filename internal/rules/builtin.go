@@ -6,10 +6,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ygrebnov/errorc"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
+	"github.com/ygrebnov/model/pkg/types"
 )
 
 // Built-ins are always implicitly available.
@@ -145,7 +147,7 @@ func splitEmailParts(s string) (local, domain string) {
 }
 
 func validateBuiltinEmail(s string) error {
-	if s == "" { // treat empty as error, keeping semantics similar to prior nonempty
+	if s == "" {
 		return newRuleConstraintViolationError(RuleEmail)
 	}
 	if strings.Count(s, "@") != 1 {
@@ -159,7 +161,7 @@ func validateBuiltinEmail(s string) error {
 	if strings.ContainsAny(s, " \t\n\r") {
 		return newRuleConstraintViolationWithParamNameError(RuleEmail, emailCheckNoWhitespace)
 	}
-	if !strings.Contains(domain, ".") { // simple domain heuristic
+	if !strings.Contains(domain, ".") {
 		return newRuleConstraintViolationWithParamNameError(RuleEmail, emailCheckDomainHasDot)
 	}
 
@@ -192,14 +194,18 @@ func isUUIDHyphenPosition(index int) bool {
 }
 
 func isHexDigit(c byte) bool {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+	return (c >= '0' && c <= '9') ||
+		(c >= 'a' && c <= 'f') ||
+		(c >= 'A' && c <= 'F')
 }
 
 func validateBuiltinUUID(s string) error {
-	// Empty is invalid; caller can omit the rule if empty is allowed.
-	// Canonical form: 36 chars, 8-4-4-4-12 with hyphens, hex digits only.
 	if len(s) != uuidLength {
-		return newRuleConstraintViolationWithIntParamError(RuleUUID, paramNameLength, len(s))
+		return newRuleConstraintViolationWithIntParamError(
+			RuleUUID,
+			paramNameLength,
+			len(s),
+		)
 	}
 
 	for i := 0; i < len(s); i++ {
@@ -207,13 +213,20 @@ func validateBuiltinUUID(s string) error {
 		if isUUIDHyphenPosition(i) {
 			if c != '-' {
 				return newRuleConstraintViolationWithStringParamError(
-					RuleUUID, uuidCheckFormat, "expected hyphens at 8,13,18,23",
+					RuleUUID,
+					uuidCheckFormat,
+					"expected hyphens at 8,13,18,23",
 				)
 			}
 			continue
 		}
+
 		if !isHexDigit(c) {
-			return newRuleConstraintViolationWithStringParamError(RuleUUID, uuidCheckHex, "non-hex character")
+			return newRuleConstraintViolationWithStringParamError(
+				RuleUUID,
+				uuidCheckHex,
+				"non-hex character",
+			)
 		}
 	}
 
@@ -230,17 +243,23 @@ func getStringMinMaxRule(
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
 		}
+
 		raw := strings.TrimSpace(params[0])
 		v, err := strconv.ParseInt(raw, 10, 0)
 		if err != nil {
 			return newRuleInvalidParameterError(name, paramNameLength, raw, err)
 		}
-		if noop(v) { // noop as requested
+		if noop(v) {
 			return nil
 		}
 		if compare(int(v), len(s)) {
-			return newRuleConstraintViolationWithStringParamError(name, paramNameLength, raw)
+			return newRuleConstraintViolationWithStringParamError(
+				name,
+				paramNameLength,
+				raw,
+			)
 		}
+
 		return nil
 	})
 }
@@ -283,12 +302,13 @@ func getStrOneofRule() (*Rule, error) {
 		if len(params) == 0 {
 			return newRuleMissingParameterError(RuleOneOf)
 		}
+
 		for _, p := range params {
 			if s == p {
 				return nil
 			}
 		}
-		// we expose the allowed set as the param value for debugging/inspection
+
 		return newRuleConstraintViolationWithStringParamError(
 			RuleOneOf,
 			paramNameAllowed,
@@ -320,6 +340,59 @@ type numeric interface {
 	signedNumeric | unsignedNumeric | floatNumeric
 }
 
+type duration interface {
+	~int64
+}
+
+func getDurationMinMaxRule[T duration](
+	name string,
+	compare func(a, b time.Duration) bool,
+) (*Rule, error) {
+	return NewRule[T](name, func(n T, params ...string) error {
+		if len(params) == 0 {
+			return newRuleMissingParameterError(name)
+		}
+
+		raw := strings.TrimSpace(params[0])
+		v, err := time.ParseDuration(raw)
+		if err != nil {
+			return newRuleInvalidParameterError(
+				name,
+				paramNameValue,
+				raw,
+				err,
+			)
+		}
+
+		if compare(time.Duration(n), v) {
+			return newRuleConstraintViolationWithStringParamError(
+				name,
+				paramNameValue,
+				raw,
+			)
+		}
+
+		return nil
+	})
+}
+
+func getDurationRules[T duration]() []*Rule {
+	return []*Rule{
+		mustRule(
+			getDurationMinMaxRule[T](
+				RuleMin,
+				func(a, b time.Duration) bool { return a < b },
+			),
+		),
+		mustRule(
+			getDurationMinMaxRule[T](
+				RuleMax,
+				func(a, b time.Duration) bool { return a > b },
+			),
+		),
+	}
+}
+
 func getNumericMinMaxRule[T numeric](
 	name string,
 	parse func(string) (T, error),
@@ -329,14 +402,26 @@ func getNumericMinMaxRule[T numeric](
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
 		}
+
 		raw := strings.TrimSpace(params[0])
 		v, err := parse(raw)
 		if err != nil {
-			return newRuleInvalidParameterError(name, paramNameValue, raw, err)
+			return newRuleInvalidParameterError(
+				name,
+				paramNameValue,
+				raw,
+				err,
+			)
 		}
+
 		if compare(n, v) {
-			return newRuleConstraintViolationWithStringParamError(name, paramNameValue, raw)
+			return newRuleConstraintViolationWithStringParamError(
+				name,
+				paramNameValue,
+				raw,
+			)
 		}
+
 		return nil
 	})
 }
@@ -346,6 +431,7 @@ func getNumericNonzeroRule[T numeric](name string) (*Rule, error) {
 		if n == 0 {
 			return newRuleConstraintViolationError(name)
 		}
+
 		return nil
 	})
 }
@@ -358,17 +444,29 @@ func getNumericOneofRule[T numeric](
 		if len(params) == 0 {
 			return newRuleMissingParameterError(name)
 		}
+
 		for _, p := range params {
 			raw := strings.TrimSpace(p)
 			v, err := parse(raw)
 			if err != nil {
-				return newRuleInvalidParameterError(name, paramNameValue, raw, err)
+				return newRuleInvalidParameterError(
+					name,
+					paramNameValue,
+					raw,
+					err,
+				)
 			}
+
 			if v == n {
 				return nil
 			}
 		}
-		return newRuleConstraintViolationWithStringParamError(name, paramNameAllowed, strings.Join(params, ","))
+
+		return newRuleConstraintViolationWithStringParamError(
+			name,
+			paramNameAllowed,
+			strings.Join(params, ","),
+		)
 	})
 }
 
@@ -395,28 +493,79 @@ func parseFloatValue[T floatNumeric](bitSize int) func(string) (T, error) {
 
 func getSignedNumericRules[T signedNumeric](bitSize int) []*Rule {
 	return []*Rule{
-		mustRule(getNumericMinMaxRule[T](RuleMin, parseSignedValue[T](bitSize), func(a, b T) bool { return a < b })),
-		mustRule(getNumericMinMaxRule[T](RuleMax, parseSignedValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMin,
+				parseSignedValue[T](bitSize),
+				func(a, b T) bool { return a < b },
+			),
+		),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMax,
+				parseSignedValue[T](bitSize),
+				func(a, b T) bool { return a > b },
+			),
+		),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
-		mustRule(getNumericOneofRule[T](RuleOneOf, parseSignedValue[T](bitSize))),
+		mustRule(
+			getNumericOneofRule[T](
+				RuleOneOf,
+				parseSignedValue[T](bitSize),
+			),
+		),
 	}
 }
 
 func getUnsignedNumericRules[T unsignedNumeric](bitSize int) []*Rule {
 	return []*Rule{
-		mustRule(getNumericMinMaxRule[T](RuleMin, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a < b })),
-		mustRule(getNumericMinMaxRule[T](RuleMax, parseUnsignedValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMin,
+				parseUnsignedValue[T](bitSize),
+				func(a, b T) bool { return a < b },
+			),
+		),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMax,
+				parseUnsignedValue[T](bitSize),
+				func(a, b T) bool { return a > b },
+			),
+		),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
-		mustRule(getNumericOneofRule[T](RuleOneOf, parseUnsignedValue[T](bitSize))),
+		mustRule(
+			getNumericOneofRule[T](
+				RuleOneOf,
+				parseUnsignedValue[T](bitSize),
+			),
+		),
 	}
 }
 
 func getFloatNumericRules[T floatNumeric](bitSize int) []*Rule {
 	return []*Rule{
-		mustRule(getNumericMinMaxRule[T](RuleMin, parseFloatValue[T](bitSize), func(a, b T) bool { return a < b })),
-		mustRule(getNumericMinMaxRule[T](RuleMax, parseFloatValue[T](bitSize), func(a, b T) bool { return a > b })),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMin,
+				parseFloatValue[T](bitSize),
+				func(a, b T) bool { return a < b },
+			),
+		),
+		mustRule(
+			getNumericMinMaxRule[T](
+				RuleMax,
+				parseFloatValue[T](bitSize),
+				func(a, b T) bool { return a > b },
+			),
+		),
 		mustRule(getNumericNonzeroRule[T](RuleNonzero)),
-		mustRule(getNumericOneofRule[T](RuleOneOf, parseFloatValue[T](bitSize))),
+		mustRule(
+			getNumericOneofRule[T](
+				RuleOneOf,
+				parseFloatValue[T](bitSize),
+			),
+		),
 	}
 }
 
@@ -436,19 +585,58 @@ func ensureBuiltIns() {
 		}
 
 		builtinNumericRules = make([]*Rule, 0, 52)
-		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int](strconv.IntSize)...)
-		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int8](8)...)
-		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int16](16)...)
-		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int32](32)...)
-		builtinNumericRules = append(builtinNumericRules, getSignedNumericRules[int64](64)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint](strconv.IntSize)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint8](8)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint16](16)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint32](32)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uint64](64)...)
-		builtinNumericRules = append(builtinNumericRules, getUnsignedNumericRules[uintptr](strconv.IntSize)...)
-		builtinNumericRules = append(builtinNumericRules, getFloatNumericRules[float32](32)...)
-		builtinNumericRules = append(builtinNumericRules, getFloatNumericRules[float64](64)...)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getSignedNumericRules[int](strconv.IntSize)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getSignedNumericRules[int8](8)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getSignedNumericRules[int16](16)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getSignedNumericRules[int32](32)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getSignedNumericRules[int64](64)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uint](strconv.IntSize)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uint8](8)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uint16](16)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uint32](32)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uint64](64)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getUnsignedNumericRules[uintptr](strconv.IntSize)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getFloatNumericRules[float32](32)...,
+		)
+		builtinNumericRules = append(
+			builtinNumericRules,
+			getFloatNumericRules[float64](64)...,
+		)
 
 		// fill map
 		register := func(rs []*Rule) {
@@ -456,8 +644,19 @@ func ensureBuiltIns() {
 				builtInMap[key{r.GetName(), r.getFieldType()}] = r
 			}
 		}
+
 		register(builtinStringRules)
 		register(builtinNumericRules)
+
+		// Register duration-specific min/max rules only for the supported
+		// duration types. Other named int64 types retain numeric semantics.
+		for _, r := range getDurationRules[time.Duration]() {
+			builtInMap[key{r.GetName(), r.getFieldType()}] = r
+		}
+
+		for _, r := range getDurationRules[types.Duration]() {
+			builtInMap[key{r.GetName(), r.getFieldType()}] = r
+		}
 	})
 }
 
@@ -492,7 +691,8 @@ func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 		}, true
 	}
 
-	if t.Kind() == reflect.String && t != reflect.TypeFor[string]() {
+	if t.Kind() == reflect.String &&
+		t != reflect.TypeFor[string]() {
 		r, ok := builtInMap[key{name, reflect.TypeFor[string]()}]
 		if !ok {
 			return nil, false
