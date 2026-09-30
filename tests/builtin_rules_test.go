@@ -5,12 +5,14 @@ import (
 	nativeerrors "errors"
 	"strings"
 	"testing"
+	"time"
 
 	keysLib "github.com/ygrebnov/keys"
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/internal/rules"
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
+	"github.com/ygrebnov/model/pkg/types"
 	"github.com/ygrebnov/model/validation"
 )
 
@@ -716,6 +718,244 @@ func TestBuiltinRules_WithValidation_ExtendedNumericCoverage(t *testing.T) {
 		}
 
 		assertConstraintViolation(t, err, rules.RuleMax, "value", "2.5")
+	})
+}
+
+func TestBuiltinRules_WithValidation_DurationMinMax(t *testing.T) {
+	type stdDuration struct {
+		Min time.Duration `validate:"min(1s)"`
+		Max time.Duration `validate:"max(5h)"`
+	}
+
+	type modelDuration struct {
+		Min types.Duration `validate:"min(1s)"`
+		Max types.Duration `validate:"max(5h)"`
+	}
+
+	type durationPointers struct {
+		Min *time.Duration  `validate:"min(1s)"`
+		Max *types.Duration `validate:"max(5h)"`
+	}
+
+	t.Run("time.Duration passes", func(t *testing.T) {
+		obj := stdDuration{
+			Min: 2 * time.Second,
+			Max: 4 * time.Hour,
+		}
+
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate returned error: %v", err)
+		}
+	})
+
+	t.Run("types.Duration passes", func(t *testing.T) {
+		obj := modelDuration{
+			Min: types.Duration(2 * time.Second),
+			Max: types.Duration(4 * time.Hour),
+		}
+
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate returned error: %v", err)
+		}
+	})
+
+	t.Run("boundaries pass", func(t *testing.T) {
+		obj := stdDuration{
+			Min: time.Second,
+			Max: 5 * time.Hour,
+		}
+
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate returned error: %v", err)
+		}
+	})
+
+	t.Run("time.Duration min fails", func(t *testing.T) {
+		obj := stdDuration{
+			Min: 999 * time.Millisecond,
+			Max: time.Hour,
+		}
+
+		err := model.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(
+			t,
+			err,
+			rules.RuleMin,
+			"value",
+			"1s",
+		)
+	})
+
+	t.Run("time.Duration max fails", func(t *testing.T) {
+		obj := stdDuration{
+			Min: time.Second,
+			Max: 5*time.Hour + time.Nanosecond,
+		}
+
+		err := model.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(
+			t,
+			err,
+			rules.RuleMax,
+			"value",
+			"5h",
+		)
+	})
+
+	t.Run("types.Duration min fails", func(t *testing.T) {
+		obj := modelDuration{
+			Min: types.Duration(999 * time.Millisecond),
+			Max: types.Duration(time.Hour),
+		}
+
+		err := model.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(
+			t,
+			err,
+			rules.RuleMin,
+			"value",
+			"1s",
+		)
+	})
+
+	t.Run("types.Duration max fails", func(t *testing.T) {
+		obj := modelDuration{
+			Min: types.Duration(time.Second),
+			Max: types.Duration(5*time.Hour + time.Nanosecond),
+		}
+
+		err := model.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(
+			t,
+			err,
+			rules.RuleMax,
+			"value",
+			"5h",
+		)
+	})
+
+	t.Run("pointers pass", func(t *testing.T) {
+		minDuration := 2 * time.Second
+		maxDuration := types.Duration(4 * time.Hour)
+
+		obj := durationPointers{
+			Min: &minDuration,
+			Max: &maxDuration,
+		}
+
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate returned error: %v", err)
+		}
+	})
+
+	t.Run("pointer min fails", func(t *testing.T) {
+		minDuration := 500 * time.Millisecond
+		maxDuration := types.Duration(time.Hour)
+
+		obj := durationPointers{
+			Min: &minDuration,
+			Max: &maxDuration,
+		}
+
+		err := model.Validate(context.Background(), &obj)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertConstraintViolation(
+			t,
+			err,
+			rules.RuleMin,
+			"value",
+			"1s",
+		)
+	})
+
+	t.Run("invalid min parameter", func(t *testing.T) {
+		type invalidDuration struct {
+			Value time.Duration `validate:"min(not-a-duration)"`
+		}
+
+		err := model.Validate(
+			context.Background(),
+			&invalidDuration{Value: time.Second},
+		)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertInvalidParameter(
+			t,
+			err,
+			rules.RuleMin,
+			"value",
+			"not-a-duration",
+		)
+	})
+
+	t.Run("invalid max parameter", func(t *testing.T) {
+		type invalidDuration struct {
+			Value types.Duration `validate:"max(not-a-duration)"`
+		}
+
+		err := model.Validate(
+			context.Background(),
+			&invalidDuration{Value: types.Duration(time.Second)},
+		)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		assertInvalidParameter(
+			t,
+			err,
+			rules.RuleMax,
+			"value",
+			"not-a-duration",
+		)
+	})
+
+	t.Run("named int64 does not resolve duration rule", func(t *testing.T) {
+		type counter int64
+
+		type obj struct {
+			Value counter `validate:"min(10)"`
+		}
+
+		err := model.Validate(
+			context.Background(),
+			&obj{Value: 5},
+		)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+
+		if !errors.Is(err, errors.ErrRuleNotFound) {
+			t.Fatalf("expected ErrRuleNotFound, got %v", err)
+		}
+
+		if !strings.Contains(
+			err.Error(),
+			string(keys.RuleName)+": "+rules.RuleMin,
+		) {
+			t.Fatalf("expected min rule metadata, got %v", err)
+		}
 	})
 }
 
