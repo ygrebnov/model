@@ -3,17 +3,30 @@ COVERAGE_PATH := $(ROOT_PATH).coverage/
 
 include $(CURDIR)/tools/tools.mk
 
+.PHONY: lint
 lint: install-golangci-lint
+	@echo "Running linter..."
 	$(GOLANGCI_LINT) run
 
+.PHONY: test
 test:
-	@go test ./...
+	@echo "Running tests..."
+	@go test ./... -count=1 -timeout=600s
 
+.PHONY: test-cov
 test-cov:
+	@echo "Running tests with coverage..."
 	@rm -rf $(COVERAGE_PATH)
 	@mkdir -p $(COVERAGE_PATH)
-	@go test -v -coverpkg=./... ./... -coverprofile $(COVERAGE_PATH)coverage.txt
+	@go test -v -coverpkg=./... ./... -coverprofile $(COVERAGE_PATH)coverage.txt -count=1 -timeout=600s
 	@go tool cover -func=$(COVERAGE_PATH)coverage.txt -o $(COVERAGE_PATH)functions.txt
 	@go tool cover -html=$(COVERAGE_PATH)coverage.txt -o $(COVERAGE_PATH)coverage.html
 
-.PHONY: lint test test-cov
+.PHONY: test-race
+test-race:
+	@echo "Running tests with race detector..."
+	@go test ./... -race -count=1 -timeout=600s
+
+.PHONY: verify
+verify: lint test-race
+	@echo "All verifications passed successfully."

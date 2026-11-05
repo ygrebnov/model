@@ -1,9 +1,13 @@
 name: build
+
 on:
   push:
     branches:
       - main
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -24,13 +28,7 @@ jobs:
       - name: lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.15.0
           args: --timeout=10m
       - name: test
         run: make test
-      - name: Upload artifacts
-        if: matrix.go-version == 'stable'
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage
-          path: .tests/coverage.html

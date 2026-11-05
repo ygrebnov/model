@@ -65,7 +65,7 @@ type User struct {
 }
 
 func main() {
-	customRule, _ := model.NewRule("email", func(s string, _ ...string) error {
+	customRule := model.NewRule("email", func(s string, _ ...string) error {
 	    if s != "user@company.com" {
 	        return fmt.Errorf("must be 'user@company.com'")
 	    }
@@ -292,14 +292,14 @@ type User struct {
 Create rules with `NewRule` and pass them through `WithRules`. You can supply multiple different rule names and/or multiple overloads (different field types) in a single call, and separate `WithRules` options compose in declaration order. Duplicate exact overloads (same rule name & identical field type) are rejected.
 
 ```go
-maxLen, _ := model.NewRule[string]("maxLen", func(s string, params ...string) error {
+maxLen := model.NewRule[string]("maxLen", func(s string, params ...string) error {
     if len(params) < 1 { return fmt.Errorf("maxLen requires 1 param") }
     n, _ := strconv.Atoi(params[0])
     if len(s) > n { return fmt.Errorf("must be <= %d chars", n) }
     return nil
 })
 
-positive64, _ := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
+positive64 := model.NewRule[int64]("positive", func(v int64, _ ...string) error {
     if v <= 0 { return fmt.Errorf("must be > 0") }
     return nil
 })
@@ -316,7 +316,7 @@ type S struct {
     Name string `validate:"min(1)"`
 }
 
-minCustom, _ := model.NewRule[string]("min", func(s string, _ ...string) error {
+minCustom := model.NewRule[string]("min", func(s string, _ ...string) error {
     if strings.TrimSpace(s) == "" { return fmt.Errorf("must not be blank or whitespace") }
     return nil
 })

@@ -72,7 +72,7 @@ func ExampleValidateWithDefaults_withRule() {
 	}
 
 	in := Input{} // D is zero -> should fail validation
-	nonZeroDurationRule, err := model.NewRule[time.Duration]("nonzeroDur",
+	nonZeroDurationRule := model.NewRule[time.Duration]("nonzeroDur",
 		func(d time.Duration, _ ...string) error {
 			if d == 0 {
 				return fmt.Errorf("duration must be non-zero")
@@ -80,16 +80,12 @@ func ExampleValidateWithDefaults_withRule() {
 			return nil
 		},
 	)
-	if err != nil {
-		fmt.Println("error creating rule:", err)
-		return
-	}
-	err = model.ValidateWithDefaults(
+
+	if err := model.ValidateWithDefaults(
 		context.Background(),
 		&in,
 		model.WithRules(nonZeroDurationRule), // register custom rule.
-	)
-	if err != nil {
+	); err != nil {
 		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("ValidateWithDefaults+WithRule -> validation error:")
@@ -111,44 +107,32 @@ func ExampleValidateWithDefaults_withMultipleRules() {
 		Age  int    `validate:"positive,nonzero"`
 	}
 
-	nonempty, err := model.NewRule[string]("nonempty", func(s string, _ ...string) error {
+	nonempty := model.NewRule[string]("nonempty", func(s string, _ ...string) error {
 		if s == "" {
 			return fmt.Errorf("must not be empty")
 		}
 		return nil
 	})
-	if err != nil {
-		fmt.Println("error creating nonempty rule:", err)
-		return
-	}
-	positive, err := model.NewRule[int]("positive", func(n int, _ ...string) error {
+
+	positive := model.NewRule[int]("positive", func(n int, _ ...string) error {
 		if n <= 0 {
 			return fmt.Errorf("must be > 0")
 		}
 		return nil
 	})
-	if err != nil {
-		fmt.Println("error creating positive rule:", err)
-		return
-	}
-	nonzero, err := model.NewRule[int]("nonzero", func(n int, _ ...string) error {
+	nonzero := model.NewRule[int]("nonzero", func(n int, _ ...string) error {
 		if n == 0 {
 			return fmt.Errorf("must not be zero")
 		}
 		return nil
 	})
-	if err != nil {
-		fmt.Println("error creating nonzero rule:", err)
-		return
-	}
 
 	r := Rec{Age: 0}
-	err = model.ValidateWithDefaults(
+	if err := model.ValidateWithDefaults(
 		context.Background(),
 		&r,
 		model.WithRules(nonempty, positive, nonzero), // batch register
-	)
-	if err != nil {
+	); err != nil {
 		var ve *validation.Error
 		if errors.As(err, &ve) {
 			fmt.Println("WithRules:")

@@ -51,15 +51,26 @@ type service[T any] interface {
 // Rule is intentionally non-generic so rules concerning different field types
 // can be passed together to WithRules. Rule values are immutable after
 // construction and may be reused when constructing multiple bindings.
+//
+// NewBinding rejects the zero value with ErrInvalidRule.
 type Rule struct {
-	compiled *rules.Rule
+	factory func() (*rules.Rule, error)
+}
+
+func (r Rule) new() (*rules.Rule, error) {
+	if r.factory == nil {
+		return nil, errors.ErrInvalidRule
+	}
+
+	return r.factory()
 }
 
 // NewRule creates a named custom validation rule for FieldType.
 //
-// The name must be non-empty and fn must be non-nil. Custom rules with the
-// same name and field type replace the corresponding built-in rule; duplicate
-// custom overloads are rejected when NewBinding is called.
+// When the rule is passed to NewBinding through WithRules, an empty name or
+// nil fn causes NewBinding to return ErrInvalidRule. Custom rules with the
+// same name and field type replace the corresponding built-in rule. NewBinding
+// rejects duplicate custom overloads.
 //
 // The validation function may be called concurrently by different bindings or
 // validation operations. It must therefore synchronize access to mutable state
@@ -67,15 +78,12 @@ type Rule struct {
 func NewRule[FieldType any](
 	name string,
 	fn func(FieldType, ...string) error,
-) (Rule, error) {
-	compiled, err := rules.NewRule(name, fn)
-	if err != nil {
-		return Rule{}, err
-	}
-
+) Rule {
 	return Rule{
-		compiled: compiled,
-	}, nil
+		factory: func() (*rules.Rule, error) {
+			return rules.NewRule(name, fn)
+		},
+	}
 }
 
 // NewBinding compiles a reusable Binding for struct type T.
@@ -126,12 +134,13 @@ func newRulesRegistry(
 	registry := rules.NewRegistry()
 
 	for _, customRule := range customRules {
-		if customRule.compiled == nil {
-			return nil, errors.ErrInvalidRule
+		rule, err := customRule.new()
+		if err != nil {
+			return nil, err
 		}
 
-		if err := registry.Add(customRule.compiled); err != nil {
-			return nil, err
+		if errAdd := registry.Add(rule); errAdd != nil {
+			return nil, errAdd
 		}
 	}
 

@@ -15,12 +15,9 @@ func TestBinding_Rules(t *testing.T) {
 	t.Run("add rule via WithRules", func(t *testing.T) {
 		type sample struct{ A int }
 
-		rule, err := model.NewRule[int]("dummy", func(value int, params ...string) error { return nil })
-		if err != nil {
-			t.Fatalf("unexpected error creating rule: %v", err)
-		}
+		rule := model.NewRule[int]("dummy", func(value int, params ...string) error { return nil })
 
-		if _, err = model.NewBinding[sample](model.WithRules(rule)); err != nil {
+		if _, err := model.NewBinding[sample](model.WithRules(rule)); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 	})
@@ -31,10 +28,7 @@ func TestBinding_Rules(t *testing.T) {
 			S string `validate:"nonempty"`
 		}
 		obj := Obj{S: ""}
-		nonempty, err := model.NewRule[string]("nonempty", ruleNonEmpty)
-		if err != nil {
-			t.Fatalf("NewRule error: %v", err)
-		}
+		nonempty := model.NewRule[string]("nonempty", ruleNonEmpty)
 		b2, err := model.NewBinding[Obj](model.WithRules(nonempty))
 		if err != nil {
 			t.Fatalf("New error: %v", err)
@@ -51,7 +45,7 @@ func TestBinding_Rules(t *testing.T) {
 			I int    `validate:"positive"`
 		}
 
-		nonempty, err := model.NewRule[string](
+		nonempty := model.NewRule[string](
 			"nonempty",
 			func(value string, _ ...string) error {
 				if value == "" {
@@ -61,11 +55,8 @@ func TestBinding_Rules(t *testing.T) {
 				return nil
 			},
 		)
-		if err != nil {
-			t.Fatalf("NewRule(nonempty) error: %v", err)
-		}
 
-		positive, err := model.NewRule[int](
+		positive := model.NewRule[int](
 			"positive",
 			func(value int, _ ...string) error {
 				if value <= 0 {
@@ -75,9 +66,6 @@ func TestBinding_Rules(t *testing.T) {
 				return nil
 			},
 		)
-		if err != nil {
-			t.Fatalf("NewRule(positive) error: %v", err)
-		}
 
 		binding, err := model.NewBinding[sample](
 			model.WithRules(nonempty),
@@ -106,15 +94,11 @@ func TestBinding_Rules(t *testing.T) {
 
 	t.Run("duplicate overload registration via WithRules returns error", func(t *testing.T) {
 		obj := struct{ S string }{}
-		r1, err := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
-		if err != nil {
-			t.Fatalf("NewRule r1 error: %v", err)
-		}
-		r2, err := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("two") })
-		if err != nil {
-			t.Fatalf("NewRule r2 error: %v", err)
-		}
-		err = model.Validate(context.Background(), &obj, model.WithRules(r1, r2))
+		r1 := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("one") })
+
+		r2 := model.NewRule[string]("r", func(s string, _ ...string) error { return fmt.Errorf("two") })
+
+		err := model.Validate(context.Background(), &obj, model.WithRules(r1, r2))
 		if err == nil || !strings.Contains(err.Error(), "duplicate overload rule") {
 			if err == nil {
 				t.Fatalf("expected duplicate overload rule error, got nil")
@@ -158,15 +142,12 @@ func TestBinding_Rules(t *testing.T) {
 			Name string `validate:"email"`
 		}
 
-		customEmail, err := model.NewRule[string](
+		customEmail := model.NewRule[string](
 			"email",
 			func(value string, _ ...string) error {
 				return errors.New("custom email: " + value)
 			},
 		)
-		if err != nil {
-			t.Fatalf("NewRule() error: %v", err)
-		}
 
 		binding, err := model.NewBinding[sample](
 			model.WithRules(customEmail),
