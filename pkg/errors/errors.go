@@ -24,7 +24,8 @@ var (
 	ErrTypeParamNotStruct = errorc.New("type parameter must be a struct")
 	// ErrTypeMismatch reports that a value's type did not match the expected type.
 	ErrTypeMismatch = errorc.New("type mismatch")
-	// ErrInvalidRule reports that a rule definition is missing a name or validation function.
+	// ErrInvalidRule reports a zero-value Rule or a rule definition with an
+	// empty name or nil validation function.
 	ErrInvalidRule = errorc.New("rule must have non-empty name and non-nil function")
 	// ErrRuleTypeMismatch reports that a rule was applied to an incompatible field type.
 	ErrRuleTypeMismatch = errorc.New("rule type mismatch")

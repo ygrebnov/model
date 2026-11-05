@@ -2,22 +2,21 @@
 # The tools are installed in a local bin directory, making it easy to manage
 # project-specific tool versions without affecting the system-wide installation.
 
-TOOLS_DIR      ?= $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-TOOLS_MOD_FILE := $(TOOLS_DIR)/go.mod
-BIN_DIR        ?= $(TOOLS_DIR)/bin
+TOOLS_DIR        ?= $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
+TOOLS_MOD_FILE	:= $(TOOLS_DIR)/go.mod
+BIN_DIR			?= $(TOOLS_DIR)/bin
 
 # Detect OS and architecture
-OS   := $(shell uname -s | tr A-Z a-z)
-ARCH := $(shell uname -m)
+OS		:= $(shell uname -s | tr A-Z a-z)
+ARCH	:= $(shell uname -m)
 
 GOLANGCI_LINT_VERSION ?= $(shell GOTOOLCHAIN=auto go -C $(TOOLS_DIR) list -m -f '{{.Version}}' github.com/golangci/golangci-lint/v2)
-
-GOLANGCI_LINT := $(BIN_DIR)/golangci-lint-$(OS)-$(ARCH)-$(GOLANGCI_LINT_VERSION)
+GOLANGCI_LINT	:= $(BIN_DIR)/golangci-lint-$(OS)-$(ARCH)-$(GOLANGCI_LINT_VERSION)
 
 $(GOLANGCI_LINT):
 	$(call go-install-tool,$@,github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
-GOLANGCI_LINT_LINK := $(BIN_DIR)/golangci-lint
+GOLANGCI_LINT_LINK 	:= $(BIN_DIR)/golangci-lint
 
 .PHONY: $(GOLANGCI_LINT_LINK)
 $(GOLANGCI_LINT_LINK): $(GOLANGCI_LINT)
@@ -63,7 +62,7 @@ endef
 # $(1) platform-specific binary path
 # $(2) symlink path
 define create-symlink
-	@if [ ! -e $(2) ] || [ "$$([ -L $(2) ] && readlink $(2))" != "$$(basename $(1))" ]; then \
+	@if [ ! -e $(2) ] || [ "$$(readlink $(2))" != "$$(basename $(1))" ]; then \
 		echo "Creating symlink: $(2) -> $$(basename $(1))"; \
 		ln -sf $$(basename $(1)) $(2); \
 	fi

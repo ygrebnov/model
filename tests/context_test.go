@@ -54,14 +54,11 @@ func TestValidate_LongRunning_CanceledMidway(t *testing.T) {
 	}
 
 	var processed int32
-	slowRule, err := model.NewRule[string]("slow", func(s string, _ ...string) error {
+	slowRule := model.NewRule[string]("slow", func(s string, _ ...string) error {
 		time.Sleep(5 * time.Millisecond) // simulate work per element
 		atomic.AddInt32(&processed, 1)
 		return nil
 	})
-	if err != nil {
-		t.Fatalf("NewRule error: %v", err)
-	}
 
 	obj := LR{Items: make([]string, 200)} // many elements
 	b, err := model.NewBinding[LR](model.WithRules(slowRule))

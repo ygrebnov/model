@@ -80,10 +80,7 @@ func BenchmarkMediumValidate(b *testing.B) {
 		F20: "twentieth medium length string for benchmarking",
 	}
 
-	rule, err := NewRule[string]("medium", mediumRule)
-	if err != nil {
-		b.Fatalf("failed to create medium rule: %v", err)
-	}
+	rule := NewRule[string]("medium", mediumRule)
 
 	binding, err := NewBinding[mediumStruct](WithRules(rule))
 	if err != nil {

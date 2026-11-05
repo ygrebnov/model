@@ -38,21 +38,15 @@ type validateOuter struct {
 }
 
 func TestBindingValidate_EndToEnd(t *testing.T) {
-	nonempty, err := model.NewRule[string](
+	nonempty := model.NewRule[string](
 		"nonempty",
 		validateNonempty,
 	)
-	if err != nil {
-		t.Fatalf("NewRule(nonempty) error: %v", err)
-	}
 
-	nonzeroDuration, err := model.NewRule[time.Duration](
+	nonzeroDuration := model.NewRule[time.Duration](
 		"nonzeroDuration",
 		validateNonzeroDuration,
 	)
-	if err != nil {
-		t.Fatalf("NewRule(nonzeroDuration) error: %v", err)
-	}
 
 	binding, err := model.NewBinding[validateOuter](
 		model.WithRules(
@@ -180,21 +174,15 @@ func TestBindingValidate_EndToEnd(t *testing.T) {
 }
 
 func TestBindingValidate_ValidObject(t *testing.T) {
-	nonempty, err := model.NewRule[string](
+	nonempty := model.NewRule[string](
 		"nonempty",
 		validateNonempty,
 	)
-	if err != nil {
-		t.Fatalf("NewRule(nonempty) error: %v", err)
-	}
 
-	nonzeroDuration, err := model.NewRule[time.Duration](
+	nonzeroDuration := model.NewRule[time.Duration](
 		"nonzeroDuration",
 		validateNonzeroDuration,
 	)
-	if err != nil {
-		t.Fatalf("NewRule(nonzeroDuration) error: %v", err)
-	}
 
 	binding, err := model.NewBinding[validateOuter](
 		model.WithRules(
@@ -401,7 +389,7 @@ func TestBindingValidate_CustomRuleAssignableToInterface(t *testing.T) {
 		Value stringerValue `validate:"stringer"`
 	}
 
-	rule, err := model.NewRule[fmt.Stringer](
+	rule := model.NewRule[fmt.Stringer](
 		"stringer",
 		func(value fmt.Stringer, _ ...string) error {
 			if value.String() != "valid" {
@@ -411,9 +399,6 @@ func TestBindingValidate_CustomRuleAssignableToInterface(t *testing.T) {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule() error: %v", err)
-	}
 
 	binding, err := model.NewBinding[config](
 		model.WithRules(rule),
@@ -450,7 +435,7 @@ func TestBindingValidate_CustomRuleReceivesParameters(t *testing.T) {
 		Value string `validate:"params(one,two,three)"`
 	}
 
-	rule, err := model.NewRule[string](
+	rule := model.NewRule[string](
 		"params",
 		func(_ string, params ...string) error {
 			if strings.Join(params, "|") != "one|two|three" {
@@ -463,9 +448,6 @@ func TestBindingValidate_CustomRuleReceivesParameters(t *testing.T) {
 			return errorc.New("parameter rule failed")
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule() error: %v", err)
-	}
 
 	binding, err := model.NewBinding[config](
 		model.WithRules(rule),
@@ -509,25 +491,19 @@ func TestBindingValidate_MultipleRulesAccumulate(t *testing.T) {
 		Value string `validate:"first,second"`
 	}
 
-	first, err := model.NewRule[string](
+	first := model.NewRule[string](
 		"first",
 		func(string, ...string) error {
 			return errorc.New("first failed")
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule(first) error: %v", err)
-	}
 
-	second, err := model.NewRule[string](
+	second := model.NewRule[string](
 		"second",
 		func(string, ...string) error {
 			return errorc.New("second failed")
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule(second) error: %v", err)
-	}
 
 	binding, err := model.NewBinding[config](
 		model.WithRules(first, second),
@@ -688,17 +664,14 @@ func TestBindingValidate_FailsEarlyForInapplicableRule(
 		Value int `validate:"textRule"`
 	}
 
-	textRule, err := model.NewRule[string](
+	textRule := model.NewRule[string](
 		"textRule",
 		func(string, ...string) error {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule() error: %v", err)
-	}
 
-	_, err = model.NewBinding[config](
+	_, err := model.NewBinding[config](
 		model.WithRules(textRule),
 	)
 	if err == nil {
@@ -726,17 +699,14 @@ func TestBindingValidate_FailsEarlyForInapplicableElementRule(
 		Values []int `validateElem:"textRule"`
 	}
 
-	textRule, err := model.NewRule[string](
+	textRule := model.NewRule[string](
 		"textRule",
 		func(string, ...string) error {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule() error: %v", err)
-	}
 
-	_, err = model.NewBinding[config](
+	_, err := model.NewBinding[config](
 		model.WithRules(textRule),
 	)
 	if err == nil {
@@ -791,27 +761,21 @@ func TestBindingValidate_FailsEarlyForDuplicateOverload(
 		Value string `validate:"custom"`
 	}
 
-	first, err := model.NewRule[string](
+	first := model.NewRule[string](
 		"custom",
 		func(string, ...string) error {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule(first) error: %v", err)
-	}
 
-	second, err := model.NewRule[string](
+	second := model.NewRule[string](
 		"custom",
 		func(string, ...string) error {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("NewRule(second) error: %v", err)
-	}
 
-	_, err = model.NewBinding[config](
+	_, err := model.NewBinding[config](
 		model.WithRules(first, second),
 	)
 	if err == nil {
