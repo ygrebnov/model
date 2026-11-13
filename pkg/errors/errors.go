@@ -18,6 +18,10 @@ var (
 	ErrNilObject = errorc.New("nil object")
 	// ErrNilEnvSource reports that no environment snapshot source is available.
 	ErrNilEnvSource = errorc.New("nil env source")
+	// ErrInvalidMaxEnvSliceLength reports a non-positive environment slice limit.
+	ErrInvalidMaxEnvSliceLength = errorc.New("max env slice length must be positive")
+	// ErrEnvSliceLengthExceeded reports an indexed environment value beyond the configured slice limit.
+	ErrEnvSliceLengthExceeded = errorc.New("environment slice length limit exceeded")
 	// ErrCannotCompileSchema reports a failure while compiling struct metadata.
 	ErrCannotCompileSchema = errorc.New("cannot compile schema")
 	// ErrTypeParamNotStruct reports that a binding type parameter is not a struct.

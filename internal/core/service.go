@@ -13,10 +13,11 @@ import (
 
 // Service provides per-struct defaulting and validation operations.
 type Service[T any] struct {
-	schema     schemaService[T]
-	validation validationPlan
-	envPrefix  string
-	envSource  fieldPkg.EnvSource
+	schema            schemaService[T]
+	validation        validationPlan
+	envPrefix         string
+	envSource         fieldPkg.EnvSource
+	maxEnvSliceLength int
 }
 
 // NewService creates a fully initialized Service for the given struct type.
@@ -27,6 +28,7 @@ func NewService[T any](
 	registry *rules.Registry,
 	ss schemaService[T],
 	envPrefix string,
+	maxEnvSliceLength int,
 ) (*Service[T], error) {
 	validation, err := newValidationPlan(ss.GetRoot(), registry)
 	if err != nil {
@@ -34,9 +36,10 @@ func NewService[T any](
 	}
 
 	s := &Service[T]{
-		schema:     ss,
-		validation: validation,
-		envPrefix:  envPrefix,
+		schema:            ss,
+		validation:        validation,
+		envPrefix:         envPrefix,
+		maxEnvSliceLength: maxEnvSliceLength,
 	}
 
 	s.envSource = s.snapshotEnvSource()
