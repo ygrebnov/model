@@ -11,24 +11,38 @@ OS		:= $(shell uname -s | tr A-Z a-z)
 ARCH	:= $(shell uname -m)
 
 GOLANGCI_LINT_VERSION ?= $(shell GOTOOLCHAIN=auto go -C $(TOOLS_DIR) list -m -f '{{.Version}}' github.com/golangci/golangci-lint/v2)
+GOVULNCHECK_VERSION   ?= $(shell GOTOOLCHAIN=auto go -C $(TOOLS_DIR) list -m -f '{{.Version}}' golang.org/x/vuln)
+
 GOLANGCI_LINT	:= $(BIN_DIR)/golangci-lint-$(OS)-$(ARCH)-$(GOLANGCI_LINT_VERSION)
+GOVULNCHECK   := $(BIN_DIR)/govulncheck-$(OS)-$(ARCH)-$(GOVULNCHECK_VERSION)
 
 $(GOLANGCI_LINT):
 	$(call go-install-tool,$@,github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
+$(GOVULNCHECK):
+	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
 GOLANGCI_LINT_LINK 	:= $(BIN_DIR)/golangci-lint
+GOVULNCHECK_LINK   := $(BIN_DIR)/govulncheck
 
 .PHONY: $(GOLANGCI_LINT_LINK)
 $(GOLANGCI_LINT_LINK): $(GOLANGCI_LINT)
 	$(call create-symlink,$(GOLANGCI_LINT),$(GOLANGCI_LINT_LINK))
 
-TOOLS := install-golangci-lint
+.PHONY: $(GOVULNCHECK_LINK)
+$(GOVULNCHECK_LINK): $(GOVULNCHECK)
+	$(call create-symlink,$(GOVULNCHECK),$(GOVULNCHECK_LINK))
+
+TOOLS := install-golangci-lint install-govulncheck
 
 .PHONY: install-tools
 install-tools: $(TOOLS)
 
 .PHONY: install-golangci-lint
 install-golangci-lint: $(GOLANGCI_LINT) $(GOLANGCI_LINT_LINK)
+
+.PHONY: install-govulncheck
+install-govulncheck: $(GOVULNCHECK) $(GOVULNCHECK_LINK)
 
 .PHONY: clean-tools
 clean-tools:

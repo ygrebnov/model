@@ -1,6 +1,6 @@
 module github.com/ygrebnov/model
 
-go 1.22
+go 1.23
 
 require github.com/ygrebnov/errorc v0.6.1
 
