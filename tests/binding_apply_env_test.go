@@ -2,12 +2,36 @@ package tests
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ygrebnov/model"
+	modelerrors "github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/types"
 )
+
+func TestBindingApplyEnv_RejectsOutOfRangeNumber(t *testing.T) {
+	t.Setenv("MODEL_REVIEW_INT8", "128")
+	type config struct {
+		Value int8 `env:"MODEL_REVIEW_INT8"`
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got config
+	err = binding.ApplyEnv(&got)
+	if !modelerrors.Is(err, modelerrors.ErrSetDefault) ||
+		!strings.Contains(err.Error(), modelerrors.ErrNumericValueOutOfRange.Error()) {
+		t.Fatalf("ApplyEnv() error = %v, want out-of-range error", err)
+	}
+	if got.Value != 0 {
+		t.Fatalf("Value = %d, want 0", got.Value)
+	}
+}
 
 func TestBindingApplyEnv_ScalarsAndPointers(t *testing.T) {
 	t.Setenv("S", "env-string")

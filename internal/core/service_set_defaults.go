@@ -265,6 +265,9 @@ func setLiteralValue(
 		if err != nil {
 			return err
 		}
+		if target.OverflowInt(iv) {
+			return numericValueOutOfRange(target, lit)
+		}
 
 		target.SetInt(iv)
 
@@ -278,6 +281,9 @@ func setLiteralValue(
 		if err != nil {
 			return err
 		}
+		if target.OverflowUint(uv) {
+			return numericValueOutOfRange(target, lit)
+		}
 
 		target.SetUint(uv)
 
@@ -286,16 +292,19 @@ func setLiteralValue(
 		if err != nil {
 			return err
 		}
+		if target.OverflowFloat(parsed) {
+			return numericValueOutOfRange(target, lit)
+		}
 
 		target.SetFloat(parsed)
 
 	case reflect.Complex64, reflect.Complex128:
-		parsed, err := parseComplex128(
-			lit,
-			target.Type().Bits(),
-		)
+		parsed, err := parseComplex128(lit)
 		if err != nil {
 			return err
+		}
+		if target.OverflowComplex(parsed) {
+			return numericValueOutOfRange(target, lit)
 		}
 
 		target.SetComplex(parsed)
@@ -311,6 +320,14 @@ func setLiteralValue(
 	}
 
 	return nil
+}
+
+func numericValueOutOfRange(target reflect.Value, literal string) error {
+	return errorc.With(
+		errors.ErrNumericValueOutOfRange,
+		errorc.String(keys.Value, literal),
+		errorc.String(keys.FieldType, target.Type().String()),
+	)
 }
 
 func parseInt64(
@@ -425,13 +442,10 @@ func parseFloat64(s string) (float64, error) {
 	return v, nil
 }
 
-func parseComplex128(
-	s string,
-	bitSize int,
-) (complex128, error) {
+func parseComplex128(s string) (complex128, error) {
 	v, err := strconv.ParseComplex(
 		strings.TrimSpace(s),
-		bitSize,
+		128,
 	)
 	if err != nil {
 		return 0, errorc.With(

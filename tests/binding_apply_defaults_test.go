@@ -2,6 +2,7 @@ package tests
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,27 @@ import (
 	"github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/types"
 )
+
+func TestBindingApplyDefaults_RejectsOutOfRangeNumber(t *testing.T) {
+	type config struct {
+		Value int8 `default:"128"`
+	}
+
+	binding, err := model.NewBinding[config]()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got config
+	err = binding.ApplyDefaults(&got)
+	if !errors.Is(err, errors.ErrSetDefault) ||
+		!strings.Contains(err.Error(), errors.ErrNumericValueOutOfRange.Error()) {
+		t.Fatalf("ApplyDefaults() error = %v, want wrapped out-of-range error", err)
+	}
+	if got.Value != 0 {
+		t.Fatalf("Value = %d, want 0", got.Value)
+	}
+}
 
 func TestBindingApplyDefaults_ScalarsAndPointers(t *testing.T) {
 	type config struct {
