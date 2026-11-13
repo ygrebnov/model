@@ -73,6 +73,8 @@ var (
 	ErrCannotParseComplex = errorc.New("cannot parse complex")
 	// ErrCannotParseDuration reports an invalid duration literal.
 	ErrCannotParseDuration = errorc.New("cannot parse duration")
+	// ErrNumericValueOutOfRange reports a numeric literal that does not fit its field type.
+	ErrNumericValueOutOfRange = errorc.New("numeric value out of range")
 )
 
 // Is reports whether err matches target via errors.Is.
