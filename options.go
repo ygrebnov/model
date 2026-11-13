@@ -1,9 +1,12 @@
 package model
 
 type options struct {
-	envPrefix string
-	rules     []Rule
+	envPrefix         string
+	maxEnvSliceLength int
+	rules             []Rule
 }
+
+const defaultMaxEnvSliceLength = 1024
 
 // Option customizes Binding construction and one-time wrapper operations.
 type Option func(o *options)
@@ -16,6 +19,15 @@ func WithEnvPrefix(prefix string) Option {
 		if prefix != "" {
 			o.envPrefix = prefix
 		}
+	}
+}
+
+// WithMaxEnvSliceLength sets the largest slice length that ApplyEnv may address
+// using indexed environment variables. The default is 1024. A non-positive
+// length makes NewBinding return ErrInvalidMaxEnvSliceLength.
+func WithMaxEnvSliceLength(length int) Option {
+	return func(o *options) {
+		o.maxEnvSliceLength = length
 	}
 }
 

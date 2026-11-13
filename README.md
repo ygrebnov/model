@@ -266,6 +266,7 @@ fmt.Printf("S after env apply: %+v\n", s)
 Environment values are snapshotted during `NewBinding`; changes made to the process environment afterward do not affect `ApplyEnv` or `ValidateWithDefaults`. Environment-backed values are applied separately from literal defaults. If you want the "defaults, then env overrides" flow explicitly, call `ApplyDefaults` first and `ApplyEnv` second. `ValidateWithDefaults` also performs that sequence internally using the binding's constructor-time environment snapshot.
 
 Slices of structs can be populated with indexed names such as `SERVERS_0_HOST`. Missing slice elements and enclosing pointer-to-struct fields are allocated as needed.
+Indexed environment values can grow a struct slice to at most 1,024 elements by default. Use `WithMaxEnvSliceLength(n)` when a different positive limit is needed. An index outside the limit makes `ApplyEnv` return an error.
 
 ---
 

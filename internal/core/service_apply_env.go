@@ -46,7 +46,9 @@ func (s *Service[T]) applyEnvWalkValue(
 	}
 
 	field = unwrapInterface(field)
-	s.materializeEnvSliceElements(ctx, field)
+	if err := s.materializeEnvSliceElements(ctx, field); err != nil {
+		return err
+	}
 
 	if !canSetLiteralValue(field) {
 		return nil
@@ -113,20 +115,28 @@ func (s *Service[T]) hasNestedEnvValue(
 func (s *Service[T]) materializeEnvSliceElements(
 	ctx walkContext,
 	field reflect.Value,
-) {
+) error {
 	if !isStructSliceNode(ctx.Node) ||
 		!field.IsValid() ||
 		field.Kind() != reflect.Slice ||
 		!field.CanSet() {
-		return
+		return nil
 	}
 
 	indexes := s.envCollectionIndexes(ctx.EnvPath)
 	if len(indexes) == 0 {
-		return
+		return nil
 	}
 
 	lastIndex := indexes[len(indexes)-1]
+	if lastIndex >= s.maxEnvSliceLength {
+		return errorc.With(
+			errors.ErrEnvSliceLengthExceeded,
+			errorc.String(keys.FieldName, ctx.Path),
+			errorc.Int("index", lastIndex),
+			errorc.Int("max_slice_length", s.maxEnvSliceLength),
+		)
+	}
 	if field.Len() <= lastIndex {
 		expanded := reflect.MakeSlice(field.Type(), lastIndex+1, lastIndex+1)
 		reflect.Copy(expanded, field)
@@ -136,7 +146,7 @@ func (s *Service[T]) materializeEnvSliceElements(
 	elementType := field.Type().Elem()
 	if elementType.Kind() != reflect.Ptr ||
 		elementType.Elem().Kind() != reflect.Struct {
-		return
+		return nil
 	}
 
 	for _, index := range indexes {
@@ -145,6 +155,7 @@ func (s *Service[T]) materializeEnvSliceElements(
 			element.Set(reflect.New(elementType.Elem()))
 		}
 	}
+	return nil
 }
 
 func (s *Service[T]) envCollectionIndexes(envPath []string) []int {

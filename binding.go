@@ -91,17 +91,22 @@ func NewRule[FieldType any](
 // T must be a struct, not a pointer. Built-in validation rules are available
 // implicitly. Use WithRules to add custom rules and WithEnvPrefix to prefix
 // environment variable names used by ApplyEnv and ValidateWithDefaults.
+// Indexed environment values can grow struct slices to at most 1024 elements
+// by default; WithMaxEnvSliceLength changes this limit.
 //
 // The returned Binding is fully initialized and immutable. It snapshots
 // environment values during this call, so later process-environment changes do
 // not affect ApplyEnv or ValidateWithDefaults.
 func NewBinding[T any](opts ...Option) (*Binding[T], error) {
-	o := &options{}
+	o := &options{maxEnvSliceLength: defaultMaxEnvSliceLength}
 
 	for _, opt := range opts {
 		if opt != nil {
 			opt(o)
 		}
+	}
+	if o.maxEnvSliceLength <= 0 {
+		return nil, errors.ErrInvalidMaxEnvSliceLength
 	}
 
 	registry, err := newRulesRegistry(o.rules)
@@ -118,6 +123,7 @@ func NewBinding[T any](opts ...Option) (*Binding[T], error) {
 		registry,
 		compiledSchema,
 		o.envPrefix,
+		o.maxEnvSliceLength,
 	)
 	if err != nil {
 		return nil, err
@@ -198,7 +204,8 @@ func (b *Binding[T]) ApplyValues(
 // Path segments are joined with underscores and optionally prefixed by
 // WithEnvPrefix. Values present in the snapshot replace existing values. Nil
 // pointer-to-struct fields are allocated only when the snapshot contains a
-// descendant value.
+// descendant value. Indexed struct slices cannot exceed the configured
+// environment slice length limit.
 func (b *Binding[T]) ApplyEnv(obj *T) error {
 	elem, err := bindingTargetValue(obj)
 	if err != nil {

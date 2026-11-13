@@ -33,6 +33,88 @@ func TestBindingApplyEnv_RejectsOutOfRangeNumber(t *testing.T) {
 	}
 }
 
+func TestBindingApplyEnv_SliceLengthLimit(t *testing.T) {
+	type item struct {
+		Name string
+	}
+	type config struct {
+		Items []item
+	}
+
+	t.Run("default boundary", func(t *testing.T) {
+		t.Setenv("MODEL_LIMIT_DEFAULT_ITEMS_1023_NAME", "last")
+		binding, err := model.NewBinding[config](model.WithEnvPrefix("MODEL_LIMIT_DEFAULT"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got config
+		if err := binding.ApplyEnv(&got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1024 || got.Items[1023].Name != "last" {
+			t.Fatalf("Items length = %d, want 1024 with last item populated", len(got.Items))
+		}
+	})
+
+	t.Run("default rejects oversized index", func(t *testing.T) {
+		t.Setenv("MODEL_LIMIT_REJECT_ITEMS_1024_NAME", "too far")
+		binding, err := model.NewBinding[config](model.WithEnvPrefix("MODEL_LIMIT_REJECT"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got config
+		err = binding.ApplyEnv(&got)
+		if !modelerrors.Is(err, modelerrors.ErrEnvSliceLengthExceeded) {
+			t.Fatalf("ApplyEnv() error = %v, want slice limit error", err)
+		}
+		if got.Items != nil {
+			t.Fatalf("Items = %#v, want nil after rejected index", got.Items)
+		}
+	})
+
+	t.Run("custom limit", func(t *testing.T) {
+		t.Setenv("MODEL_LIMIT_CUSTOM_ITEMS_1024_NAME", "last")
+		binding, err := model.NewBinding[config](
+			model.WithEnvPrefix("MODEL_LIMIT_CUSTOM"),
+			model.WithMaxEnvSliceLength(1025),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got config
+		if err := binding.ApplyEnv(&got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1025 || got.Items[1024].Name != "last" {
+			t.Fatalf("Items length = %d, want 1025 with last item populated", len(got.Items))
+		}
+	})
+
+	t.Run("custom lower limit", func(t *testing.T) {
+		t.Setenv("MODEL_LIMIT_SMALL_ITEMS_2_NAME", "too far")
+		binding, err := model.NewBinding[config](
+			model.WithEnvPrefix("MODEL_LIMIT_SMALL"),
+			model.WithMaxEnvSliceLength(2),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got config
+		if err := binding.ApplyEnv(&got); !modelerrors.Is(err, modelerrors.ErrEnvSliceLengthExceeded) {
+			t.Fatalf("ApplyEnv() error = %v, want slice limit error", err)
+		}
+	})
+
+	t.Run("invalid custom limit", func(t *testing.T) {
+		for _, limit := range []int{0, -1} {
+			_, err := model.NewBinding[config](model.WithMaxEnvSliceLength(limit))
+			if !modelerrors.Is(err, modelerrors.ErrInvalidMaxEnvSliceLength) {
+				t.Fatalf("NewBinding(limit=%d) error = %v, want invalid limit", limit, err)
+			}
+		}
+	})
+}
+
 func TestBindingApplyEnv_ScalarsAndPointers(t *testing.T) {
 	t.Setenv("S", "env-string")
 	t.Setenv("PS", "env-pointer")
