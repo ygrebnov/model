@@ -710,5 +710,24 @@ func lookupBuiltin(name string, t reflect.Type) (*Rule, bool) {
 		}, true
 	}
 
+	if t.Kind() == reflect.Int &&
+		t != reflect.TypeFor[int]() {
+		r, ok := builtInMap[key{name, reflect.TypeFor[int]()}]
+		if !ok {
+			return nil, false
+		}
+
+		return &Rule{
+			name:      name,
+			fieldType: t,
+			fn: func(v reflect.Value, params ...string) error {
+				return r.GetValidationFn()(
+					v.Convert(reflect.TypeFor[int]()),
+					params...,
+				)
+			},
+		}, true
+	}
+
 	return nil, false
 }
