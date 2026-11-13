@@ -959,6 +959,62 @@ func TestBuiltinRules_WithValidation_DurationMinMax(t *testing.T) {
 	})
 }
 
+func TestBuiltinRules_NamedInt(t *testing.T) {
+	type namedInt int
+	type config struct {
+		Min     namedInt   `validate:"min(3)"`
+		Max     namedInt   `validate:"max(5)"`
+		Nonzero namedInt   `validate:"nonzero"`
+		OneOf   namedInt   `validate:"oneof(1,2,3)"`
+		Pointer *namedInt  `validate:"min(1)"`
+		Items   []namedInt `validateElem:"oneof(1,2,3)"`
+	}
+
+	t.Run("passing rules", func(t *testing.T) {
+		value := namedInt(2)
+		obj := config{
+			Min: 3, Max: 5, Nonzero: 1, OneOf: 2,
+			Pointer: &value, Items: []namedInt{1, 3},
+		}
+		if err := model.Validate(context.Background(), &obj); err != nil {
+			t.Fatalf("Validate() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("failing rules", func(t *testing.T) {
+		obj := config{
+			Min: 2, Max: 6, OneOf: 4,
+			Items: []namedInt{2, 4},
+		}
+		err := model.Validate(context.Background(), &obj)
+		assertConstraintViolation(t, err, rules.RuleMin, "value", "3")
+		assertConstraintViolation(t, err, rules.RuleMax, "value", "5")
+		assertConstraintViolation(t, err, rules.RuleOneOf, "allowed", "1,2,3")
+		for _, path := range []string{"Nonzero", "OneOf", "Pointer", "Items[1]"} {
+			fieldErr := firstFieldErrorFor(t, err, path)
+			if !errors.Is(fieldErr.Err, errors.ErrRuleConstraintViolated) {
+				t.Fatalf("%s error = %v, want constraint violation", path, fieldErr.Err)
+			}
+		}
+	})
+
+	t.Run("invalid oneof parameter", func(t *testing.T) {
+		type invalid struct {
+			Value namedInt `validate:"oneof(1,bad)"`
+		}
+		err := model.Validate(context.Background(), &invalid{Value: 2})
+		assertInvalidParameter(t, err, rules.RuleOneOf, "value", "bad")
+	})
+
+	t.Run("missing oneof parameter", func(t *testing.T) {
+		type missing struct {
+			Value namedInt `validate:"oneof()"`
+		}
+		err := model.Validate(context.Background(), &missing{Value: 2})
+		assertMissingParameter(t, err)
+	})
+}
+
 func TestWithValidation_BuiltinsRemainValid_NoError(t *testing.T) {
 	type Obj struct{ S string }
 	obj := Obj{}

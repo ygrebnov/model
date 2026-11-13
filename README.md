@@ -352,6 +352,8 @@ Built-in rules are always implicitly available (you do **not** need to register 
   - `nonzero` – value must not be zero.
   - `oneof(v1,v2,...)` – value must be equal to one of the listed values.
 
+Named types whose underlying type is `int` also use the built-in `int` rules, including through pointers and collection elements.
+
 > The library lazy-loads built-ins on first use, so unused numeric/string sets impose no startup cost.
 
 ---
