@@ -2,7 +2,6 @@ package tests
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +24,7 @@ func TestBindingApplyEnv_RejectsOutOfRangeNumber(t *testing.T) {
 	var got config
 	err = binding.ApplyEnv(&got)
 	if !modelerrors.Is(err, modelerrors.ErrSetDefault) ||
-		!strings.Contains(err.Error(), modelerrors.ErrNumericValueOutOfRange.Error()) {
+		!modelerrors.Is(err, modelerrors.ErrNumericValueOutOfRange) {
 		t.Fatalf("ApplyEnv() error = %v, want out-of-range error", err)
 	}
 	if got.Value != 0 {

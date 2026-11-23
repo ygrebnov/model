@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ygrebnov/errorc"
 	keysLib "github.com/ygrebnov/keys"
 	"github.com/ygrebnov/model"
 	"github.com/ygrebnov/model/internal/rules"
@@ -30,35 +31,36 @@ func assertRuleErrorHas(t *testing.T, err, wantSentinel error, wantRule string, 
 		t.Fatalf("expected *validation.Error, got %T: %v", err, err)
 	}
 
-	for _, field := range ve.Fields() {
-		for _, fe := range ve.ForField(field) {
-			if !errors.Is(fe.Err, wantSentinel) {
-				continue
-			}
+	for _, fe := range ve.Issues() {
+		if !errors.Is(fe.Err, wantSentinel) {
+			continue
+		}
+		if wantRule != "" && !hasErrorField(fe.Err, keys.RuleName, wantRule) {
+			continue
+		}
 
-			msg := fe.Err.Error()
-			if wantRule != "" {
-				needle := string(keys.RuleName) + ": " + wantRule
-				if !strings.Contains(msg, needle) {
-					continue
-				}
+		matched := true
+		for k, v := range kv {
+			if !hasErrorField(fe.Err, k, v) {
+				matched = false
+				break
 			}
-
-			matched := true
-			for k, v := range kv {
-				needle := string(k) + ": " + v
-				if !strings.Contains(msg, needle) {
-					matched = false
-					break
-				}
-			}
-			if matched {
-				return
-			}
+		}
+		if matched {
+			return
 		}
 	}
 
 	t.Fatalf("expected structured field error with sentinel %v, rule %q and kv %+v, got %v", wantSentinel, wantRule, kv, err)
+}
+
+func hasErrorField(err error, key keysLib.Key, want string) bool {
+	for _, field := range errorc.Fields(err) {
+		if field.Key() == string(key) && field.String() == want {
+			return true
+		}
+	}
+	return false
 }
 
 func firstFieldErrorFor(t *testing.T, err error, path string) validation.FieldError {
@@ -75,6 +77,16 @@ func firstFieldErrorFor(t *testing.T, err error, path string) validation.FieldEr
 	}
 
 	return es[0]
+}
+
+func assertConstraintForField(t *testing.T, err error, path, rule string) {
+	t.Helper()
+
+	fe := firstFieldErrorFor(t, err, path)
+	if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) ||
+		!hasErrorField(fe.Err, keys.RuleName, rule) {
+		t.Fatalf("expected %q to fail %q constraint, got %v", path, rule, fe.Err)
+	}
 }
 
 func assertConstraintViolation(t *testing.T, err error, ruleName, paramName, paramValue string) {
@@ -99,6 +111,32 @@ func assertInvalidParameter(t *testing.T, err error, ruleName, paramName, paramV
 		keys.RuleParamName:  paramName,
 		keys.RuleParamValue: paramValue,
 	})
+}
+
+type validationCase[T any] struct {
+	name      string
+	obj       T
+	wantError bool
+	checkErr  func(t *testing.T, err error)
+}
+
+func runValidationCases[T any](t *testing.T, cases []validationCase[T]) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := tc.obj
+			err := model.Validate(context.Background(), &obj)
+			if tc.wantError && err == nil {
+				t.Fatal("expected Validate to return an error, but got nil")
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.checkErr != nil {
+				tc.checkErr(t, err)
+			}
+		})
+	}
 }
 
 func TestBuiltinRules_WithValidation_Nominal(t *testing.T) {
@@ -1029,12 +1067,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 		ID    string `validate:"uuid"`
 	}
 
-	tests := []struct {
-		name      string
-		obj       emailUUID
-		wantError bool
-		checkErr  func(t *testing.T, err error)
-	}{
+	tests := []validationCase[emailUUID]{
 		{
 			name: "valid email and uuid pass",
 			obj: emailUUID{
@@ -1050,17 +1083,7 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 			},
 			wantError: true,
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				fe := firstFieldErrorFor(t, err, "Email")
-				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
-					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
-				}
-				msg := fe.Err.Error()
-				if !strings.Contains(msg, string(keys.RuleName)+": email") {
-					t.Fatalf("expected email rule metadata in field error, got %q", msg)
-				}
+				assertConstraintForField(t, err, "Email", rules.RuleEmail)
 			},
 		},
 		{
@@ -1071,36 +1094,12 @@ func TestBuiltinStringEmailAndUUID(t *testing.T) {
 			},
 			wantError: true,
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				fe := firstFieldErrorFor(t, err, "ID")
-				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
-					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
-				}
-				msg := fe.Err.Error()
-				if !strings.Contains(msg, string(keys.RuleName)+": uuid") {
-					t.Fatalf("expected uuid rule metadata in field error, got %q", msg)
-				}
+				assertConstraintForField(t, err, "ID", rules.RuleUUID)
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			obj := tt.obj
-			err := model.Validate(context.Background(), &obj)
-			if tt.wantError && err == nil {
-				t.Fatalf("expected Validate to return an error, but got nil")
-			}
-			if !tt.wantError && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.checkErr != nil {
-				tt.checkErr(t, err)
-			}
-		})
-	}
+	runValidationCases(t, tests)
 }
 
 func TestBuiltinStringSemver(t *testing.T) {
@@ -1108,12 +1107,7 @@ func TestBuiltinStringSemver(t *testing.T) {
 		Semver string `validate:"semver"`
 	}
 
-	tests := []struct {
-		name      string
-		obj       semverStruct
-		wantError bool
-		checkErr  func(t *testing.T, err error)
-	}{
+	tests := []validationCase[semverStruct]{
 		{
 			name: "1.0.0",
 			obj: semverStruct{
@@ -1181,34 +1175,10 @@ func TestBuiltinStringSemver(t *testing.T) {
 			},
 			wantError: true,
 			checkErr: func(t *testing.T, err error) {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				fe := firstFieldErrorFor(t, err, "Semver")
-				if !errors.Is(fe.Err, errors.ErrRuleConstraintViolated) {
-					t.Fatalf("expected ErrRuleConstraintViolated, got %v", fe.Err)
-				}
-				msg := fe.Err.Error()
-				if !strings.Contains(msg, string(keys.RuleName)+": semver") {
-					t.Fatalf("expected semver rule metadata in field error, got %q", msg)
-				}
+				assertConstraintForField(t, err, "Semver", rules.RuleSemver)
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			obj := tt.obj
-			err := model.Validate(context.Background(), &obj)
-			if tt.wantError && err == nil {
-				t.Fatalf("expected Validate to return an error, but got nil")
-			}
-			if !tt.wantError && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.checkErr != nil {
-				tt.checkErr(t, err)
-			}
-		})
-	}
+	runValidationCases(t, tests)
 }

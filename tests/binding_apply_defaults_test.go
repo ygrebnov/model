@@ -2,7 +2,6 @@ package tests
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +23,7 @@ func TestBindingApplyDefaults_RejectsOutOfRangeNumber(t *testing.T) {
 	var got config
 	err = binding.ApplyDefaults(&got)
 	if !errors.Is(err, errors.ErrSetDefault) ||
-		!strings.Contains(err.Error(), errors.ErrNumericValueOutOfRange.Error()) {
+		!errors.Is(err, errors.ErrNumericValueOutOfRange) {
 		t.Fatalf("ApplyDefaults() error = %v, want wrapped out-of-range error", err)
 	}
 	if got.Value != 0 {

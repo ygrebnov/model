@@ -53,6 +53,20 @@ func TestGetBase(t *testing.T) {
 			err:  errorc.With(ErrRuleConstraintViolated, errorc.String("field", "value")),
 			want: ErrRuleConstraintViolated,
 		},
+		{
+			name: "errorc cause wrapper follows category branch",
+			err:  errorc.WithCause(ErrRuleInvalidParameter, otherErr),
+			want: ErrRuleInvalidParameter,
+		},
+		{
+			name: "errorc fields and cause follow category branch",
+			err: errorc.With(
+				ErrRuleInvalidParameter,
+				errorc.String("field", "value"),
+				errorc.Error("cause", otherErr),
+			),
+			want: ErrRuleInvalidParameter,
+		},
 	}
 
 	for _, tc := range tests {
