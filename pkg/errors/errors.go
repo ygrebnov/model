@@ -86,13 +86,23 @@ func Is(err, target error) bool {
 	return errorsPkg.Is(err, target)
 }
 
-// GetBase unwraps err until it reaches the innermost wrapped error.
+// GetBase follows the first branch of an error tree to its innermost error.
+// For errorc errors with a cause field, that branch is the category error.
 func GetBase(err error) error {
 	if err == nil {
 		return nil
 	}
 
 	for {
+		if wrapped, ok := err.(interface{ Unwrap() []error }); ok {
+			branches := wrapped.Unwrap()
+			if len(branches) == 0 || branches[0] == nil {
+				return err
+			}
+			err = branches[0]
+			continue
+		}
+
 		base := errorsPkg.Unwrap(err)
 		if base == nil {
 			return err

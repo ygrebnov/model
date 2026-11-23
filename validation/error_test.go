@@ -62,6 +62,41 @@ func TestValidationError_Addf(t *testing.T) {
 	}
 }
 
+func TestValidationError_Issues(t *testing.T) {
+	t.Parallel()
+
+	var nilError *Error
+	if got := nilError.Issues(); got != nil {
+		t.Fatalf("nil Issues() = %+v, want nil", got)
+	}
+
+	ve := &Error{}
+	if got := ve.Issues(); got != nil {
+		t.Fatalf("empty Issues() = %+v, want nil", got)
+	}
+
+	first := FieldError{Path: "A", Rule: "first", Params: []string{"original"}}
+	ve.Add(first)
+	first.Params[0] = "changed"
+	ve.Add(FieldError{Path: "B", Rule: "second"})
+	ve.Add(FieldError{Path: "A", Rule: "third"})
+
+	issues := ve.Issues()
+	if len(issues) != 3 || issues[0].Rule != "first" ||
+		issues[1].Rule != "second" || issues[2].Rule != "third" {
+		t.Fatalf("Issues() order = %+v, want first, second, third", issues)
+	}
+	if issues[0].Params[0] != "original" {
+		t.Fatalf("Issues() Params = %q, want original", issues[0].Params[0])
+	}
+
+	issues[0].Path = "modified"
+	issues[0].Params[0] = "modified"
+	if got := ve.Issues(); got[0].Path != "A" || got[0].Params[0] != "original" {
+		t.Fatalf("mutating Issues() changed stored issue: %+v", got[0])
+	}
+}
+
 func TestValidationError_ErrorFormatting(t *testing.T) {
 	t.Parallel()
 
@@ -269,6 +304,34 @@ func TestFieldError_Error(t *testing.T) {
 			},
 			wantHas: []string{"Field \"Retries\"", "rule \"max\"", "rule parameter is invalid (value=oops)"},
 			wantNot: []string{string(keys.Cause), string(keys.RuleParamName), string(keys.RuleParamValue)},
+		},
+		{
+			name: "structured parameter value preserves delimiters",
+			fe: FieldError{
+				Path: "Names",
+				Rule: "contains",
+				Err: errorc.With(
+					modelerrors.ErrRuleConstraintViolated,
+					errorc.String(keys.RuleParamName, "allowed"),
+					errorc.String(keys.RuleParamValue, "red, blue: green"),
+				),
+			},
+			wantHas: []string{"constraint violated (allowed=red, blue: green)"},
+			wantNot: []string{string(keys.RuleParamValue)},
+		},
+		{
+			name: "structured integer parameter value is formatted",
+			fe: FieldError{
+				Path: "Name",
+				Rule: "min",
+				Err: errorc.With(
+					modelerrors.ErrRuleConstraintViolated,
+					errorc.String(keys.RuleParamName, "length"),
+					errorc.Int(keys.RuleParamValue, 3),
+				),
+			},
+			wantHas: []string{"constraint violated (length=3)"},
+			wantNot: []string{string(keys.RuleParamValue)},
 		},
 		{
 			name: "custom structured errors keep original message",

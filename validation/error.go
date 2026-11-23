@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ygrebnov/errorc"
 	errorspkg "github.com/ygrebnov/model/pkg/errors"
 	"github.com/ygrebnov/model/pkg/keys"
 )
@@ -24,6 +25,7 @@ func (ve *Error) Add(fe FieldError) {
 	if ve == nil {
 		return
 	}
+	fe.Params = slices.Clone(fe.Params)
 	ve.mu.Lock()
 	defer ve.mu.Unlock()
 	ve.issues = append(ve.issues, fe)
@@ -39,12 +41,17 @@ func (ve *Error) Len() int {
 	if ve == nil {
 		return 0
 	}
-
-	return len(ve.snapshotIssues())
+	ve.mu.Lock()
+	defer ve.mu.Unlock()
+	return len(ve.issues)
 }
 
 // Empty reports whether there are no issues.
 func (ve *Error) Empty() bool { return ve.Len() == 0 }
+
+// Issues returns all failures in the order they were added. The returned
+// slice and each issue's Params slice are independent of the Error.
+func (ve *Error) Issues() []FieldError { return ve.snapshotIssues() }
 
 // Error returns a human-readable, multi-line description of all issues.
 func (ve *Error) Error() string {
@@ -160,7 +167,11 @@ func (ve *Error) snapshotIssues() []FieldError {
 	ve.mu.Lock()
 	defer ve.mu.Unlock()
 
-	return slices.Clone(ve.issues)
+	issues := slices.Clone(ve.issues)
+	for i := range issues {
+		issues[i].Params = slices.Clone(issues[i].Params)
+	}
+	return issues
 }
 
 // FieldError represents a single validation failure for a specific field and rule.
@@ -195,8 +206,8 @@ func formatFieldErrorMessage(err error) string {
 		return ""
 	}
 
-	base := errorspkg.GetBase(err)
-	if base == nil || !isCompactModelFieldError(base) {
+	base := compactModelFieldError(err)
+	if base == nil {
 		return err.Error()
 	}
 
@@ -221,17 +232,17 @@ func compactErrorDetail(err error) string {
 		return ""
 	}
 
-	msg := errorMessage(err)
-	if paramName, ok := extractErrorField(msg, string(keys.RuleParamName)); ok {
-		if paramValue, ok := extractErrorField(msg, string(keys.RuleParamValue)); ok {
+	fields := errorc.Fields(err)
+	if paramName, ok := fieldText(fields, string(keys.RuleParamName)); ok {
+		if paramValue, ok := fieldText(fields, string(keys.RuleParamValue)); ok {
 			return paramName + "=" + paramValue
 		}
 		return paramName
 	}
 
-	valueType, hasValueType := extractErrorField(msg, string(keys.ValueType))
-	availableTypes, hasAvailableTypes := extractErrorField(msg, string(keys.FieldAvailableTypes))
-	fieldType, hasFieldType := extractErrorField(msg, string(keys.FieldType))
+	valueType, hasValueType := fieldText(fields, string(keys.ValueType))
+	availableTypes, hasAvailableTypes := fieldText(fields, string(keys.FieldAvailableTypes))
+	fieldType, hasFieldType := fieldText(fields, string(keys.FieldType))
 
 	parts := make([]string, 0, 3)
 	if hasValueType {
@@ -247,7 +258,8 @@ func compactErrorDetail(err error) string {
 	return strings.Join(parts, ", ")
 }
 
-func isCompactModelFieldError(base error) bool {
+func compactModelFieldError(err error) error {
+	base := errorspkg.GetBase(err)
 	switch base {
 	case errorspkg.ErrRuleConstraintViolated,
 		errorspkg.ErrRuleInvalidParameter,
@@ -257,9 +269,9 @@ func isCompactModelFieldError(base error) bool {
 		errorspkg.ErrRuleNotFound,
 		errorspkg.ErrAmbiguousRule,
 		errorspkg.ErrInvalidValue:
-		return true
+		return base
 	default:
-		return false
+		return nil
 	}
 }
 
@@ -271,20 +283,13 @@ func errorMessage(err error) string {
 	return err.Error()
 }
 
-func extractErrorField(msg, key string) (string, bool) {
-	prefix := key + ": "
-	start := strings.Index(msg, prefix)
-	if start < 0 {
-		return "", false
+func fieldText(fields []errorc.Field, key string) (string, bool) {
+	for i := len(fields) - 1; i >= 0; i-- {
+		if fields[i].Key() == key {
+			return fields[i].String(), true
+		}
 	}
-
-	start += len(prefix)
-	end := len(msg)
-	if next := strings.Index(msg[start:], ", "); next >= 0 {
-		end = start + next
-	}
-
-	return msg[start:end], true
+	return "", false
 }
 
 // Unwrap returns the underlying rule error.

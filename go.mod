@@ -2,7 +2,7 @@ module github.com/ygrebnov/model
 
 go 1.23
 
-require github.com/ygrebnov/errorc v0.6.1
+require github.com/ygrebnov/errorc v0.7.0
 
 require github.com/ygrebnov/keys v0.2.0
 
